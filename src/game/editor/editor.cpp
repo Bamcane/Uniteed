@@ -77,6 +77,8 @@ namespace game
 	{
 		m_pGraphics = pGraphics;
 		m_View.m_Zoom = 1.0f;
+		// the engine clears the frame, the panel background is the theme's job
+		m_pGraphics->SetClearColor(engine::ui::Theme.m_Background.r, engine::ui::Theme.m_Background.g, engine::ui::Theme.m_Background.b);
 		NewMap(50, 50);
 		SetStatus("ready, use Ctrl+O to open a map");
 		return true;
@@ -766,6 +768,11 @@ namespace game
 
 	void CEditor::Update()
 	{
+		// a minimized window can report itself as empty; there is nothing to lay
+		// out or hit test then, and nanovg must not be handed a zero size
+		if(m_pGraphics != nullptr && (m_pGraphics->WindowSize().x < 1.0f || m_pGraphics->WindowSize().y < 1.0f))
+			return;
+
 		EnsureViewStates();
 		ClampSelection();
 

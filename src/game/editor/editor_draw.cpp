@@ -960,6 +960,9 @@ namespace game
 	{
 		NVGcontext *pContext = m_pGraphics->Context();
 		const base::vec2 Size = m_pGraphics->WindowSize();
+		// minimized: nanovg builds its projection from the size it is given
+		if(Size.x < 1.0f || Size.y < 1.0f)
+			return;
 
 		nvgBeginFrame(pContext, Size.x, Size.y, m_pGraphics->PixelRatio());
 

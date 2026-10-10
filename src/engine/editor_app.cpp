@@ -1,7 +1,6 @@
 #include "editor_app.h"
 
 #include <glad/gl.h>
-#include <GLFW/glfw3.h>
 
 #include "base/define.h"
 #include "base/logger.h"
@@ -112,8 +111,11 @@ namespace engine
 				Graphics.EndFrame(false);
 			}
 
-			int FramebufferWidth = 0, FramebufferHeight = 0;
-			glfwGetFramebufferSize(Graphics.Window(), &FramebufferWidth, &FramebufferHeight);
+			// the viewport the frames were drawn with, so the read back covers
+			// exactly what is on screen
+			const base::vec2 Framebuffer = Graphics.FramebufferSize();
+			const int FramebufferWidth = static_cast<int>(Framebuffer.x);
+			const int FramebufferHeight = static_cast<int>(Framebuffer.y);
 			if(!SaveFramebuffer(ScreenshotPath, FramebufferWidth, FramebufferHeight))
 			{
 				LOG_ERROR("editor", "failed to write the screenshot '%s'", ScreenshotPath.c_str());

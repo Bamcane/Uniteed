@@ -133,6 +133,9 @@ namespace engine
 
 		glfwMakeContextCurrent(m_pWindow);
 		glfwSwapInterval(1);
+		// below this the two 268px side panels would eat the canvas; it is the
+		// same lower bound the stored window size is clamped to
+		glfwSetWindowSizeLimits(m_pWindow, 640, 480, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
 		if(gladLoadGL(reinterpret_cast<GLADloadfunc>(glfwGetProcAddress)) == 0)
 		{
@@ -246,7 +249,28 @@ namespace engine
 		if(m_PixelRatio <= 0.0f)
 			m_PixelRatio = 1.0f;
 
-		m_WindowSize = base::vec2(static_cast<float>(g_WindowWidth), static_cast<float>(g_WindowHeight));
+		const base::vec2 WindowSize(static_cast<float>(g_WindowWidth), static_cast<float>(g_WindowHeight));
+		const base::vec2 FramebufferSize(static_cast<float>(FramebufferWidth), static_cast<float>(FramebufferHeight));
+		if(WindowSize.x != m_WindowSize.x || WindowSize.y != m_WindowSize.y ||
+			FramebufferSize.x != m_FramebufferSize.x || FramebufferSize.y != m_FramebufferSize.y)
+		{
+			LOG_TRACE("graphics", "window %.0fx%.0f, framebuffer %.0fx%.0f, pixel ratio %.2f",
+				WindowSize.x, WindowSize.y, FramebufferSize.x, FramebufferSize.y, m_PixelRatio);
+			m_WindowSize = WindowSize;
+			m_FramebufferSize = FramebufferSize;
+		}
+
+		// OpenGL keeps the viewport it was handed when the context was created
+		// and does not follow the window, and nanovg only records the logical
+		// view size without touching it either (glnvg__renderViewport). Without
+		// this call a resized window would keep drawing into the old rectangle,
+		// at the old size, leaving everything outside it undefined.
+		if(FramebufferWidth > 0 && FramebufferHeight > 0)
+		{
+			glViewport(0, 0, FramebufferWidth, FramebufferHeight);
+			glClearColor(m_ClearColor[0], m_ClearColor[1], m_ClearColor[2], 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+		}
 	}
 
 	void CGraphics::EndFrame(bool SwapBuffers)
@@ -260,6 +284,13 @@ namespace engine
 	{
 		if(m_pWindow != nullptr)
 			glfwSetWindowTitle(m_pWindow, Title.c_str());
+	}
+
+	void CGraphics::SetClearColor(float Red, float Green, float Blue)
+	{
+		m_ClearColor[0] = Red;
+		m_ClearColor[1] = Green;
+		m_ClearColor[2] = Blue;
 	}
 
 	int CGraphics::Texture(const std::string &Key) const

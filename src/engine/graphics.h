@@ -44,8 +44,15 @@ namespace engine
 		CInput &Input() { return m_Input; }
 		const CInput &Input() const { return m_Input; }
 
+		// the logical (window) size, which is what the layout works in, and the
+		// pixel size of the drawable, which is what glViewport needs; they only
+		// differ when the display is scaled
 		base::vec2 WindowSize() const { return m_WindowSize; }
+		base::vec2 FramebufferSize() const { return m_FramebufferSize; }
 		float PixelRatio() const { return m_PixelRatio; }
+
+		// the colour the frame is cleared to before the editor draws over it
+		void SetClearColor(float Red, float Green, float Blue);
 
 		void SetWindowTitle(const std::string &Title);
 
@@ -69,7 +76,11 @@ namespace engine
 		CInput m_Input;
 
 		base::vec2 m_WindowSize;
+		base::vec2 m_FramebufferSize;
 		float m_PixelRatio = 1.0f;
+		// the editor's panel background, so a resize never shows uninitialised
+		// pixels; ui::Theme owns the value and hands it over in Init
+		float m_ClearColor[3] = {24.0f / 255.0f, 26.0f / 255.0f, 30.0f / 255.0f};
 
 		libsugarx::lazy_flat_table<std::string, int> m_Textures;
 		int m_Font = 0;
