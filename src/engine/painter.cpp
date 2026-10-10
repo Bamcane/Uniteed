@@ -149,6 +149,7 @@ namespace engine::painter
 	{
 		m_Path.clear();
 		m_PathStart = CPoint{0.0f, 0.0f};
+		m_bPathClosed = false;
 	}
 
 	void CPainter::MoveTo(float X, float Y)
@@ -164,12 +165,7 @@ namespace engine::painter
 		m_Path.push_back(CPoint{P.x, P.y, X, Y});
 	}
 
-	void CPainter::ClosePath()
-	{
-		// the polygon is closed implicitly when it is filled; for a stroke the
-		// closing edge is added by the stroker
-		(void)m_PathStart;
-	}
+	void CPainter::ClosePath() { m_bPathClosed = true; }
 
 	void CPainter::Rect(float X, float Y, float Width, float Height)
 	{
@@ -485,17 +481,87 @@ namespace engine::painter
 	{
 		if(m_Path.size() < 2)
 			return;
-		// a rectangle is submitted as four points, and stroking it should
-		// close it; every other path is open
-		const bool bClosed = m_Path.size() == 4 && m_Path.front().m_X == m_PathStart.m_X &&
-			m_Path.front().m_Y == m_PathStart.m_Y;
-		EmitStroke(m_Path, bClosed, m_StrokeColor, m_StrokeWidth);
+		// whether the outline is closed is what ClosePath() recorded, not a
+		// guess from the point count: the caller knows
+		EmitStroke(m_Path, m_bPathClosed, m_StrokeColor, m_StrokeWidth);
 	}
 
 	void CPainter::StrokeColor(const CColor &Color) { m_StrokeColor = Color; }
 	void CPainter::StrokeWidth(float Width) { m_StrokeWidth = Width; }
 
 	// -------------------------------------------------------------- shortcuts
+
+	void CPainter::TexturedQuad(int Texture, const base::vec2 *paCorners, const base::vec2 *paTexcoords,
+		const CColor *paColors, int Cells, float Alpha)
+	{
+		SDL_Texture *pTexture = LookupTexture(Texture);
+		if(pTexture == nullptr || Alpha <= 0.0f)
+			return;
+
+		const int Steps = std::clamp(Cells, 1, 32);
+		std::vector<CVertex> Vertices;
+		Vertices.reserve(static_cast<std::size_t>(Steps) * Steps * 6);
+
+		/*
+			The surface is bilinear over the corners: 0 and 1 are the top edge,
+			2 and 3 the bottom one, which is the layout the map stores a quad
+			in and the one its texcoords and colours follow. Every corner of a
+			cell is placed by (u,v), so the grid follows a quad that is not a
+			rectangle at all.
+		*/
+		const auto Corner = [&](float u, float v, base::vec2 &Point, base::vec2 &Tex, CColor &Colour) {
+			const base::vec2 TopPoint = paCorners[0] + (paCorners[1] - paCorners[0]) * u;
+			const base::vec2 BottomPoint = paCorners[2] + (paCorners[3] - paCorners[2]) * u;
+			Point = TopPoint + (BottomPoint - TopPoint) * v;
+
+			const base::vec2 TopTex = paTexcoords[0] + (paTexcoords[1] - paTexcoords[0]) * u;
+			const base::vec2 BottomTex = paTexcoords[2] + (paTexcoords[3] - paTexcoords[2]) * u;
+			Tex = TopTex + (BottomTex - TopTex) * v;
+
+			// the corner colours interpolate the same way
+			CColor TopColour, BottomColour;
+			const float aTop[4] = {paColors[0].r, paColors[0].g, paColors[0].b, paColors[0].a};
+			const float aBottom[4] = {paColors[1].r, paColors[1].g, paColors[1].b, paColors[1].a};
+			const float aLowTop[4] = {paColors[2].r, paColors[2].g, paColors[2].b, paColors[2].a};
+			const float aLowBottom[4] = {paColors[3].r, paColors[3].g, paColors[3].b, paColors[3].a};
+			float aTopResult[4], aBottomResult[4], aResult[4];
+			for(int c = 0; c < 4; c++)
+			{
+				aTopResult[c] = base::lerp(aTop[c], aBottom[c], u);
+				aBottomResult[c] = base::lerp(aLowTop[c], aLowBottom[c], u);
+				aResult[c] = base::lerp(aTopResult[c], aBottomResult[c], v);
+			}
+			Colour = CColor{aResult[0], aResult[1], aResult[2], aResult[3] * Alpha};
+		};
+
+		for(int j = 0; j < Steps; j++)
+		{
+			for(int i = 0; i < Steps; i++)
+			{
+				const float u0 = static_cast<float>(i) / Steps;
+				const float u1 = static_cast<float>(i + 1) / Steps;
+				const float v0 = static_cast<float>(j) / Steps;
+				const float v1 = static_cast<float>(j + 1) / Steps;
+
+				// the cell corners, in the order top left, top right, bottom
+				// left, bottom right, so the two triangles do not cross it
+				const float aU[4] = {u0, u1, u0, u1};
+				const float aV[4] = {v0, v0, v1, v1};
+				CVertex aCorner[4];
+				for(int c = 0; c < 4; c++)
+				{
+					base::vec2 Point, Tex;
+					CColor Colour;
+					Corner(aU[c], aV[c], Point, Tex, Colour);
+					aCorner[c] = CVertex{Point.x, Point.y, Tex.x, Tex.y, Colour.r, Colour.g, Colour.b, Colour.a};
+				}
+				const int aOrder[6] = {0, 1, 3, 0, 3, 2};
+				for(const int c : aOrder)
+					Vertices.push_back(aCorner[c]);
+			}
+		}
+		EmitTriangles(Vertices, pTexture, true);
+	}
 
 	void CPainter::FillRect(float X, float Y, float Width, float Height, const CColor &Color)
 	{

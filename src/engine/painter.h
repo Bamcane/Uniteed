@@ -171,6 +171,14 @@ namespace engine::painter
 		// tint or outline individual glyphs
 		float LineHeight() const;
 
+		// A textured quad whose corners each carry their own colour and texture
+		// coordinate, subdivided into a Cells by Cells grid so a bilinear
+		// surface can be shown. The corners are in the order the map stores a
+		// quad in: top left, top right, bottom left, bottom right. This is what
+		// draws a map quad, which is a freeform patch rather than a rectangle.
+		void TexturedQuad(int Texture, const base::vec2 *paCorners, const base::vec2 *paTexcoords,
+			const CColor *paColors, int Cells, float Alpha = 1.0f);
+
 		// a filled rectangle and a line, the two shapes the widgets need most
 		void FillRect(float X, float Y, float Width, float Height, const CColor &Color);
 		void StrokeRect(float X, float Y, float Width, float Height, const CColor &Color, float Width2);
@@ -248,6 +256,9 @@ namespace engine::painter
 		std::vector<CPoint> m_Path;
 		std::vector<CVertex> m_Vertices;
 		CPoint m_PathStart{0.0f, 0.0f};
+		// ClosePath() records that the outline should be closed; a stroke needs
+		// to know, a fill closes implicitly either way
+		bool m_bPathClosed = false;
 
 		CColor m_FillColor = RGB(255, 255, 255);
 		CPaint m_FillPaint;

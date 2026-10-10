@@ -603,6 +603,56 @@ namespace game
 			}
 		}
 
+		// ------------------------------------------------------------- quads
+		/*
+			A quad's four corners are a freeform patch, not a perimeter walk: 0
+			and 1 are the top edge and 2 and 3 the bottom one. Walking them in
+			stored order crosses the shape into a bowtie, which is exactly what
+			happened once, so the perimeter order is pinned here. The check walks
+			the outline of a unit square and confirms it stays convex.
+		*/
+		{
+			Checks++;
+			// a unit square in screen space, stored the way a map stores it
+			const base::vec2 aCorners[4] = {base::vec2(0.0f, 0.0f), base::vec2(10.0f, 0.0f),
+				base::vec2(0.0f, 10.0f), base::vec2(10.0f, 10.0f)};
+			base::vec2 aWalk[4];
+			for(int i = 0; i < 4; i++)
+				aWalk[i] = aCorners[CQuad::s_aPerimeter[i]];
+
+			// every turn of a convex outline has the same sign
+			int Positive = 0, Negative = 0;
+			for(int i = 0; i < 4; i++)
+			{
+				const base::vec2 &A = aWalk[i];
+				const base::vec2 &B = aWalk[(i + 1) % 4];
+				const base::vec2 &C = aWalk[(i + 2) % 4];
+				const float Cross = (B.x - A.x) * (C.y - B.y) - (B.y - A.y) * (C.x - B.x);
+				if(Cross > 0.0f)
+					Positive++;
+				else if(Cross < 0.0f)
+					Negative++;
+			}
+			// walking 0,1,3,2 traces the square; walking 0,1,2,3 crosses it and
+			// produces turns of both signs
+			bool bOk = (Positive == 4 || Negative == 4);
+			// the corners must also map back to the (u,v) positions the texcoords
+			// use, or the texture would be laid down rotated
+			if(aCorners[CQuad::s_aCornerAt[0][0]] != aCorners[0] ||
+				aCorners[CQuad::s_aCornerAt[1][0]] != aCorners[1] ||
+				aCorners[CQuad::s_aCornerAt[0][1]] != aCorners[2] ||
+				aCorners[CQuad::s_aCornerAt[1][1]] != aCorners[3])
+				bOk = false;
+
+			if(bOk)
+				std::cout << "  ok   quad   the corner order traces the quad without crossing it\n";
+			else
+			{
+				std::cout << "  FAIL quad   the corner order crosses the quad\n";
+				Failures++;
+			}
+		}
+
 		// ----------------------------------------------------------- envelopes
 		/*
 			The preview colours depend on the evaluator, and the reference

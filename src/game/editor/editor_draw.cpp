@@ -4,6 +4,7 @@
 */
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 
 #include <SDL3/SDL_keycode.h>
@@ -116,6 +117,12 @@ namespace game
 				static_cast<unsigned char>(base::clamp(Color.a, 0, 255)));
 		}
 
+		// the painter's colours for a quad's four corners
+		std::array<ui::CColor, 4> ToColors(const CColor *paColors)
+		{
+			return {ToColor(paColors[0]), ToColor(paColors[1]), ToColor(paColors[2]), ToColor(paColors[3])};
+		}
+
 		// ------------------------------------------------------------------ hsv
 		// the colour picker works in hsv because that is what an sv square needs;
 		// the hue is handed in and back out so that picking a grey does not lose
@@ -205,8 +212,10 @@ namespace game
 		// the point of the bilinear surface of the quad at (u,v)
 		base::vec2 QuadPointAt(const base::vec2 *paScreen, float u, float v)
 		{
-			const base::vec2 Top = paScreen[0] + (paScreen[1] - paScreen[0]) * u;
-			const base::vec2 Bottom = paScreen[3] + (paScreen[2] - paScreen[3]) * u;
+			const base::vec2 Top = paScreen[CQuad::s_aCornerAt[0][0]] +
+				(paScreen[CQuad::s_aCornerAt[1][0]] - paScreen[CQuad::s_aCornerAt[0][0]]) * u;
+			const base::vec2 Bottom = paScreen[CQuad::s_aCornerAt[0][1]] +
+				(paScreen[CQuad::s_aCornerAt[1][1]] - paScreen[CQuad::s_aCornerAt[0][1]]) * u;
 			return Top + (Bottom - Top) * v;
 		}
 
@@ -420,16 +429,62 @@ namespace game
 			if(aColors[0].a <= 0 && aColors[1].a <= 0 && aColors[2].a <= 0 && aColors[3].a <= 0)
 				continue;
 
-			const auto Path = [pPainter](const base::vec2 *paPoints) {
+			/*
+				The four stored points are the corners of the quad, not a
+				perimeter walk: point 0 and 1 are the top edge, 2 and 3 the
+				bottom one (the same layout DDNet's editor creates, with the
+				texcoords (0,0) (1,0) (0,1) (1,1)). Joining them in stored order
+				would cross the quad into a bowtie, so the outline is walked as
+				0 -> 1 -> 3 -> 2.
+			*/
+			const auto Outline = [](const base::vec2 *paPoints, base::vec2 *paOut) {
+				for(int i = 0; i < 4; i++)
+					paOut[i] = paPoints[CQuad::s_aPerimeter[i]];
+			};
+
+			const auto Path = [pPainter, &Outline](const base::vec2 *paPoints) {
+				base::vec2 aOutline[4];
+				Outline(paPoints, aOutline);
 				pPainter->BeginPath();
-				pPainter->MoveTo( paPoints[0].x, paPoints[0].y);
+				pPainter->MoveTo(aOutline[0].x, aOutline[0].y);
 				for(int i = 1; i < 4; i++)
-					pPainter->LineTo( paPoints[i].x, paPoints[i].y);
+					pPainter->LineTo(aOutline[i].x, aOutline[i].y);
 				pPainter->ClosePath();
 			};
 
 			const bool bFlat = SameColor(aColors[0], aColors[1]) && SameColor(aColors[0], aColors[2]) && SameColor(aColors[0], aColors[3]);
-			if(bFlat)
+
+			// a quad may carry a texture, which is stretched over it with the
+			// quad's own texture coordinates; a quad without one is just a
+			// coloured shape
+			int QuadTexture = -1;
+			if(Layer.m_Image >= 0)
+			{
+				CColor Tint;
+				Tint.r = Tint.g = Tint.b = 255;
+				Tint.a = 255;
+				QuadTexture = TextureForImage(Layer.m_Image, Tint);
+			}
+
+			if(QuadTexture > 0)
+			{
+				// the texture coordinates are fixed point, 1.0 being one tile
+				base::vec2 aTexcoords[4];
+				for(int i = 0; i < 4; i++)
+					aTexcoords[i] = base::vec2(base::FixedToFloat(Quad.m_aTexcoords[i].x),
+						base::FixedToFloat(Quad.m_aTexcoords[i].y));
+
+				/*
+					The surface is subdivided so a quad that is not a rectangle
+					still shows a curved gradient, and because a single pair of
+					triangles would show the colour interpolation as a diagonal
+					crease across a non planar quad.
+				*/
+				const int Cells = base::clamp(static_cast<int>(std::max(Bounds.Width(), Bounds.Height()) / 32.0f), 1, 16);
+				const std::array<ui::CColor, 4> aQuadColors = ToColors(aColors);
+				pPainter->TexturedQuad(QuadTexture, aScreen, aTexcoords, aQuadColors.data(), Cells);
+			}
+			else if(bFlat)
 			{
 				Path(aScreen);
 				pPainter->FillColor( ToColor(aColors[0]));
@@ -438,15 +493,12 @@ namespace game
 			else
 			{
 				/*
-					a path fill takes a single colour, so a quad whose
-					corners differ is drawn as a grid of cells over its bilinear
-					surface, each filled with the colour at its centre. Anti
-					aliasing is off for those cells: they tile the surface
-					exactly, and the shared edges would show as seams. The cell
-					count follows the size on screen.
+					a path fill takes a single colour, so a quad whose corners
+					differ is drawn as a grid of cells over its bilinear surface,
+					each filled with the colour at its centre. The cell count
+					follows the size on screen.
 				*/
 				const int Cells = base::clamp(static_cast<int>(std::max(Bounds.Width(), Bounds.Height()) / 16.0f), 1, 8);
-				(void)0;
 				for(int CellY = 0; CellY < Cells; CellY++)
 				{
 					for(int CellX = 0; CellX < Cells; CellX++)
@@ -463,7 +515,6 @@ namespace game
 						pPainter->Fill();
 					}
 				}
-				(void)0;
 			}
 
 			Path(aScreen);

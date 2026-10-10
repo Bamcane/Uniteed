@@ -191,6 +191,13 @@ namespace game
 		int a = 255;
 	};
 
+	/*
+		A quad stores its four corners as a freeform patch, not as a perimeter
+		walk: 0 and 1 are the top edge, 2 and 3 the bottom one, and the colours
+		and texture coordinates are indexed the same way. Drawing them in
+		stored order would cross the shape into a bowtie, so anything that walks
+		the outline has to go 0 -> 1 -> 3 -> 2.
+	*/
 	struct CQuad
 	{
 		CPoint m_aPoints[5];
@@ -202,6 +209,11 @@ namespace game
 
 		int m_ColorEnv = -1;
 		int m_ColorEnvOffset = 0;
+
+		// the corners in the order they must be walked to trace the outline
+		static constexpr int s_aPerimeter[4] = {0, 1, 3, 2};
+		// the corner indices of the four (u,v) positions: (0,0) (1,0) (0,1) (1,1)
+		static constexpr int s_aCornerAt[2][2] = {{0, 2}, {1, 3}};
 	};
 
 	struct CTile
