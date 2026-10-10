@@ -76,19 +76,24 @@ namespace base
 	struct view_transform
 	{
 		vec2 m_Center;   // world position at the center of the viewport
+		vec2 m_Origin;   // top left of the viewport in window pixels
 		vec2 m_Viewport; // size of the viewport in pixels
 		float m_Zoom = 1.0f;
 
+		// The viewport is a sub rectangle of the window (the canvas sits between
+		// the panels), so the origin has to be part of both directions. Drawing
+		// and hit testing go through these two, which is what keeps the tile
+		// under the cursor the tile that gets painted.
 		vec2 WorldToScreen(vec2 World) const
 		{
-			return {(World.x - m_Center.x) * m_Zoom + m_Viewport.x * 0.5f,
-				(World.y - m_Center.y) * m_Zoom + m_Viewport.y * 0.5f};
+			return {m_Origin.x + (World.x - m_Center.x) * m_Zoom + m_Viewport.x * 0.5f,
+				m_Origin.y + (World.y - m_Center.y) * m_Zoom + m_Viewport.y * 0.5f};
 		}
 
 		vec2 ScreenToWorld(vec2 Screen) const
 		{
-			return {(Screen.x - m_Viewport.x * 0.5f) / m_Zoom + m_Center.x,
-				(Screen.y - m_Viewport.y * 0.5f) / m_Zoom + m_Center.y};
+			return {(Screen.x - m_Origin.x - m_Viewport.x * 0.5f) / m_Zoom + m_Center.x,
+				(Screen.y - m_Origin.y - m_Viewport.y * 0.5f) / m_Zoom + m_Center.y};
 		}
 
 		// the visible world rectangle

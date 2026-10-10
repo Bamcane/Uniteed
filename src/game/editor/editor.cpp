@@ -84,6 +84,33 @@ namespace game
 		return true;
 	}
 
+	base::rect CEditor::CanvasRect(const base::vec2 &Window) const
+	{
+		// the canvas is what the toolbar, the two panels and the status bar
+		// leave over; clamped so a tiny window still gives a usable viewport
+		return base::rect::FromSize(base::vec2(PanelWidth, ToolbarHeight),
+			base::vec2(std::max(Window.x - PanelWidth * 2.0f, 1.0f), std::max(Window.y - ToolbarHeight - StatusHeight, 1.0f)));
+	}
+
+	base::rect CEditor::MapBounds() const
+	{
+		// the layers of a map normally all have the same size, but nothing
+		// forces that, so the boundary is the union of the tile layers
+		bool bAny = false;
+		base::vec2 Max;
+		for(const CGroup &Group : m_Map.m_vGroups)
+			for(const CLayer &Layer : Group.m_vLayers)
+			{
+				if(!Layer.IsTiles() || Layer.m_Width <= 0 || Layer.m_Height <= 0)
+					continue;
+				const base::vec2 LayerMax(static_cast<float>(Layer.m_Width) * TileSize, static_cast<float>(Layer.m_Height) * TileSize);
+				Max.x = bAny ? std::max(Max.x, LayerMax.x) : LayerMax.x;
+				Max.y = bAny ? std::max(Max.y, LayerMax.y) : LayerMax.y;
+				bAny = true;
+			}
+		return bAny ? base::rect(base::vec2(0.0f, 0.0f), Max) : base::rect();
+	}
+
 	CLayer *CEditor::SelectedLayer()
 	{
 		if(m_SelectedGroup < 0 || m_SelectedGroup >= static_cast<int>(m_Map.m_vGroups.size()))
@@ -355,8 +382,9 @@ namespace game
 		}
 
 		const base::vec2 Window = m_pGraphics != nullptr ? m_pGraphics->WindowSize() : base::vec2(1280.0f, 800.0f);
-		const float ZoomX = (Window.x - 600.0f) / MaxX;
-		const float ZoomY = (Window.y - 120.0f) / MaxY;
+		const base::rect Canvas = CanvasRect(Window);
+		const float ZoomX = (Canvas.Width() - 48.0f) / MaxX;
+		const float ZoomY = (Canvas.Height() - 48.0f) / MaxY;
 		m_View.m_Zoom = base::clamp(std::min(ZoomX, ZoomY), 0.05f, 4.0f);
 		m_View.m_Center = base::vec2(MaxX * 0.5f, MaxY * 0.5f);
 	}
@@ -776,14 +804,11 @@ namespace game
 		EnsureViewStates();
 		ClampSelection();
 
-		const base::vec2 Size = m_pGraphics->WindowSize();
-		constexpr float ToolbarHeight = 40.0f;
-		constexpr float PanelWidth = 268.0f;
-		constexpr float StatusHeight = 26.0f;
-		const base::rect Canvas = base::rect(
-			base::vec2(PanelWidth, ToolbarHeight),
-			base::vec2(Size.x - PanelWidth * 2.0f, Size.y - ToolbarHeight - StatusHeight));
-		m_View.m_Viewport = base::vec2(std::max(Canvas.Width(), 1.0f), std::max(Canvas.Height(), 1.0f));
+		const base::rect Canvas = CanvasRect(m_pGraphics->WindowSize());
+		// the view transform works in window coordinates: the canvas origin is
+		// what makes the drawn tile and the clicked tile the same tile
+		m_View.m_Origin = Canvas.m_TopLeft;
+		m_View.m_Viewport = base::vec2(Canvas.Width(), Canvas.Height());
 
 		HandleShortcuts();
 

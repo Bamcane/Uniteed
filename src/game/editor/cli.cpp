@@ -1,12 +1,14 @@
 #include "cli.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <map>
 
 #include "base/define.h"
 #include "base/logger.h"
+#include "base/math.h"
 #include "base/string.h"
 #include "base/time.h"
 #include "game/assets.h"
@@ -428,6 +430,40 @@ namespace game
 						std::cout << base::Format("  ok   %-6s %6zu bytes -> package round trip ok\n", "unitwp", Packed.size());
 					}
 				}
+			}
+		}
+
+		// ------------------------------------------------------- view transform
+		/*
+			The canvas is a sub rectangle of the window, so the transform has to
+			carry that origin in both directions. Without it the map is drawn
+			somewhere other than where the tiles are picked and painted, which is
+			what happened before the origin was added.
+		*/
+		{
+			Checks++;
+			base::view_transform View;
+			View.m_Origin = base::vec2(268.0f, 40.0f);
+			View.m_Viewport = base::vec2(1064.0f, 834.0f);
+			View.m_Center = base::vec2(800.0f, 800.0f);
+			View.m_Zoom = 0.4875f;
+
+			const base::vec2 Center = View.WorldToScreen(View.m_Center);
+			const base::vec2 Wanted(View.m_Origin.x + View.m_Viewport.x * 0.5f, View.m_Origin.y + View.m_Viewport.y * 0.5f);
+			bool bOk = std::abs(Center.x - Wanted.x) < 0.001f && std::abs(Center.y - Wanted.y) < 0.001f;
+			for(const base::vec2 World : {base::vec2(0.0f, 0.0f), base::vec2(1600.0f, 1600.0f), base::vec2(512.0f, 96.0f), base::vec2(-320.0f, 2048.0f)})
+			{
+				const base::vec2 Back = View.ScreenToWorld(View.WorldToScreen(World));
+				if(std::abs(Back.x - World.x) > 0.001f || std::abs(Back.y - World.y) > 0.001f)
+					bOk = false;
+			}
+
+			if(bOk)
+				std::cout << "  ok   view   the canvas transform keeps the canvas origin\n";
+			else
+			{
+				std::cout << "  FAIL view   the canvas transform loses the canvas origin\n";
+				Failures++;
 			}
 		}
 

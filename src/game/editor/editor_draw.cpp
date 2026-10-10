@@ -22,9 +22,6 @@ namespace game
 	namespace
 	{
 		constexpr float TileSize = 32.0f;
-		constexpr float ToolbarHeight = 40.0f;
-		constexpr float PanelWidth = 268.0f;
-		constexpr float StatusHeight = 26.0f;
 		constexpr float RowHeight = 22.0f;
 
 		// draws one tile of a tile sheet. The sheet is a 16 by 16 grid, so the
@@ -272,6 +269,25 @@ namespace game
 		nvgScissor(pContext, Canvas.m_TopLeft.x, Canvas.m_TopLeft.y, Canvas.Width(), Canvas.Height());
 		ui::Rect(pContext, Canvas, nvgRGB(18, 19, 23));
 
+		// The map is the rectangle the tile layers cover. Everything outside it
+		// is not part of the map, so the backdrop is dimmed there: the boundary
+		// is then visible whether or not the grid is on. It is drawn before the
+		// layers, so content that legitimately reaches past the tiles (background
+		// quads, for example) is not darkened.
+		const base::rect Bounds = MapBounds();
+		const bool bHasBounds = Bounds.Width() > 0.0f && Bounds.Height() > 0.0f;
+		const base::vec2 BoundsTopLeft = bHasBounds ? m_View.WorldToScreen(Bounds.m_TopLeft) : base::vec2();
+		const base::vec2 BoundsBottomRight = bHasBounds ? m_View.WorldToScreen(Bounds.m_BottomRight) : base::vec2();
+		if(bHasBounds)
+		{
+			nvgBeginPath(pContext);
+			nvgRect(pContext, Canvas.m_TopLeft.x, Canvas.m_TopLeft.y, Canvas.Width(), Canvas.Height());
+			nvgPathWinding(pContext, NVG_HOLE);
+			nvgRect(pContext, BoundsTopLeft.x, BoundsTopLeft.y, BoundsBottomRight.x - BoundsTopLeft.x, BoundsBottomRight.y - BoundsTopLeft.y);
+			nvgFillColor(pContext, nvgRGBA(0, 0, 0, 110));
+			nvgFill(pContext);
+		}
+
 		for(std::size_t g = 0; g < m_Map.m_vGroups.size(); g++)
 		{
 			const CGroup &Group = m_Map.m_vGroups[g];
@@ -299,23 +315,32 @@ namespace game
 			}
 		}
 
-		if(m_bGrid && m_View.m_Zoom > 0.15f)
+		// The grid belongs to the tilemap, so it is clipped to the map boundary
+		// and never suggested outside of it.
+		if(m_bGrid && bHasBounds && m_View.m_Zoom > 0.15f)
 		{
-			const base::rect World = m_View.VisibleWorld();
-			const NVGcolor Grid = nvgRGBA(255, 255, 255, 14);
-			for(float x = std::floor(World.m_TopLeft.x / TileSize) * TileSize; x < World.m_BottomRight.x; x += TileSize)
+			const base::rect Area = m_View.VisibleWorld().Intersect(Bounds);
+			if(Area.Width() > 0.0f && Area.Height() > 0.0f)
 			{
-				const base::vec2 From = m_View.WorldToScreen(base::vec2(x, World.m_TopLeft.y));
-				const base::vec2 To = m_View.WorldToScreen(base::vec2(x, World.m_BottomRight.y));
-				ui::Line(pContext, From, To, Grid);
-			}
-			for(float y = std::floor(World.m_TopLeft.y / TileSize) * TileSize; y < World.m_BottomRight.y; y += TileSize)
-			{
-				const base::vec2 From = m_View.WorldToScreen(base::vec2(World.m_TopLeft.x, y));
-				const base::vec2 To = m_View.WorldToScreen(base::vec2(World.m_BottomRight.x, y));
-				ui::Line(pContext, From, To, Grid);
+				const NVGcolor Grid = nvgRGBA(255, 255, 255, 14);
+				for(float x = std::floor(Area.m_TopLeft.x / TileSize) * TileSize; x < Area.m_BottomRight.x; x += TileSize)
+				{
+					const base::vec2 From = m_View.WorldToScreen(base::vec2(x, Area.m_TopLeft.y));
+					const base::vec2 To = m_View.WorldToScreen(base::vec2(x, Area.m_BottomRight.y));
+					ui::Line(pContext, From, To, Grid);
+				}
+				for(float y = std::floor(Area.m_TopLeft.y / TileSize) * TileSize; y < Area.m_BottomRight.y; y += TileSize)
+				{
+					const base::vec2 From = m_View.WorldToScreen(base::vec2(Area.m_TopLeft.x, y));
+					const base::vec2 To = m_View.WorldToScreen(base::vec2(Area.m_BottomRight.x, y));
+					ui::Line(pContext, From, To, Grid);
+				}
 			}
 		}
+
+		// the boundary itself, on top of the grid so it stays readable
+		if(bHasBounds)
+			ui::RectOutline(pContext, base::rect(BoundsTopLeft, BoundsBottomRight), nvgRGBA(120, 132, 154, 220), 2.0f);
 
 		DrawCursor(pContext, Canvas);
 		nvgRestore(pContext);
@@ -968,14 +993,12 @@ namespace game
 
 		ui::Rect(pContext, base::rect::FromSize(base::vec2(0.0f, 0.0f), Size), ui::Theme.m_Background);
 
-		const base::rect Canvas = base::rect(
-			base::vec2(PanelWidth, ToolbarHeight),
-			base::vec2(Size.x - PanelWidth, Size.y - StatusHeight));
+		const base::rect Canvas = CanvasRect(Size);
 		DrawMap(pContext, Canvas);
 
 		DrawToolbar(pContext, base::rect::FromSize(base::vec2(0.0f, 0.0f), base::vec2(Size.x, ToolbarHeight)));
-		DrawLayerPanel(pContext, base::rect::FromSize(base::vec2(0.0f, ToolbarHeight), base::vec2(PanelWidth, Size.y - ToolbarHeight - StatusHeight)));
-		DrawPalettePanel(pContext, base::rect::FromSize(base::vec2(Size.x - PanelWidth, ToolbarHeight), base::vec2(PanelWidth, Size.y - ToolbarHeight - StatusHeight)));
+		DrawLayerPanel(pContext, base::rect::FromSize(base::vec2(0.0f, ToolbarHeight), base::vec2(PanelWidth, Canvas.Height())));
+		DrawPalettePanel(pContext, base::rect::FromSize(base::vec2(Size.x - PanelWidth, ToolbarHeight), base::vec2(PanelWidth, Canvas.Height())));
 		DrawStatusBar(pContext, base::rect::FromSize(base::vec2(0.0f, Size.y - StatusHeight), base::vec2(Size.x, StatusHeight)));
 
 		DrawPopups(pContext);

@@ -37,6 +37,12 @@
 
 namespace game
 {
+	// the fixed metrics of the editor chrome: the toolbar on top, the layer
+	// panel on the left, the palette on the right, the status bar at the bottom
+	constexpr float ToolbarHeight = 40.0f;
+	constexpr float PanelWidth = 268.0f;
+	constexpr float StatusHeight = 26.0f;
+
 	enum class editor_tool
 	{
 		paint,
@@ -86,12 +92,17 @@ namespace game
 
 	private:
 		// ------------------------------------------------------------- helpers
-		CLayer *SelectedLayer();
-		const CLayer *SelectedLayer() const;
+		CLayer *SelectedLayer();		const CLayer *SelectedLayer() const;
 		CGroup *SelectedGroup();
 		CLayerView *ViewState(int Group, int Layer);
 		bool EnsureViewStates();
 		void ClampSelection();
+
+		// the canvas inside the window: the layout, the drawing and the hit
+		// testing all go through this one function so they cannot drift apart
+		base::rect CanvasRect(const base::vec2 &Window) const;
+		// the world rectangle the tile layers cover, which is the map boundary
+		base::rect MapBounds() const;
 
 		int TextureForImage(int ImageIndex);
 		bool SetupVersionForMap();
