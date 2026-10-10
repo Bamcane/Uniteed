@@ -1,6 +1,6 @@
 #include "editor_app.h"
 
-#include <glad/gl.h>
+#include <SDL3/SDL.h>
 
 #include "base/define.h"
 #include "base/logger.h"
@@ -14,22 +14,37 @@ namespace engine
 {
 	namespace
 	{
-		// glReadPixels hands back the image bottom up, PNG wants it top down
-		bool SaveFramebuffer(const storage::path &FileName, int Width, int Height)
+		// the renderer hands back a surface, already top down like PNG wants
+		bool SaveFramebuffer(SDL_Renderer *pRenderer, const storage::path &FileName, int Width, int Height)
 		{
-			if(Width <= 0 || Height <= 0)
+			if(pRenderer == nullptr || Width <= 0 || Height <= 0)
 				return false;
-			storage::byte_vector Pixels(static_cast<std::size_t>(Width) * Height * 4);
-			glPixelStorei(GL_PACK_ALIGNMENT, 1);
-			glReadPixels(0, 0, Width, Height, GL_RGBA, GL_UNSIGNED_BYTE, Pixels.data());
+			SDL_Surface *pSurface = SDL_RenderReadPixels(pRenderer, nullptr);
+			if(pSurface == nullptr)
+			{
+				LOG_ERROR("editor", "failed to read the frame back: %s", SDL_GetError());
+				return false;
+			}
 
-			storage::byte_vector Flipped(Pixels.size());
+			// one converter for the whole image, then a plain conversion
+			SDL_Surface *pRgba = SDL_ConvertSurface(pSurface, SDL_PIXELFORMAT_RGBA32);
+			SDL_DestroySurface(pSurface);
+			if(pRgba == nullptr)
+			{
+				LOG_ERROR("editor", "failed to convert the frame: %s", SDL_GetError());
+				return false;
+			}
+
 			const std::size_t Stride = static_cast<std::size_t>(Width) * 4;
+			storage::byte_vector Pixels(Stride * static_cast<std::size_t>(Height));
+			const std::size_t SourceStride = static_cast<std::size_t>(pRgba->pitch);
+			const auto *pSource = static_cast<const std::byte *>(pRgba->pixels);
 			for(int y = 0; y < Height; y++)
-				std::memcpy(Flipped.data() + static_cast<std::size_t>(y) * Stride,
-					Pixels.data() + static_cast<std::size_t>(Height - 1 - y) * Stride, Stride);
+				std::memcpy(Pixels.data() + static_cast<std::size_t>(y) * Stride,
+					pSource + static_cast<std::size_t>(y) * SourceStride, Stride);
+			SDL_DestroySurface(pRgba);
 
-			return base::WritePng(FileName, Width, Height, Flipped);
+			return base::WritePng(FileName, Width, Height, Pixels);
 		}
 	} // namespace
 
@@ -121,7 +136,7 @@ namespace engine
 			const base::vec2 Framebuffer = Graphics.FramebufferSize();
 			const int FramebufferWidth = static_cast<int>(Framebuffer.x);
 			const int FramebufferHeight = static_cast<int>(Framebuffer.y);
-			if(!SaveFramebuffer(ScreenshotPath, FramebufferWidth, FramebufferHeight))
+			if(!SaveFramebuffer(Graphics.Renderer(), ScreenshotPath, FramebufferWidth, FramebufferHeight))
 			{
 				LOG_ERROR("editor", "failed to write the screenshot '%s'", ScreenshotPath.c_str());
 				return 1;

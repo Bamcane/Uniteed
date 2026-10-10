@@ -1,53 +1,83 @@
 #include "input.h"
 
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 
 namespace engine
 {
-	void CInput::OnKey(int Key, int Scancode, int Action, int Mods)
+	CInput::CKeyState *CInput::Find(int Key)
 	{
-		(void)Scancode;
-		(void)Mods;
-		if(Key < 0 || Key >= MaxKeys)
+		for(CKeyState &State : m_Keys)
+			if(State.m_Key == Key)
+				return &State;
+		return nullptr;
+	}
+
+	const CInput::CKeyState *CInput::Find(int Key) const
+	{
+		for(const CKeyState &State : m_Keys)
+			if(State.m_Key == Key)
+				return &State;
+		return nullptr;
+	}
+
+	void CInput::OnKey(int Key, int Action, int Mods)
+	{
+		m_Modifiers = Mods;
+		if(Key == 0)
 			return;
-		if(Action == GLFW_PRESS)
+		if(Action == action_press)
 		{
-			if(!m_aKeys[static_cast<std::size_t>(Key)])
-				m_aKeysPressed[static_cast<std::size_t>(Key)] = true;
-			m_aKeys[static_cast<std::size_t>(Key)] = true;
+			CKeyState *pState = Find(Key);
+			if(pState == nullptr)
+			{
+				m_Keys.push_back(CKeyState{Key, true, true, false});
+				return;
+			}
+			// a repeated key down keeps the press flag from the first one
+			if(!pState->m_bDown)
+				pState->m_bPressed = true;
+			pState->m_bDown = true;
+			pState->m_bReleased = false;
 		}
-		else if(Action == GLFW_RELEASE)
+		else if(Action == action_release)
 		{
-			m_aKeys[static_cast<std::size_t>(Key)] = false;
-			m_aKeysReleased[static_cast<std::size_t>(Key)] = true;
+			if(CKeyState *pState = Find(Key))
+			{
+				pState->m_bDown = false;
+				pState->m_bReleased = true;
+			}
 		}
 	}
 
-	void CInput::OnChar(unsigned int Codepoint)
+	void CInput::OnText(const char *pText)
 	{
-		if(Codepoint >= 32 && Codepoint < 127)
-			m_TypedText.push_back(static_cast<char>(Codepoint));
+		if(pText == nullptr)
+			return;
+		m_TypedText += pText;
 	}
 
-	void CInput::OnMouseButton(int Button, int Action, int Mods)
+	void CInput::OnMouseButton(int Button, int Action)
 	{
-		(void)Mods;
 		if(Button < 0 || Button >= 8)
 			return;
-		if(Action == GLFW_PRESS)
+		if(Action == action_press)
 		{
 			if(!m_aMouse[static_cast<std::size_t>(Button)])
 				m_aMousePressed[static_cast<std::size_t>(Button)] = true;
 			m_aMouse[static_cast<std::size_t>(Button)] = true;
 		}
-		else if(Action == GLFW_RELEASE)
+		else if(Action == action_release)
 		{
 			m_aMouse[static_cast<std::size_t>(Button)] = false;
 			m_aMouseReleased[static_cast<std::size_t>(Button)] = true;
 		}
 	}
 
-	void CInput::OnCursorPos(double X, double Y) { m_MousePosition = base::vec2(static_cast<float>(X), static_cast<float>(Y)); }
+	void CInput::OnCursorPos(double X, double Y)
+	{
+		m_MousePosition = base::vec2(static_cast<float>(X), static_cast<float>(Y));
+	}
+
 	void CInput::OnScroll(double XOffset, double YOffset)
 	{
 		(void)XOffset;
@@ -56,8 +86,14 @@ namespace engine
 
 	void CInput::OnFocusLost()
 	{
-		m_aKeys.fill(false);
+		for(CKeyState &State : m_Keys)
+		{
+			State.m_bDown = false;
+			State.m_bPressed = false;
+			State.m_bReleased = false;
+		}
 		m_aMouse.fill(false);
+		m_Modifiers = 0;
 	}
 
 	void CInput::NewFrame()
@@ -68,24 +104,35 @@ namespace engine
 
 	void CInput::EndFrame()
 	{
-		m_aKeysPressed.fill(false);
-		m_aKeysReleased.fill(false);
+		for(CKeyState &State : m_Keys)
+		{
+			State.m_bPressed = false;
+			State.m_bReleased = false;
+		}
 		m_aMousePressed.fill(false);
 		m_aMouseReleased.fill(false);
 		m_PreviousMousePosition = m_MousePosition;
 	}
 
-	bool CInput::KeyDown(int Key) const { return Key >= 0 && Key < MaxKeys && m_aKeys[static_cast<std::size_t>(Key)]; }
-	bool CInput::KeyPressed(int Key) const { return Key >= 0 && Key < MaxKeys && m_aKeysPressed[static_cast<std::size_t>(Key)]; }
-	bool CInput::KeyReleased(int Key) const { return Key >= 0 && Key < MaxKeys && m_aKeysReleased[static_cast<std::size_t>(Key)]; }
-
-	bool CInput::ModifierDown(int Modifier) const
+	bool CInput::KeyDown(int Key) const
 	{
-		return KeyDown(GLFW_KEY_LEFT_CONTROL) || KeyDown(GLFW_KEY_RIGHT_CONTROL) ||
-			KeyDown(GLFW_KEY_LEFT_SHIFT) || KeyDown(GLFW_KEY_RIGHT_SHIFT) ||
-			KeyDown(GLFW_KEY_LEFT_ALT) || KeyDown(GLFW_KEY_RIGHT_ALT) ||
-			KeyDown(GLFW_KEY_LEFT_SUPER) || KeyDown(GLFW_KEY_RIGHT_SUPER);
+		const CKeyState *pState = Find(Key);
+		return pState != nullptr && pState->m_bDown;
 	}
+
+	bool CInput::KeyPressed(int Key) const
+	{
+		const CKeyState *pState = Find(Key);
+		return pState != nullptr && pState->m_bPressed;
+	}
+
+	bool CInput::KeyReleased(int Key) const
+	{
+		const CKeyState *pState = Find(Key);
+		return pState != nullptr && pState->m_bReleased;
+	}
+
+	bool CInput::ModifierDown(int Modifier) const { return (m_Modifiers & Modifier) != 0; }
 
 	bool CInput::MouseDown(mouse_button Button) const
 	{
@@ -105,5 +152,5 @@ namespace engine
 		return Index >= 0 && Index < 8 && m_aMouseReleased[static_cast<std::size_t>(Index)];
 	}
 
-	bool CInput::BackspacePressed() const { return KeyPressed(GLFW_KEY_BACKSPACE); }
+	bool CInput::BackspacePressed() const { return KeyPressed(SDLK_BACKSPACE); }
 } // namespace engine

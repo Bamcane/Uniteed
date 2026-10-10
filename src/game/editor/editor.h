@@ -3,8 +3,8 @@
 
 /*
 	The editor: a map model, a camera, a brush and the panels around it.
-	Everything is immediate mode, nanovg draws the map and the interface in the
-	same pass, so there is no retained widget tree to keep in sync.
+	Everything is immediate mode, the painter draws the map and the interface
+	in the same pass, so there is no retained widget tree to keep in sync.
 
 	Keys
 		middle / right drag   pan          wheel         zoom
@@ -126,7 +126,7 @@ namespace game
 
 		int TextureForImage(int ImageIndex);
 		// the same image with every pixel multiplied by Tint, for the layer
-		// colours: nanovg image patterns cannot modulate a texture's rgb
+		// colours: an image fill cannot modulate a texture's rgb
 		int TextureForImage(int ImageIndex, const CColor &Tint);
 		bool TintSource(int ImageIndex, std::vector<std::byte> &Pixels, int &Width, int &Height);
 		std::string TintSlotKey(std::size_t Slot) const;
@@ -162,23 +162,23 @@ namespace game
 		void ResetTextures();
 
 		// ------------------------------------------------------------- drawing
-		void DrawMap(NVGcontext *pContext, const base::rect &Canvas);
-		void DrawTileLayer(NVGcontext *pContext, const CLayer &Layer, bool Selected);
-		void DrawQuadLayer(NVGcontext *pContext, const CLayer &Layer);
-		void DrawGameLayer(NVGcontext *pContext, const base::rect &Canvas, const CLayer &Layer);
-		void DrawPhysicsLayer(NVGcontext *pContext, const base::rect &Canvas, const CLayer &Layer, int Flags);
-		void DrawCursor(NVGcontext *pContext, const base::rect &Canvas);
-		void DrawToolbar(NVGcontext *pContext, const base::rect &Area);
-		void DrawLayerPanel(NVGcontext *pContext, const base::rect &Area);
-		void DrawPalettePanel(NVGcontext *pContext, const base::rect &Area);
-		void DrawStatusBar(NVGcontext *pContext, const base::rect &Area);
-		void DrawPopups(NVGcontext *pContext);
-		void DrawOpenPopup(NVGcontext *pContext);
-		void DrawSavePopup(NVGcontext *pContext);
-		void DrawExportPopup(NVGcontext *pContext);
-		void DrawHelpPopup(NVGcontext *pContext);
-		void DrawColorPopup(NVGcontext *pContext);
-		void DrawEnvelopeBar(NVGcontext *pContext, const base::rect &Area);
+		void DrawMap(engine::painter::CPainter *pPainter, const base::rect &Canvas);
+		void DrawTileLayer(engine::painter::CPainter *pPainter, const CLayer &Layer, bool Selected);
+		void DrawQuadLayer(engine::painter::CPainter *pPainter, const CLayer &Layer);
+		void DrawGameLayer(engine::painter::CPainter *pPainter, const base::rect &Canvas, const CLayer &Layer);
+		void DrawPhysicsLayer(engine::painter::CPainter *pPainter, const base::rect &Canvas, const CLayer &Layer, int Flags);
+		void DrawCursor(engine::painter::CPainter *pPainter, const base::rect &Canvas);
+		void DrawToolbar(engine::painter::CPainter *pPainter, const base::rect &Area);
+		void DrawLayerPanel(engine::painter::CPainter *pPainter, const base::rect &Area);
+		void DrawPalettePanel(engine::painter::CPainter *pPainter, const base::rect &Area);
+		void DrawStatusBar(engine::painter::CPainter *pPainter, const base::rect &Area);
+		void DrawPopups(engine::painter::CPainter *pPainter);
+		void DrawOpenPopup(engine::painter::CPainter *pPainter);
+		void DrawSavePopup(engine::painter::CPainter *pPainter);
+		void DrawExportPopup(engine::painter::CPainter *pPainter);
+		void DrawHelpPopup(engine::painter::CPainter *pPainter);
+		void DrawColorPopup(engine::painter::CPainter *pPainter);
+		void DrawEnvelopeBar(engine::painter::CPainter *pPainter, const base::rect &Area);
 
 		// ---------------------------------------------------------------- state
 		engine::CGraphics *m_pGraphics = nullptr;

@@ -41,12 +41,12 @@ they carry the same CC-BY-SA 3.0 terms even though the rest of docs/ is MIT.
 The libraries under 'external/' are separate works with their own licenses,
 each kept in its own directory:
 
-  nanovg    (git submodule) zlib license, Copyright (c) 2013 Mikko Mononen
   libsugarx (git submodule) MIT license, see its LICENSE file
-  glad      generated loader, see the credits below
+  stb       (git submodule) public domain / MIT, see its LICENSE file
+            only stb_image.h is compiled, as the PNG decoder
 
-The system libraries linked at build time (GLFW, zlib, libzstd, OpenGL,
-OpenSSL) are not distributed with this repository.
+The system libraries linked at build time (SDL3, FreeType, HarfBuzz, zlib,
+libzstd, OpenSSL) are not distributed with this repository.
 
 ------------------------------------------------------------------------
 
@@ -56,12 +56,6 @@ The overall shape of this project is modelled on TWICE, an MIT licensed
 Teeworlds server (Copyright (c) 2025-2026 TeeMidnight): the layout of src/, the
 storage namespace and its filewriter, and the typed config module follow it.
 Written anew rather than copied, but the design is its.
-
-The glad loader under 'external/glad' is generated code (glad 2.0.8, OpenGL
-core profile, no extensions) and carries its own license in the file headers:
-gl.c and gl.h are SPDX (WTFPL OR CC0-1.0) AND Apache-2.0, khrplatform.h is the
-Khronos permissive license (Copyright (c) 2008-2018 The Khronos Group Inc.). It
-was generated once and committed here rather than generated during the build.
 
 ------------------------------------------------------------------------
 

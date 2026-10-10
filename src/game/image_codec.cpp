@@ -1,8 +1,9 @@
 /*
-	stb_image is compiled into its own translation unit with STB_IMAGE_STATIC so
-	that the copy nanovg carries (which is compiled with the public symbols) does
-	not clash with this one. Only the PNG decoder is used, and it is needed by
-	the headless build as well.
+	The PNG decoder of the project: SDL has no image loader of its own, and the
+	map resources are PNG. stb_image is compiled into its own translation unit
+	and kept to internal linkage, so only the two wrappers below have external
+	names. It is part of the headless build too, because the command line opens
+	maps and packages that carry resources.
 */
 #if defined(__GNUC__)
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -13,8 +14,7 @@
 #include <stb_image.h>
 
 /*
-	The decoder has internal linkage (STB_IMAGE_STATIC) so it cannot clash with
-	the copy nanovg compiles; these two wrappers are the public surface.
+	The decoder has internal linkage, these two wrappers are the public surface.
 */
 extern "C" unsigned char *uniteed_stbi_load_from_memory(const unsigned char *buffer, int len, int *x, int *y, int *comp, int req_comp)
 {

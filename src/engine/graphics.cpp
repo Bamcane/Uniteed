@@ -1,77 +1,25 @@
 #include "graphics.h"
 
 #include <cstdio>
-#include <cstring>
 
-#include <glad/gl.h>
-#include <GLFW/glfw3.h>
-#include <nanovg.h>
-#define NANOVG_GL3_IMPLEMENTATION
-#include <nanovg_gl.h>
+#include <SDL3/SDL.h>
 
 #include "base/logger.h"
+#include "game/assets.h"
 
 namespace engine
 {
 	namespace
 	{
-		CGraphics *g_pGraphics = nullptr;
-		int g_WindowWidth = 1280;
-		int g_WindowHeight = 800;
-
-		void GlfwErrorCallback(int Error, const char *pDescription)
-		{
-			LOG_ERROR("glfw", "error %d: %s", Error, pDescription);
-		}
-
-		void KeyCallback(GLFWwindow *pWindow, int Key, int Scancode, int Action, int Mods)
-		{
-			(void)pWindow;
-			if(g_pGraphics != nullptr)
-				g_pGraphics->Input().OnKey(Key, Scancode, Action, Mods);
-		}
-
-		void CharCallback(GLFWwindow *pWindow, unsigned int Codepoint)
-		{
-			(void)pWindow;
-			if(g_pGraphics != nullptr)
-				g_pGraphics->Input().OnChar(Codepoint);
-		}
-
-		void MouseButtonCallback(GLFWwindow *pWindow, int Button, int Action, int Mods)
-		{
-			(void)pWindow;
-			if(g_pGraphics != nullptr)
-				g_pGraphics->Input().OnMouseButton(Button, Action, Mods);
-		}
-
-		void CursorPosCallback(GLFWwindow *pWindow, double X, double Y)
-		{
-			(void)pWindow;
-			if(g_pGraphics != nullptr)
-				g_pGraphics->Input().OnCursorPos(X, Y);
-		}
-
-		void ScrollCallback(GLFWwindow *pWindow, double XOffset, double YOffset)
-		{
-			(void)pWindow;
-			if(g_pGraphics != nullptr)
-				g_pGraphics->Input().OnScroll(XOffset, YOffset);
-		}
-
-		// the window lost the focus, a key could stay stuck otherwise
-		void FocusCallback(GLFWwindow *pWindow, int Focused)
-		{
-			(void)pWindow;
-			if(g_pGraphics != nullptr && Focused == GLFW_FALSE)
-				g_pGraphics->Input().OnFocusLost();
-		}
+		// the drivers to try, in order: an accelerated one first, the software
+		// renderer as the last resort
+		const char *const g_apDrivers[] = {"opengl", "opengles2", "vulkan", "gpu", nullptr};
 
 		// asks fontconfig for the file of a font pattern, with a plain path
 		// fallback list when fontconfig is not installed
 		std::string MatchFont(const char *pPattern, const std::vector<std::string> &Fallbacks)
 		{
-			std::string Command = std::string("fc-match -f '%{file}' '") + pPattern + "' 2>/dev/null";
+			const std::string Command = std::string("fc-match -f '%{file}' '") + pPattern + "' 2>/dev/null";
 			if(std::FILE *pPipe = popen(Command.c_str(), "r"))
 			{
 				char aBuffer[1024] = {0};
@@ -91,68 +39,65 @@ namespace engine
 					return Path;
 			return {};
 		}
-
-		bool FontSupportsFallback(const std::string &Path)
-		{
-			// fontstash cannot seek inside a TrueType collection
-			return !base::EndsWith(base::ToLower(Path), ".ttc");
-		}
 	} // namespace
 
 	CGraphics::~CGraphics() { Close(); }
 
 	bool CGraphics::Init(const std::string &Title, int Width, int Height, bool Visible)
 	{
-		g_pGraphics = this;
 		// the editor may ask for the window size before the first frame
 		m_WindowSize = base::vec2(static_cast<float>(Width), static_cast<float>(Height));
+		m_FramebufferSize = m_WindowSize;
 
-		glfwSetErrorCallback(GlfwErrorCallback);
-		if(glfwInit() == GLFW_FALSE)
+		if(!SDL_Init(SDL_INIT_VIDEO))
 		{
-			LOG_ERROR("graphics", "failed to initialise GLFW");
+			LOG_ERROR("graphics", "failed to initialise SDL: %s", SDL_GetError());
 			return false;
 		}
+		LOG_INFO("graphics", "SDL %d.%d.%d", SDL_VERSIONNUM_MAJOR(SDL_GetVersion()),
+			SDL_VERSIONNUM_MINOR(SDL_GetVersion()), SDL_VERSIONNUM_MICRO(SDL_GetVersion()));
 
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-		glfwWindowHint(GLFW_DEPTH_BITS, 0);
-		glfwWindowHint(GLFW_STENCIL_BITS, 8);
-		glfwWindowHint(GLFW_SAMPLES, 0);
-		glfwWindowHint(GLFW_VISIBLE, Visible ? GLFW_TRUE : GLFW_FALSE);
+		SDL_WindowFlags Flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+		if(!Visible)
+			Flags |= SDL_WINDOW_HIDDEN;
 
-		m_pWindow = glfwCreateWindow(Width, Height, Title.c_str(), nullptr, nullptr);
+		m_pWindow = SDL_CreateWindow(Title.c_str(), Width, Height, Flags);
 		if(m_pWindow == nullptr)
 		{
-			LOG_ERROR("graphics", "failed to create a window with an OpenGL 3.3 core context");
-			glfwTerminate();
+			LOG_ERROR("graphics", "failed to create the window: %s", SDL_GetError());
+			SDL_Quit();
 			return false;
 		}
 
-		glfwMakeContextCurrent(m_pWindow);
-		glfwSwapInterval(1);
-		// below this the two 268px side panels would eat the canvas; it is the
-		// same lower bound the stored window size is clamped to
-		glfwSetWindowSizeLimits(m_pWindow, 640, 480, GLFW_DONT_CARE, GLFW_DONT_CARE);
+		// below this the two side panels would eat the canvas; it is the same
+		// lower bound the stored window size is clamped to
+		SDL_SetWindowMinimumSize(m_pWindow, 640, 480);
+		// the name fields read what the user types
+		SDL_StartTextInput(m_pWindow);
 
-		if(gladLoadGL(reinterpret_cast<GLADloadfunc>(glfwGetProcAddress)) == 0)
+		// the driver list is handed to SDL as a comma separated preference, so
+		// a machine without one of them still gets a window
+		std::string DriverList;
+		for(int i = 0; g_apDrivers[i] != nullptr; i++)
 		{
-			LOG_ERROR("graphics", "failed to load the OpenGL functions");
+			if(!DriverList.empty())
+				DriverList += ",";
+			DriverList += g_apDrivers[i];
+		}
+		m_pRenderer = SDL_CreateRenderer(m_pWindow, DriverList.c_str());
+		if(m_pRenderer == nullptr)
+		{
+			LOG_WARN("graphics", "no accelerated renderer worked, using the software one");
+			m_pRenderer = SDL_CreateRenderer(m_pWindow, SDL_SOFTWARE_RENDERER);
+		}
+		if(m_pRenderer == nullptr)
+		{
+			LOG_ERROR("graphics", "failed to create a renderer: %s", SDL_GetError());
 			Close();
 			return false;
 		}
-		LOG_INFO("graphics", "OpenGL %s (%s)", reinterpret_cast<const char *>(glGetString(GL_VERSION)),
-			reinterpret_cast<const char *>(glGetString(GL_RENDERER)));
-
-		m_pContext = nvgCreateGL3(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
-		if(m_pContext == nullptr)
-		{
-			LOG_ERROR("graphics", "failed to create the nanovg context");
-			Close();
-			return false;
-		}
+		LOG_INFO("graphics", "renderer '%s'", SDL_GetRendererName(m_pRenderer));
+		SDL_SetRenderVSync(m_pRenderer, 1);
 
 		// the system default sans serif, plus a CJK fallback for the labels
 		const std::string FontPath = MatchFont("sans", {
@@ -162,77 +107,87 @@ namespace engine
 			"/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
 			"/usr/share/fonts/TTF/Hack-Regular.ttf",
 		});
-		if(!FontPath.empty())
-		{
-			m_Font = nvgCreateFont(m_pContext, "sans", FontPath.c_str());
-			m_FontPath = FontPath;
-		}
-		if(m_Font < 0)
-		{
-			LOG_WARN("graphics", "no usable system font found, falling back to nanovg's built in font");
-			m_Font = nvgCreateFont(m_pContext, "sans", "");
-			m_FontPath.clear();
-		}
-
 		const std::string BoldPath = MatchFont("sans:bold", {
 			"/usr/share/fonts/noto/NotoSans-Bold.ttf",
 			"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 			"/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
 			"/usr/share/fonts/TTF/Hack-Bold.ttf",
 		});
-		m_FontBold = (!BoldPath.empty()) ? nvgCreateFont(m_pContext, "sans-bold", BoldPath.c_str()) : -1;
-		if(m_FontBold < 0)
-			m_FontBold = m_Font;
-
 		const std::string CjkPath = MatchFont("sans:lang=zh-cn", {
 			"/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
 			"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 		});
-		if(!CjkPath.empty() && FontSupportsFallback(CjkPath))
+		m_FontPath = FontPath;
+		if(!m_Text.Init(FontPath, BoldPath, CjkPath))
 		{
-			const int Cjk = nvgCreateFont(m_pContext, "sans-cjk", CjkPath.c_str());
-			if(Cjk >= 0)
-			{
-				nvgAddFallbackFontId(m_pContext, m_Font, Cjk);
-				if(m_FontBold != m_Font)
-					nvgAddFallbackFontId(m_pContext, m_FontBold, Cjk);
-				LOG_INFO("graphics", "CJK fallback font: %s", CjkPath.c_str());
-			}
+			LOG_ERROR("graphics", "failed to initialise the text engine");
+			Close();
+			return false;
 		}
+		if(!CjkPath.empty())
+			LOG_INFO("graphics", "CJK fallback font: %s", CjkPath.c_str());
 
-		glfwSetKeyCallback(m_pWindow, KeyCallback);
-		glfwSetCharCallback(m_pWindow, CharCallback);
-		glfwSetMouseButtonCallback(m_pWindow, MouseButtonCallback);
-		glfwSetCursorPosCallback(m_pWindow, CursorPosCallback);
-		glfwSetScrollCallback(m_pWindow, ScrollCallback);
-		glfwSetWindowFocusCallback(m_pWindow, FocusCallback);
+		m_Painter.Init(m_pRenderer, &m_Text);
+		m_Painter.SetTextureLookup(&CGraphics::LookupTextureCallback, this);
 
-		LOG_INFO("graphics", "window created, font '%s'", m_FontPath.empty() ? "(built in)" : m_FontPath.c_str());
+		LOG_INFO("graphics", "window created, font '%s'", m_FontPath.empty() ? "(none)" : m_FontPath.c_str());
 		return true;
 	}
 
 	void CGraphics::Close()
 	{
 		ForgetTextures();
-		if(m_pContext != nullptr)
+		m_Painter.Close();
+		m_Text.Close();
+		if(m_pRenderer != nullptr)
 		{
-			nvgDeleteGL3(m_pContext);
-			m_pContext = nullptr;
+			SDL_DestroyRenderer(m_pRenderer);
+			m_pRenderer = nullptr;
 		}
 		if(m_pWindow != nullptr)
 		{
-			glfwDestroyWindow(m_pWindow);
+			SDL_DestroyWindow(m_pWindow);
 			m_pWindow = nullptr;
-			glfwTerminate();
+			SDL_Quit();
 		}
-		g_pGraphics = nullptr;
 	}
 
-	bool CGraphics::ShouldQuit() const { return m_pWindow == nullptr || glfwWindowShouldClose(m_pWindow) == GLFW_TRUE; }
-	void CGraphics::RequestQuit()
+	bool CGraphics::ShouldQuit() const { return m_bShouldQuit || m_pWindow == nullptr; }
+	void CGraphics::RequestQuit() { m_bShouldQuit = true; }
+
+	void CGraphics::HandleEvent(const SDL_Event &Event)
 	{
-		if(m_pWindow != nullptr)
-			glfwSetWindowShouldClose(m_pWindow, GLFW_TRUE);
+		switch(Event.type)
+		{
+		case SDL_EVENT_QUIT:
+			m_bShouldQuit = true;
+			break;
+		case SDL_EVENT_KEY_DOWN:
+		case SDL_EVENT_KEY_UP:
+			m_Input.OnKey(static_cast<int>(Event.key.key),
+				Event.key.down ? CInput::action_press : CInput::action_release, Event.key.mod);
+			break;
+		case SDL_EVENT_TEXT_INPUT:
+			m_Input.OnText(Event.text.text);
+			break;
+		case SDL_EVENT_MOUSE_BUTTON_DOWN:
+		case SDL_EVENT_MOUSE_BUTTON_UP:
+			m_Input.OnMouseButton(Event.button.button,
+				Event.button.down ? CInput::action_press : CInput::action_release);
+			break;
+		case SDL_EVENT_MOUSE_MOTION:
+			m_Input.OnCursorPos(Event.motion.x, Event.motion.y);
+			break;
+		case SDL_EVENT_MOUSE_WHEEL:
+			m_Input.OnScroll(Event.wheel.x, Event.wheel.y);
+			break;
+		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			// a key could stay stuck otherwise
+			m_Input.OnFocusLost();
+			break;
+		default:
+			break;
+		}
 	}
 
 	void CGraphics::BeginFrame(bool PumpEvents)
@@ -241,15 +196,21 @@ namespace engine
 		// state read below is exactly this frame's input
 		m_Input.NewFrame();
 		if(PumpEvents)
-			glfwPollEvents();
-		glfwGetWindowSize(m_pWindow, &g_WindowWidth, &g_WindowHeight);
+		{
+			SDL_Event Event;
+			while(SDL_PollEvent(&Event))
+				HandleEvent(Event);
+		}
+
+		int WindowWidth = 0, WindowHeight = 0;
+		SDL_GetWindowSize(m_pWindow, &WindowWidth, &WindowHeight);
 		int FramebufferWidth = 0, FramebufferHeight = 0;
-		glfwGetFramebufferSize(m_pWindow, &FramebufferWidth, &FramebufferHeight);
-		m_PixelRatio = (g_WindowWidth > 0) ? static_cast<float>(FramebufferWidth) / static_cast<float>(g_WindowWidth) : 1.0f;
+		SDL_GetWindowSizeInPixels(m_pWindow, &FramebufferWidth, &FramebufferHeight);
+		m_PixelRatio = (WindowWidth > 0) ? static_cast<float>(FramebufferWidth) / static_cast<float>(WindowWidth) : 1.0f;
 		if(m_PixelRatio <= 0.0f)
 			m_PixelRatio = 1.0f;
 
-		const base::vec2 WindowSize(static_cast<float>(g_WindowWidth), static_cast<float>(g_WindowHeight));
+		const base::vec2 WindowSize(static_cast<float>(WindowWidth), static_cast<float>(WindowHeight));
 		const base::vec2 FramebufferSize(static_cast<float>(FramebufferWidth), static_cast<float>(FramebufferHeight));
 		if(WindowSize.x != m_WindowSize.x || WindowSize.y != m_WindowSize.y ||
 			FramebufferSize.x != m_FramebufferSize.x || FramebufferSize.y != m_FramebufferSize.y)
@@ -260,30 +221,31 @@ namespace engine
 			m_FramebufferSize = FramebufferSize;
 		}
 
-		// OpenGL keeps the viewport it was handed when the context was created
-		// and does not follow the window, and nanovg only records the logical
-		// view size without touching it either (glnvg__renderViewport). Without
-		// this call a resized window would keep drawing into the old rectangle,
-		// at the old size, leaving everything outside it undefined.
-		if(FramebufferWidth > 0 && FramebufferHeight > 0)
-		{
-			glViewport(0, 0, FramebufferWidth, FramebufferHeight);
-			glClearColor(m_ClearColor[0], m_ClearColor[1], m_ClearColor[2], 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
-		}
+		SDL_SetRenderDrawColor(m_pRenderer, static_cast<Uint8>(m_ClearColor[0] * 255.0f),
+			static_cast<Uint8>(m_ClearColor[1] * 255.0f), static_cast<Uint8>(m_ClearColor[2] * 255.0f), 255);
+		SDL_RenderClear(m_pRenderer);
+
+		m_Painter.BeginFrame(m_WindowSize.x, m_WindowSize.y);
 	}
 
-	void CGraphics::EndFrame(bool SwapBuffers)
+	void CGraphics::EndFrame(bool Present)
 	{
-		if(SwapBuffers)
-			glfwSwapBuffers(m_pWindow);
+		m_Painter.EndFrame();
+		if(Present)
+			SDL_RenderPresent(m_pRenderer);
 		m_Input.EndFrame();
 	}
 
 	void CGraphics::SetWindowTitle(const std::string &Title)
 	{
 		if(m_pWindow != nullptr)
-			glfwSetWindowTitle(m_pWindow, Title.c_str());
+			SDL_SetWindowTitle(m_pWindow, Title.c_str());
+	}
+
+	void CGraphics::SetWindowSize(int Width, int Height)
+	{
+		if(m_pWindow != nullptr)
+			SDL_SetWindowSize(m_pWindow, Width, Height);
 	}
 
 	void CGraphics::SetClearColor(float Red, float Green, float Blue)
@@ -293,6 +255,15 @@ namespace engine
 		m_ClearColor[2] = Blue;
 	}
 
+	SDL_Texture *CGraphics::LookupTextureCallback(void *pUser, int Texture)
+	{
+		// the handle is an index into the graphics texture table
+		auto *pGraphics = static_cast<CGraphics *>(pUser);
+		if(pGraphics == nullptr || Texture < 1 || Texture > static_cast<int>(pGraphics->m_vTextureHandles.size()))
+			return nullptr;
+		return pGraphics->m_vTextureHandles[static_cast<std::size_t>(Texture) - 1];
+	}
+
 	int CGraphics::Texture(const std::string &Key) const
 	{
 		if(!m_Textures.contains(Key))
@@ -300,84 +271,132 @@ namespace engine
 		return m_Textures.at(Key).value();
 	}
 
+	int CGraphics::RegisterTexture(const std::string &Key, SDL_Texture *pTexture, base::vec2 Size)
+	{
+		// handles start at 1; 0 and -1 are the "nothing" values the callers use
+		m_vTextureHandles.push_back(pTexture);
+		const int Handle = static_cast<int>(m_vTextureHandles.size());
+		m_Textures.emplace(Key, Handle);
+		m_TextureSizes.emplace(Key, Size);
+		return Handle;
+	}
+
 	int CGraphics::LoadTextureFile(const std::string &Key, const storage::path &File)
 	{
 		if(m_Textures.contains(Key))
-			return m_Textures.at(Key).value();
-		const int Handle = nvgCreateImage(m_pContext, File.string().c_str(), NVG_IMAGE_NEAREST);
-		if(Handle <= 0)
+			return Texture(Key);
+
+		// SDL has no image loader of its own, so the file is read and decoded
+		// with the same PNG decoder the map resources go through
+		const std::optional<storage::byte_vector> Bytes = storage::read(File);
+		if(!Bytes.has_value())
 		{
-			LOG_WARN("graphics", "failed to load the texture '%s'", File.string().c_str());
+			LOG_WARN("graphics", "failed to read the texture '%s'", File.string().c_str());
 			m_Textures.emplace(Key, -1);
 			return -1;
 		}
-		m_Textures.emplace(Key, Handle);
-		LOG_TRACE("graphics", "loaded texture '%s' from '%s'", Key.c_str(), File.string().c_str());
+		const std::optional<game::CDecodedImage> Decoded = game::DecodePng(*Bytes);
+		if(!Decoded.has_value())
+		{
+			LOG_WARN("graphics", "failed to decode the texture '%s'", File.string().c_str());
+			m_Textures.emplace(Key, -1);
+			return -1;
+		}
+
+		const int Handle = CreateTextureRGBA(Key, Decoded->m_Width, Decoded->m_Height, Decoded->m_Pixels);
+		if(Handle > 0)
+			LOG_TRACE("graphics", "loaded texture '%s' from '%s' (%dx%d)", Key.c_str(), File.string().c_str(),
+				Decoded->m_Width, Decoded->m_Height);
 		return Handle;
 	}
 
 	int CGraphics::CreateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels)
 	{
 		if(m_Textures.contains(Key))
-			return m_Textures.at(Key).value();
-		if(Width <= 0 || Height <= 0 || Pixels.empty())
+			return Texture(Key);
+		if(Width <= 0 || Height <= 0 || Pixels.size() < static_cast<std::size_t>(Width) * Height * 4)
 			return -1;
-		const int Handle = nvgCreateImageRGBA(m_pContext, Width, Height, NVG_IMAGE_NEAREST,
-			reinterpret_cast<const unsigned char *>(Pixels.data()));
-		if(Handle <= 0)
+
+		SDL_Texture *pTexture = SDL_CreateTexture(m_pRenderer, SDL_PIXELFORMAT_ABGR8888,
+			SDL_TEXTUREACCESS_STATIC, Width, Height);
+		if(pTexture == nullptr)
 		{
-			LOG_WARN("graphics", "failed to create the texture '%s'", Key.c_str());
+			LOG_WARN("graphics", "failed to create the texture '%s': %s", Key.c_str(), SDL_GetError());
 			m_Textures.emplace(Key, -1);
 			return -1;
 		}
-		m_Textures.emplace(Key, Handle);
-		return Handle;
+		SDL_SetTextureScaleMode(pTexture, SDL_SCALEMODE_NEAREST);
+		SDL_SetTextureBlendMode(pTexture, SDL_BLENDMODE_BLEND);
+		// the decoded resources are tightly packed RGBA, which is what the
+		// renderer wants for ABGR8888 on a little endian machine
+		SDL_UpdateTexture(pTexture, nullptr, Pixels.data(), Width * 4);
+
+		return RegisterTexture(Key, pTexture, base::vec2(static_cast<float>(Width), static_cast<float>(Height)));
 	}
 
 	bool CGraphics::UpdateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels)
 	{
 		if(!m_Textures.contains(Key))
 			return false;
-		const int Handle = m_Textures.at(Key).value();
-		if(Handle <= 0 || Width <= 0 || Height <= 0 || Pixels.empty())
+		SDL_Texture *pTexture = LookupTextureCallback(this, m_Textures.at(Key).value());
+		if(pTexture == nullptr || Width <= 0 || Height <= 0)
+			return false;
+		if(Pixels.size() < static_cast<std::size_t>(Width) * Height * 4)
 			return false;
 
-		int ExistingWidth = 0, ExistingHeight = 0;
-		nvgImageSize(m_pContext, Handle, &ExistingWidth, &ExistingHeight);
-		if(ExistingWidth != Width || ExistingHeight != Height)
+		float ExistingWidth = 0.0f, ExistingHeight = 0.0f;
+		if(!SDL_GetTextureSize(pTexture, &ExistingWidth, &ExistingHeight))
+			return false;
+		if(static_cast<int>(ExistingWidth) != Width || static_cast<int>(ExistingHeight) != Height)
 			return false;
 
-		nvgUpdateImage(m_pContext, Handle, reinterpret_cast<const unsigned char *>(Pixels.data()));
+		SDL_UpdateTexture(pTexture, nullptr, Pixels.data(), Width * 4);
 		return true;
 	}
 
 	void CGraphics::ForgetTexture(const std::string &Key)
 	{
-		if(m_pContext == nullptr || !m_Textures.contains(Key))
+		if(!m_Textures.contains(Key))
 			return;
+		// the handle slot stays in place: dropping it would renumber every
+		// handle after it, which the editor is still holding
 		const int Handle = m_Textures.at(Key).value();
-		if(Handle > 0)
-			nvgDeleteImage(m_pContext, Handle);
+		if(Handle >= 1 && Handle <= static_cast<int>(m_vTextureHandles.size()))
+		{
+			if(SDL_Texture *pTexture = m_vTextureHandles[static_cast<std::size_t>(Handle) - 1])
+				SDL_DestroyTexture(pTexture);
+			m_vTextureHandles[static_cast<std::size_t>(Handle) - 1] = nullptr;
+		}
 		m_Textures.lazy_remove(Key);
+		if(m_TextureSizes.contains(Key))
+			m_TextureSizes.lazy_remove(Key);
 	}
 
 	void CGraphics::ForgetTextures()
 	{
-		if(m_pContext == nullptr)
-			return;
-		for(auto &Entry : m_Textures)
-		{
-			const int Handle = Entry.value();
-			if(Handle > 0)
-				nvgDeleteImage(m_pContext, Handle);
-		}
+		for(SDL_Texture *pTexture : m_vTextureHandles)
+			if(pTexture != nullptr)
+				SDL_DestroyTexture(pTexture);
+		m_vTextureHandles.clear();
 		m_Textures.clear();
+		m_TextureSizes.clear();
+	}
+
+	bool CGraphics::TextureSize(int Texture, int &Width, int &Height) const
+	{
+		SDL_Texture *pTexture = LookupTextureCallback(const_cast<CGraphics *>(this), Texture);
+		if(pTexture == nullptr)
+			return false;
+		float TextureWidth = 0.0f, TextureHeight = 0.0f;
+		if(!SDL_GetTextureSize(pTexture, &TextureWidth, &TextureHeight))
+			return false;
+		Width = static_cast<int>(TextureWidth);
+		Height = static_cast<int>(TextureHeight);
+		return true;
 	}
 
 	float CGraphics::TextWidth(float Size, const std::string &Text, bool Bold) const
 	{
-		nvgFontFaceId(m_pContext, Bold ? m_FontBold : m_Font);
-		nvgFontSize(m_pContext, Size);
-		return nvgTextBounds(m_pContext, 0.0f, 0.0f, Text.c_str(), nullptr, nullptr);
+		return const_cast<CTextEngine &>(m_Text).Layout(Bold ? m_FontBold : m_Font, Size, Text, nullptr);
 	}
 } // namespace engine

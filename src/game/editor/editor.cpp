@@ -4,7 +4,7 @@
 #include <cstring>
 #include <map>
 
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL_keycode.h>
 
 #include <cmath>
 
@@ -17,6 +17,8 @@
 
 namespace game
 {
+	namespace ui = engine::ui;
+
 	namespace
 	{
 		constexpr float TileSize = 32.0f;
@@ -49,19 +51,19 @@ namespace game
 			{ENTITY_DOOR, "door"},
 		};
 
-		NVGcolor FlagColor(int LayerFlags)
+		ui::CColor FlagColor(int LayerFlags)
 		{
 			if(LayerFlags & TILESLAYERFLAG_TELE)
-				return nvgRGBA(120, 200, 255, 90);
+				return ui::RGBA(120, 200, 255, 90);
 			if(LayerFlags & TILESLAYERFLAG_SPEEDUP)
-				return nvgRGBA(255, 210, 90, 90);
+				return ui::RGBA(255, 210, 90, 90);
 			if(LayerFlags & TILESLAYERFLAG_SWITCH)
-				return nvgRGBA(190, 130, 255, 90);
+				return ui::RGBA(190, 130, 255, 90);
 			if(LayerFlags & TILESLAYERFLAG_TUNE)
-				return nvgRGBA(255, 130, 200, 90);
+				return ui::RGBA(255, 130, 200, 90);
 			if(LayerFlags & TILESLAYERFLAG_FRONT)
-				return nvgRGBA(140, 255, 160, 80);
-			return nvgRGBA(160, 160, 160, 80);
+				return ui::RGBA(140, 255, 160, 80);
+			return ui::RGBA(160, 160, 160, 80);
 		}
 
 		const char *ToolName(editor_tool Tool)
@@ -438,7 +440,7 @@ namespace game
 
 	/*
 		The layer colour multiplies the texture, exactly like the reference does
-		it with vertex colours. A nanovg image pattern can only be faded by a
+		it with vertex colours. An image fill can only be faded by a
 		scalar alpha, so a coloured tint needs a copy of the image whose rgb is
 		already multiplied; those copies are kept in a small, fixed set of slots
 		per image, because a colour envelope animates and an unbounded texture
@@ -929,13 +931,13 @@ namespace game
 	void CEditor::HandleShortcuts()
 	{
 		engine::CInput &Input = m_pGraphics->Input();
-		const bool Ctrl = Input.KeyDown(GLFW_KEY_LEFT_CONTROL) || Input.KeyDown(GLFW_KEY_RIGHT_CONTROL);
+		const bool Ctrl = Input.KeyDown(SDLK_LCTRL) || Input.KeyDown(SDLK_RCTRL);
 
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_Q))
+		if(Ctrl && Input.KeyPressed(SDLK_Q))
 			m_pGraphics->RequestQuit();
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_N))
+		if(Ctrl && Input.KeyPressed(SDLK_N))
 			NewMap(50, 50);
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_O))
+		if(Ctrl && Input.KeyPressed(SDLK_O))
 		{
 			m_bShowOpen = true;
 			m_BrowserSelected = 0;
@@ -953,20 +955,20 @@ namespace game
 			for(const storage::path &File : storage::list_directory(std::filesystem::current_path(), ".unitwp"))
 				m_vBrowserEntries.push_back(File.string());
 		}
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_S))
+		if(Ctrl && Input.KeyPressed(SDLK_S))
 		{
 			std::string Path = m_SourcePath;
 			if(!base::EndsWith(Path, CUnitwpPackage::Extension))
 				Path = storage::path(Path.empty() ? "untitled" : Path).stem().string() + CUnitwpPackage::Extension;
 			SavePackage(Path);
 		}
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_E))
+		if(Ctrl && Input.KeyPressed(SDLK_E))
 			m_bShowExport = true;
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_Z))
+		if(Ctrl && Input.KeyPressed(SDLK_Z))
 			Undo();
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_Y))
+		if(Ctrl && Input.KeyPressed(SDLK_Y))
 			Redo();
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_L))
+		if(Ctrl && Input.KeyPressed(SDLK_L))
 		{
 			if(CGroup *pGroup = SelectedGroup())
 			{
@@ -978,7 +980,7 @@ namespace game
 				SetStatus("added a tile layer");
 			}
 		}
-		if(Ctrl && Input.KeyPressed(GLFW_KEY_G))
+		if(Ctrl && Input.KeyPressed(SDLK_G))
 		{
 			CGroup &Group = m_Map.NewGroup();
 			Group.m_Name = "Group";
@@ -989,9 +991,9 @@ namespace game
 			m_Dirty = true;
 			SetStatus("added a group");
 		}
-		if(Input.KeyPressed(GLFW_KEY_DELETE) || Input.KeyPressed(GLFW_KEY_BACKSPACE))
+		if(Input.KeyPressed(SDLK_DELETE) || Input.KeyPressed(SDLK_BACKSPACE))
 		{
-			const bool WholeGroup = Input.KeyDown(GLFW_KEY_LEFT_SHIFT) || Input.KeyDown(GLFW_KEY_RIGHT_SHIFT);
+			const bool WholeGroup = Input.KeyDown(SDLK_LSHIFT) || Input.KeyDown(SDLK_RSHIFT);
 			if(WholeGroup)
 			{
 				if(m_Map.m_vGroups.size() > 1 && m_SelectedGroup < static_cast<int>(m_Map.m_vGroups.size()))
@@ -1017,61 +1019,61 @@ namespace game
 				}
 			}
 		}
-		if(Input.KeyPressed(GLFW_KEY_F))
+		if(Input.KeyPressed(SDLK_F))
 			FitToMap();
-		if(Input.KeyPressed(GLFW_KEY_G))
+		if(Input.KeyPressed(SDLK_G))
 			m_bGrid = !m_bGrid;
 		// the envelope preview clock
-		if(Input.KeyPressed(GLFW_KEY_SPACE))
+		if(Input.KeyPressed(SDLK_SPACE))
 		{
 			m_bEnvelopePlaying = !m_bEnvelopePlaying;
 			SetStatus(m_bEnvelopePlaying ? "envelope preview running" : "envelope preview paused");
 		}
-		if(Input.KeyPressed(GLFW_KEY_MINUS))
+		if(Input.KeyPressed(SDLK_MINUS))
 		{
 			m_EnvelopeSpeed = m_EnvelopeSpeed <= 0.25f ? 0.25f : m_EnvelopeSpeed * 0.5f;
 			SetStatus(base::Format("envelope speed %.2gx", m_EnvelopeSpeed));
 		}
-		if(Input.KeyPressed(GLFW_KEY_EQUAL))
+		if(Input.KeyPressed(SDLK_EQUALS))
 		{
 			m_EnvelopeSpeed = std::min(8.0f, m_EnvelopeSpeed * 2.0f);
 			SetStatus(base::Format("envelope speed %.2gx", m_EnvelopeSpeed));
 		}
 		// the colour picker for the selected tile layer or quads
-		if(Input.KeyPressed(GLFW_KEY_C))
+		if(Input.KeyPressed(SDLK_C))
 		{
 			if(!OpenColorPicker())
 				SetStatus("nothing to colour: select a tile layer or a quad");
 		}
-		if(Input.KeyPressed(GLFW_KEY_1))
+		if(Input.KeyPressed(SDLK_1))
 			m_Tool = editor_tool::paint;
-		if(Input.KeyPressed(GLFW_KEY_2))
+		if(Input.KeyPressed(SDLK_2))
 			m_Tool = editor_tool::erase;
-		if(Input.KeyPressed(GLFW_KEY_3))
+		if(Input.KeyPressed(SDLK_3))
 			m_Tool = editor_tool::pick;
-		if(Input.KeyPressed(GLFW_KEY_4))
+		if(Input.KeyPressed(SDLK_4))
 			m_BrushSize = 1;
-		if(Input.KeyPressed(GLFW_KEY_5))
+		if(Input.KeyPressed(SDLK_5))
 			m_BrushSize = 2;
-		if(Input.KeyPressed(GLFW_KEY_6))
+		if(Input.KeyPressed(SDLK_6))
 			m_BrushSize = 4;
-		if(Input.KeyPressed(GLFW_KEY_7))
+		if(Input.KeyPressed(SDLK_7))
 			m_BrushSize = 8;
-		if(Input.KeyPressed(GLFW_KEY_LEFT_BRACKET))
+		if(Input.KeyPressed(SDLK_LEFTBRACKET))
 			m_BrushSize = std::max(1, m_BrushSize / 2);
-		if(Input.KeyPressed(GLFW_KEY_RIGHT_BRACKET))
+		if(Input.KeyPressed(SDLK_RIGHTBRACKET))
 			m_BrushSize = std::min(16, m_BrushSize * 2);
-		if(Input.KeyPressed(GLFW_KEY_H))
+		if(Input.KeyPressed(SDLK_H))
 			m_BrushFlags ^= TILEFLAG_HFLIP;
-		if(Input.KeyPressed(GLFW_KEY_J))
+		if(Input.KeyPressed(SDLK_J))
 			m_BrushFlags ^= TILEFLAG_VFLIP;
-		if(Input.KeyPressed(GLFW_KEY_K))
+		if(Input.KeyPressed(SDLK_K))
 			m_BrushFlags ^= TILEFLAG_ROTATE;
-		if(Input.KeyPressed(GLFW_KEY_Q))
+		if(Input.KeyPressed(SDLK_Q))
 			m_BrushTile = (m_BrushTile + 255) % 256;
-		if(Input.KeyPressed(GLFW_KEY_E))
+		if(Input.KeyPressed(SDLK_E))
 			m_BrushTile = (m_BrushTile + 1) % 256;
-		if(Input.KeyPressed(GLFW_KEY_P))
+		if(Input.KeyPressed(SDLK_P))
 		{
 			if(CLayer *pLayer = SelectedLayer())
 				if(pLayer->IsTiles())
@@ -1095,7 +1097,7 @@ namespace game
 
 		// panning with the middle or the right button, zoom with the wheel
 		if(bInCanvas && (Input.MouseDown(engine::CInput::mouse_button::middle) ||
-						   (Input.MouseDown(engine::CInput::mouse_button::right) && Input.ModifierDown(GLFW_KEY_LEFT_ALT))))
+						   (Input.MouseDown(engine::CInput::mouse_button::right) && Input.ModifierDown(SDLK_LALT))))
 		{
 			const base::vec2 Delta = Input.MouseDelta();
 			m_View.m_Center -= Delta / m_View.m_Zoom;
@@ -1110,13 +1112,13 @@ namespace game
 
 		// keyboard panning
 		const float PanSpeed = 600.0f / m_View.m_Zoom * (1.0f / 60.0f);
-		if(Input.KeyDown(GLFW_KEY_A) || Input.KeyDown(GLFW_KEY_LEFT))
+		if(Input.KeyDown(SDLK_A) || Input.KeyDown(SDLK_LEFT))
 			m_View.m_Center.x -= PanSpeed;
-		if(Input.KeyDown(GLFW_KEY_D) || Input.KeyDown(GLFW_KEY_RIGHT))
+		if(Input.KeyDown(SDLK_D) || Input.KeyDown(SDLK_RIGHT))
 			m_View.m_Center.x += PanSpeed;
-		if(Input.KeyDown(GLFW_KEY_W) || Input.KeyDown(GLFW_KEY_UP))
+		if(Input.KeyDown(SDLK_W) || Input.KeyDown(SDLK_UP))
 			m_View.m_Center.y -= PanSpeed;
-		if(Input.KeyDown(GLFW_KEY_S) || Input.KeyDown(GLFW_KEY_DOWN))
+		if(Input.KeyDown(SDLK_S) || Input.KeyDown(SDLK_DOWN))
 			m_View.m_Center.y += PanSpeed;
 
 		if(bInCanvas)
@@ -1131,7 +1133,7 @@ namespace game
 		}
 
 		// right click picks the tile under the cursor
-		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::right) && !Input.ModifierDown(GLFW_KEY_LEFT_ALT))
+		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::right) && !Input.ModifierDown(SDLK_LALT))
 		{
 			if(const CLayer *pLayer = SelectedLayer())
 				if(pLayer->IsTiles())
@@ -1152,7 +1154,7 @@ namespace game
 		UpdateQuadHover(bInCanvas);
 		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::left) && IsQuadLayerSelected())
 		{
-			const bool bAdd = Input.ModifierDown(GLFW_KEY_LEFT_CONTROL) || Input.ModifierDown(GLFW_KEY_RIGHT_CONTROL);
+			const bool bAdd = Input.ModifierDown(SDLK_LCTRL) || Input.ModifierDown(SDLK_RCTRL);
 			if(m_QuadHover < 0)
 			{
 				if(!bAdd && !m_vSelectedQuads.empty())
@@ -1243,7 +1245,7 @@ namespace game
 	void CEditor::Update()
 	{
 		// a minimized window can report itself as empty; there is nothing to lay
-		// out or hit test then, and nanovg must not be handed a zero size
+		// out or hit test then, and the painter must not be handed a zero size
 		if(m_pGraphics != nullptr && (m_pGraphics->WindowSize().x < 1.0f || m_pGraphics->WindowSize().y < 1.0f))
 			return;
 

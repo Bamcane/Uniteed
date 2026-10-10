@@ -1,6 +1,6 @@
-[submodule "external/nanovg"]
-	path = external/nanovg
-	url = https://github.com/memononen/nanovg.git
 [submodule "external/libsugarx"]
 	path = external/libsugarx
 	url = https://github.com/Bamcane/libsugarx.git
+[submodule "external/stb"]
+	path = external/stb
+	url = https://github.com/nothings/stb.git

@@ -5,8 +5,8 @@
 
 #include "base/logger.h"
 
-// the decoder of image_codec.cpp, which keeps stb_image to itself so that the
-// copy inside nanovg does not clash with it
+// the decoder of image_codec.cpp, which keeps stb_image to itself and exposes
+// only these two wrappers
 extern "C" unsigned char *uniteed_stbi_load_from_memory(const unsigned char *buffer, int len, int *x, int *y, int *comp, int req_comp);
 extern "C" void uniteed_stbi_image_free(void *data);
 

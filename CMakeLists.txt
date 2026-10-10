@@ -21,29 +21,41 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-option(UNITEED_GUI "build the graphical editor (needs glfw, opengl, nanovg)" ON)
+option(UNITEED_GUI "build the graphical editor (needs sdl3, freetype, harfbuzz)" ON)
 option(UNITEED_WERROR "treat warnings as errors" OFF)
 
 ##################### system libraries, kept as light as possible
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(GLFW glfw3)
+pkg_check_modules(SDL3 sdl3)
+pkg_check_modules(FREETYPE freetype2)
+pkg_check_modules(HARFBUZZ harfbuzz)
 pkg_check_modules(ZLIB REQUIRED zlib)
 pkg_check_modules(ZSTD libzstd)
 find_package(OpenSSL)
 
-if(UNITEED_GUI AND NOT GLFW_FOUND)
-  message(STATUS "glfw3 not found, falling back to the headless build")
+# the window is SDL3, the text is FreeType with HarfBuzz shaping; without them
+# the editor cannot be built and only the command line remains
+if(UNITEED_GUI AND NOT (SDL3_FOUND AND FREETYPE_FOUND AND HARFBUZZ_FOUND))
+  if(NOT SDL3_FOUND)
+    message(STATUS "sdl3 not found, falling back to the headless build")
+  elseif(NOT FREETYPE_FOUND)
+    message(STATUS "freetype2 not found, falling back to the headless build")
+  else()
+    message(STATUS "harfbuzz not found, falling back to the headless build")
+  endif()
   set(UNITEED_GUI OFF)
-endif()
-
-if(UNITEED_GUI)
-  find_package(OpenGL REQUIRED)
 endif()
 
 ##################### vendored / submodule libraries
 # libsugarx is a git submodule, header only
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/libsugarx/sugar_types.h")
   message(FATAL_ERROR "the libsugarx submodule is missing, run: git submodule update --init --recursive")
+endif()
+
+# stb is a git submodule too; the build only uses its PNG decoder, and the
+# headless build needs it as well, so it is required either way
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/stb/stb_image.h")
+  message(FATAL_ERROR "the stb submodule is missing, run: git submodule update --init --recursive")
 endif()
 
 ##################### sources
@@ -55,31 +67,17 @@ set(SOURCES ${BASE_SOURCES} ${CONFIG_SOURCES} ${GAME_SOURCES})
 list(APPEND SOURCES "src/engine/main.cpp")
 
 if(UNITEED_GUI)
-  # the editor window pulls in the engine layer, the headless build only needs
-  # the command line
+  # the editor window pulls in the engine layer and the painter, the headless
+  # build only needs the command line
   file(GLOB ENGINE_SOURCES CONFIGURE_DEPENDS "src/engine/*.cpp" "src/engine/*.h")
   list(REMOVE_ITEM ENGINE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/main.cpp")
   list(APPEND SOURCES ${ENGINE_SOURCES} "src/game/editor/editor.cpp" "src/game/editor/editor_draw.cpp")
 else()
+  # the painter is the only engine file the command line still needs: it keeps
+  # the shared colour type, but it drags SDL3 in, so it stays out of this build
   list(REMOVE_ITEM SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor_draw.cpp")
-endif()
-
-if(UNITEED_GUI)
-  # nanovg is a git submodule and built as an object library
-  if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/nanovg/src/nanovg.c")
-    message(FATAL_ERROR "the nanovg submodule is missing, run: git submodule update --init --recursive")
-  endif()
-  add_library(nanovg OBJECT "external/nanovg/src/nanovg.c")
-  target_include_directories(nanovg PRIVATE external/nanovg/src)
-  target_compile_options(nanovg PRIVATE -w)
-
-  # glad comes pre-generated from SandboxCmd (regenerating needs python and the
-  # Khronos registry, so the generated pair is carried along instead)
-  add_library(glad OBJECT "external/glad/gl.c")
-  target_include_directories(glad PRIVATE external/glad)
-  target_compile_options(glad PRIVATE -w)
 endif()
 
 ##################### executable
@@ -88,13 +86,13 @@ add_executable(${GAME_NAME} ${SOURCES})
 target_include_directories(${GAME_NAME} PRIVATE src)
 target_include_directories(${GAME_NAME} PRIVATE external)
 target_include_directories(${GAME_NAME} PRIVATE external/libsugarx)
-target_include_directories(${GAME_NAME} PRIVATE external/nanovg/src)
-target_include_directories(${GAME_NAME} PRIVATE external/glad)
+target_include_directories(${GAME_NAME} PRIVATE external/stb)
 
 if(UNITEED_GUI)
-  target_sources(${GAME_NAME} PRIVATE $<TARGET_OBJECTS:nanovg> $<TARGET_OBJECTS:glad>)
-  target_include_directories(${GAME_NAME} PRIVATE ${GLFW_INCLUDE_DIRS})
-  target_link_libraries(${GAME_NAME} PRIVATE ${GLFW_LIBRARIES} OpenGL::GL)
+  target_include_directories(${GAME_NAME} PRIVATE ${SDL3_INCLUDE_DIRS})
+  target_include_directories(${GAME_NAME} PRIVATE ${FREETYPE_INCLUDE_DIRS})
+  target_include_directories(${GAME_NAME} PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
+  target_link_libraries(${GAME_NAME} PRIVATE ${SDL3_LIBRARIES} ${FREETYPE_LIBRARIES} ${HARFBUZZ_LIBRARIES})
   target_compile_definitions(${GAME_NAME} PRIVATE UNITEED_GUI=1)
 else()
   # the headless build still compiles glad, it is only used for the GL types

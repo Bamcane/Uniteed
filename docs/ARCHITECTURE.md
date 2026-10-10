@@ -3,14 +3,17 @@
 Uniteed follows the shape of the two reference projects the request named: the module
 split and the data-file core come from **TWICE** (`src/base`, `src/game/map`, a
 `CDataFile` reader plus an editable map model), and the application shell comes from
-**SandboxCmd** (`src/engine` with GLFW + OpenGL + nanovg + glad, a small immediate
-mode UI, a `src/base/storage` module in the `storage` namespace).
+**SandboxCmd** (`src/engine` with a small immediate mode UI and a `src/base/storage`
+module in the `storage` namespace). The window and the renderer are SDL3's, the text
+is FreeType plus HarfBuzz and the drawing goes through a painter of our own, but the
+module split and the immediate mode style are still SandboxCmd's.
 
 ```
 src/
   base/          define.h logger.h math.h endian.h string.h time.h storage.h/cpp png.h/cpp
   config/        config.h/cpp, config_keys.h  typed settings in a text file
-  engine/        graphics.h/cpp  input.h/cpp  ui.h/cpp  editor_app.h/cpp  main.cpp
+  engine/        graphics.h/cpp  painter.h/cpp  text.h/cpp  input.h/cpp
+                 ui.h/cpp  editor_app.h/cpp  main.cpp
   game/
     assets.h/cpp           version aware mapres lookup, PNG decode, tile flag analysis
     image_codec.cpp        stb_image with internal linkage
@@ -26,8 +29,7 @@ src/
       cli.h/cpp            the headless command line and the selftest
 external/
   libsugarx/    git submodule, header only helpers (byte spans, endian, uuid, lazy table)
-  nanovg/       git submodule, vector drawing + fontstash + stb_image
-  glad/         generated loader, taken from SandboxCmd
+  stb/          git submodule, stb_image.h is the PNG decoder
 ```
 
 ## Layers
@@ -48,12 +50,34 @@ mapres files with the active version first.
 `sugar_types.h`) and add only the unaligned peeks and the `StrToInts`/`IntsToStr`
 pair with the +128 bias the map format uses.
 
-**engine** owns the window. `CGraphics` wraps GLFW, glad, nanovg and the texture
-cache (a `libsugarx::lazy_flat_table` keyed by texture name). The UI font is the
-system default sans serif, resolved through `fc-match` with a path fallback list, and
-a CJK fallback font is added to fontstash so the interface can show Chinese labels.
-`CInput` collects the GLFW callbacks; `engine::ui` is the tiny widget set (rects,
-text, buttons, checkboxes, sliders) that draws with nanovg.
+**engine** owns the window. `CGraphics` wraps the SDL3 window, the SDL3 renderer and
+the texture cache (a `libsugarx::lazy_flat_table` keyed by texture name, holding an
+index into a table of `SDL_Texture`). It refers to a texture by a small positive int,
+because a pointer cannot be carried through an int on a 64 bit machine.
+
+Drawing goes through `painter::CPainter` (`painter.h/cpp`), a small immediate mode
+vector painter on top of `SDL_RenderGeometry`. It keeps the vocabulary the interface
+was written against - build a path, fill or stroke it with a colour or a paint, push
+and pop the transform and the clip - so the editor says what it wants rather than
+which triangles to emit. Two details matter:
+
+* SDL3's renderer clips only its own rect calls, never geometry, so the painter keeps
+  its own scissor stack and clamps every primitive it emits.
+* A path point carries both its screen position and its position in the space the
+  path was built in. The triangulator needs the first; an image fill needs the second,
+  because a tile is drawn translated and its texel window would otherwise be measured
+  from the wrong origin.
+
+Text is `CTextEngine` (`text.h/cpp`): HarfBuzz shapes a UTF-8 string into glyphs and
+FreeType rasterizes them into one shared 8 bit coverage atlas, which the painter
+uploads as white with the coverage in the alpha channel. Shaping is done in runs of
+codepoints that resolve to the same face, which is what makes the CJK fallback work -
+HarfBuzz reports the glyphs the interface font is missing and those runs are reshaped
+with the fallback face. The face is picked from the file of the system default sans
+serif found through `fc-match`, with a path fallback list.
+
+`CInput` collects the SDL events; `engine::ui` is the tiny widget set (rects, text,
+buttons, checkboxes, sliders) that draws through the painter.
 
 **game/map** is the format layer and has no dependency on the window. It is the part
 that is tested by `--selftest` and it builds in the headless configuration.
