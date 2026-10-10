@@ -25,6 +25,7 @@
 
 #include <sugar_types.h>
 
+#include "base/math.h"
 #include "base/storage.h"
 #include "game/map/datafile.h"
 #include "game/map/mapitems.h"
@@ -179,6 +180,16 @@ namespace game
 
 		int m_SourceVersion = 0;
 	};
+
+	/*
+		The view a group is drawn through. The reference maps a group by
+
+			center' = center * parallax / 100 + offset
+
+		with the viewport size unchanged, so a background group scrolls more
+		slowly than the level instead of being fixed to it.
+	*/
+	base::view_transform GroupView(const base::view_transform &View, const CGroup &Group);
 
 	// an item the editor does not model, kept verbatim
 	struct CExtraItem

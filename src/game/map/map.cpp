@@ -123,6 +123,15 @@ namespace game
 		m_SourcePath.clear();
 	}
 
+	base::view_transform GroupView(const base::view_transform &View, const CGroup &Group)
+	{
+		base::view_transform Result = View;
+		Result.m_Center = base::vec2(
+			View.m_Center.x * static_cast<float>(Group.m_ParallaxX) / 100.0f + static_cast<float>(Group.m_OffsetX),
+			View.m_Center.y * static_cast<float>(Group.m_ParallaxY) / 100.0f + static_cast<float>(Group.m_OffsetY));
+		return Result;
+	}
+
 	void CMap::InitNew(std::string_view Name)
 	{
 		Clear();

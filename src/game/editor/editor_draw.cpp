@@ -237,7 +237,7 @@ namespace game
 		const CColor Color = LayerColor(Layer);
 		const int Texture = TextureForImage(Layer.m_Image, Color);
 		const float Alpha = static_cast<float>(Color.a) / 255.0f;
-		const base::rect World = m_View.VisibleWorld();
+		const base::rect World = m_LayerView.VisibleWorld();
 
 		const int x0 = std::max(0, static_cast<int>(std::floor(World.m_TopLeft.x / TileSize)) - 1);
 		const int y0 = std::max(0, static_cast<int>(std::floor(World.m_TopLeft.y / TileSize)) - 1);
@@ -253,8 +253,8 @@ namespace game
 					const CTile *pTile = Layer.Tile(x, y);
 					if(pTile == nullptr || pTile->m_Index == 0)
 						continue;
-					const base::vec2 Screen = m_View.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
-					ui::Rect(pPainter, base::rect::FromSize(Screen, base::vec2(TileSize * m_View.m_Zoom, TileSize * m_View.m_Zoom)), ui::RGBA(150, 150, 160, 90));
+					const base::vec2 Screen = m_LayerView.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
+					ui::Rect(pPainter, base::rect::FromSize(Screen, base::vec2(TileSize * m_LayerView.m_Zoom, TileSize * m_LayerView.m_Zoom)), ui::RGBA(150, 150, 160, 90));
 				}
 			return;
 		}
@@ -262,7 +262,7 @@ namespace game
 		if(Alpha <= 0.0f)
 			return; // a layer colour of zero alpha hides the layer
 
-		const float Size = TileSize * m_View.m_Zoom;
+		const float Size = TileSize * m_LayerView.m_Zoom;
 		// the sheet's pixel size is what turns a tile index into a texel window
 		int TextureWidth = 0, TextureHeight = 0;
 		m_pGraphics->TextureSize(Texture, TextureWidth, TextureHeight);
@@ -273,7 +273,7 @@ namespace game
 				const CTile *pTile = Layer.Tile(x, y);
 				if(pTile == nullptr || pTile->m_Index == 0)
 					continue;
-				const base::vec2 Screen = m_View.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
+				const base::vec2 Screen = m_LayerView.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
 				DrawTile(pPainter, Texture, pTile->m_Index, pTile->m_Flags, Screen.x, Screen.y, Size,
 					TextureWidth, TextureHeight, Alpha);
 			}
@@ -283,12 +283,12 @@ namespace game
 	void CEditor::DrawGameLayer(ui::CPainter *pPainter, const base::rect &Canvas, const CLayer &Layer)
 	{
 		(void)Canvas;
-		const base::rect World = m_View.VisibleWorld();
+		const base::rect World = m_LayerView.VisibleWorld();
 		const int x0 = std::max(0, static_cast<int>(std::floor(World.m_TopLeft.x / TileSize)) - 1);
 		const int y0 = std::max(0, static_cast<int>(std::floor(World.m_TopLeft.y / TileSize)) - 1);
 		const int x1 = std::min(Layer.m_Width, static_cast<int>(std::ceil(World.m_BottomRight.x / TileSize)) + 1);
 		const int y1 = std::min(Layer.m_Height, static_cast<int>(std::ceil(World.m_BottomRight.y / TileSize)) + 1);
-		const float Size = TileSize * m_View.m_Zoom;
+		const float Size = TileSize * m_LayerView.m_Zoom;
 		const bool bLabel = Size >= 14.0f;
 
 		for(int y = y0; y < y1; y++)
@@ -298,7 +298,7 @@ namespace game
 				const CTile *pTile = Layer.Tile(x, y);
 				if(pTile == nullptr || pTile->m_Index == 0)
 					continue;
-				const base::vec2 Screen = m_View.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
+				const base::vec2 Screen = m_LayerView.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
 				const base::rect Cell = base::rect::FromSize(Screen, base::vec2(Size, Size));
 				if(pTile->m_Index >= ENTITY_OFFSET)
 				{
@@ -324,12 +324,12 @@ namespace game
 	void CEditor::DrawPhysicsLayer(ui::CPainter *pPainter, const base::rect &Canvas, const CLayer &Layer, int Flags)
 	{
 		(void)Canvas;
-		const base::rect World = m_View.VisibleWorld();
+		const base::rect World = m_LayerView.VisibleWorld();
 		const int x0 = std::max(0, static_cast<int>(std::floor(World.m_TopLeft.x / TileSize)) - 1);
 		const int y0 = std::max(0, static_cast<int>(std::floor(World.m_TopLeft.y / TileSize)) - 1);
 		const int x1 = std::min(Layer.m_Width, static_cast<int>(std::ceil(World.m_BottomRight.x / TileSize)) + 1);
 		const int y1 = std::min(Layer.m_Height, static_cast<int>(std::ceil(World.m_BottomRight.y / TileSize)) + 1);
-		const float Size = TileSize * m_View.m_Zoom;
+		const float Size = TileSize * m_LayerView.m_Zoom;
 		const ui::CColor Color = Flags == TILESLAYERFLAG_TELE ? ui::RGBA(120, 200, 255, 150) :
 			Flags == TILESLAYERFLAG_SPEEDUP ? ui::RGBA(255, 210, 90, 150) :
 			Flags == TILESLAYERFLAG_SWITCH ? ui::RGBA(190, 130, 255, 150) :
@@ -343,7 +343,7 @@ namespace game
 				const CTile *pTile = Layer.Tile(x, y);
 				if(pTile == nullptr || pTile->m_Index == 0)
 					continue;
-				const base::vec2 Screen = m_View.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
+				const base::vec2 Screen = m_LayerView.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
 				ui::RectOutline(pPainter, base::rect::FromSize(Screen, base::vec2(Size, Size)), Color, 2.0f);
 			}
 		}
@@ -361,7 +361,7 @@ namespace game
 			QuadPoints(Quad, aWorld);
 
 			base::vec2 aScreen[4];
-			QuadScreenPoints(m_View, aWorld, aScreen);
+			QuadScreenPoints(m_LayerView, aWorld, aScreen);
 
 			// a cheap cull, most quads of a big map are off screen
 			base::rect Bounds(aScreen[0], aScreen[0]);
@@ -469,7 +469,7 @@ namespace game
 			// the pivot point the position envelope turns the quad around
 			if(Selected)
 			{
-				const base::vec2 Pivot = m_View.WorldToScreen(base::vec2(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y)));
+				const base::vec2 Pivot = m_LayerView.WorldToScreen(base::vec2(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y)));
 				ui::Rect(pPainter, base::rect::FromSize(Pivot - base::vec2(3.0f, 3.0f), base::vec2(6.0f, 6.0f)), ui::Theme.m_Accent);
 			}
 		}
@@ -529,6 +529,27 @@ namespace game
 		for(std::size_t g = 0; g < m_Map.m_vGroups.size(); g++)
 		{
 			const CGroup &Group = m_Map.m_vGroups[g];
+
+			// every group is drawn through its own parallax and offset
+			m_LayerView = GroupView(Group);
+
+			pPainter->Save();
+			if(Group.m_UseClipping && Group.m_ClipW > 0 && Group.m_ClipH > 0)
+			{
+				/*
+					The clip rectangle is stored in map space, so it is projected
+					with the plain view and not with this group's: the reference
+					editor clips against the game group's mapping too. The
+					scissor stacks, so it only ever narrows the canvas one.
+				*/
+				const base::vec2 ClipTopLeft = m_View.WorldToScreen(
+					base::vec2(static_cast<float>(Group.m_ClipX), static_cast<float>(Group.m_ClipY)));
+				const base::vec2 ClipBottomRight = m_View.WorldToScreen(
+					base::vec2(static_cast<float>(Group.m_ClipX + Group.m_ClipW), static_cast<float>(Group.m_ClipY + Group.m_ClipH)));
+				pPainter->Scissor(ClipTopLeft.x, ClipTopLeft.y,
+					ClipBottomRight.x - ClipTopLeft.x, ClipBottomRight.y - ClipTopLeft.y);
+			}
+
 			for(std::size_t l = 0; l < Group.m_vLayers.size(); l++)
 			{
 				const CLayer &Layer = Group.m_vLayers[l];
@@ -551,6 +572,7 @@ namespace game
 					DrawQuadLayer(pPainter, Layer);
 				}
 			}
+			pPainter->Restore();
 		}
 
 		// The grid belongs to the tilemap, so it is clipped to the map boundary

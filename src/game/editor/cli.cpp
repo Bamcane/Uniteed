@@ -125,9 +125,11 @@ namespace game
 			for(std::size_t g = 0; g < Map.m_vGroups.size(); g++)
 			{
 				const CGroup &Group = Map.m_vGroups[g];
-				std::cout << base::Format("  group %zu '%s' parallax=%d,%d offset=%d,%d clip=%d version=%d layers=%zu\n",
+				const std::string Clip = Group.m_UseClipping ?
+					base::Format("%d,%d %dx%d", Group.m_ClipX, Group.m_ClipY, Group.m_ClipW, Group.m_ClipH) : "off";
+				std::cout << base::Format("  group %zu '%s' parallax=%d,%d offset=%d,%d clip=%s version=%d layers=%zu\n",
 					g, Group.m_Name.c_str(), Group.m_ParallaxX, Group.m_ParallaxY, Group.m_OffsetX, Group.m_OffsetY,
-					Group.m_UseClipping, Group.m_SourceVersion, Group.m_vLayers.size());
+					Clip.c_str(), Group.m_SourceVersion, Group.m_vLayers.size());
 				for(std::size_t l = 0; l < Group.m_vLayers.size(); l++)
 				{
 					const CLayer &Layer = Group.m_vLayers[l];
@@ -599,6 +601,52 @@ namespace game
 			else
 			{
 				std::cout << "  FAIL view   the canvas transform loses the canvas origin\n";
+				Failures++;
+			}
+		}
+
+		// ------------------------------------------------------------- groups
+		/*
+			A group is drawn through its parallax and offset, the reference
+			mapping is center * parallax/100 + offset with the viewport size
+			unchanged. A parallax of 100 and no offset has to be the map view
+			itself, or the level would move with the backgrounds.
+		*/
+		{
+			Checks++;
+			CMap Map;
+			Map.InitNew("06");
+			const CGroup &Game = Map.m_vGroups.front();
+			base::view_transform View;
+			View.m_Origin = base::vec2(268.0f, 40.0f);
+			View.m_Viewport = base::vec2(1064.0f, 834.0f);
+			View.m_Center = base::vec2(960.0f, 800.0f);
+			View.m_Zoom = 0.5f;
+
+			// the game group is parallax 100 with no offset
+			const base::view_transform GameView = GroupView(View, Game);
+			bool bOk = std::abs(GameView.m_Center.x - View.m_Center.x) < 0.001f &&
+				std::abs(GameView.m_Center.y - View.m_Center.y) < 0.001f;
+
+			// half the parallax puts the group centre at half the camera
+			CGroup Half = Game;
+			Half.m_ParallaxX = 50;
+			Half.m_ParallaxY = 50;
+			Half.m_OffsetX = 100;
+			Half.m_OffsetY = -40;
+			const base::view_transform HalfView = GroupView(View, Half);
+			bOk = bOk && std::abs(HalfView.m_Center.x - (960.0f * 0.5f + 100.0f)) < 0.001f &&
+				std::abs(HalfView.m_Center.y - (800.0f * 0.5f - 40.0f)) < 0.001f;
+
+			// the viewport size does not change with the parallax
+			bOk = bOk && std::abs(HalfView.m_Viewport.x - View.m_Viewport.x) < 0.001f &&
+				std::abs(HalfView.m_Viewport.y - View.m_Viewport.y) < 0.001f;
+
+			if(bOk)
+				std::cout << "  ok   group  the parallax and offset place a group's view\n";
+			else
+			{
+				std::cout << "  FAIL group  the parallax and offset are applied wrongly\n";
 				Failures++;
 			}
 		}

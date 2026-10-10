@@ -123,6 +123,11 @@ namespace game
 		base::rect CanvasRect(const base::vec2 &Window) const;
 		// the world rectangle the tile layers cover, which is the map boundary
 		base::rect MapBounds() const;
+		// The view a group's layers are drawn with, which folds in the group's
+		// parallax and offset: the reference maps a group through
+		// center * parallax/100 + offset, keeping the viewport size.
+		base::view_transform GroupView(const CGroup &Group) const;
+
 
 		int TextureForImage(int ImageIndex);
 		// the same image with every pixel multiplied by Tint, for the layer
@@ -192,6 +197,7 @@ namespace game
 		bool m_Dirty = false;
 
 		base::view_transform m_View;
+		base::view_transform m_LayerView;
 		bool m_bGrid = true;
 		bool m_bShowDetail = true;
 

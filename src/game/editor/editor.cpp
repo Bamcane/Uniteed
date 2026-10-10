@@ -51,21 +51,6 @@ namespace game
 			{ENTITY_DOOR, "door"},
 		};
 
-		ui::CColor FlagColor(int LayerFlags)
-		{
-			if(LayerFlags & TILESLAYERFLAG_TELE)
-				return ui::RGBA(120, 200, 255, 90);
-			if(LayerFlags & TILESLAYERFLAG_SPEEDUP)
-				return ui::RGBA(255, 210, 90, 90);
-			if(LayerFlags & TILESLAYERFLAG_SWITCH)
-				return ui::RGBA(190, 130, 255, 90);
-			if(LayerFlags & TILESLAYERFLAG_TUNE)
-				return ui::RGBA(255, 130, 200, 90);
-			if(LayerFlags & TILESLAYERFLAG_FRONT)
-				return ui::RGBA(140, 255, 160, 80);
-			return ui::RGBA(160, 160, 160, 80);
-		}
-
 		const char *ToolName(editor_tool Tool)
 		{
 			switch(Tool)
@@ -626,6 +611,8 @@ namespace game
 			paColors[i].a = TintChannel(Quad.m_aColors[i].a, Environment[3]);
 		}
 	}
+
+	base::view_transform CEditor::GroupView(const CGroup &Group) const { return game::GroupView(m_View, Group); }
 
 	void CEditor::QuadPoints(const CQuad &Quad, base::vec2 *paPoints) const
 	{
