@@ -75,6 +75,12 @@ uniteed --screenshot out.png [map]   render one frame offscreen and exit
 `--target` takes `06`, `07`, `ddnet` or `08`. `--pack --embed` puts the mapres PNGs
 the map references into the package so it can travel on its own.
 
+`tools/verify_map.py` is an independent checker: it re-implements the container
+layout in Python and validates a map from the outside (table consistency, every data
+block, every tile layer expanding to exactly `w*h` tiles, quad and sound element
+counts, envelope ranges). It shares no code with the editor, and it passes on the
+bundled reference maps as well as on everything the editor writes.
+
 `--selftest` is the regression test of the format layer: for every bundled map it
 loads the map, exports it to all four targets, reloads the result, compares the
 structure and the tiles, checks that a repeated save is stable, and does the same
@@ -84,6 +90,10 @@ through a `.unitwp` package round trip.
 $ ./build/uniteed --selftest
 ...
 35 checks, 0 failures
+
+$ python3 tools/verify_map.py build/tmp/dm1_08.map data/maps/06/coverage.map
+ok   build/tmp/dm1_08.map: datafile v5 35 items, 24 data blocks, 6 tile layers, 5 envelopes / 11 points
+ok   data/maps/06/coverage.map: datafile v4 19 items, 17 data blocks, 8 tile layers, 0 envelopes / 0 points
 ```
 
 ## The editor
