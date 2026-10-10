@@ -17,6 +17,7 @@
 
 namespace engine::ui
 {
+	using painter::address_mode;
 	using painter::CColor;
 	using painter::CPaint;
 	using painter::CPainter;

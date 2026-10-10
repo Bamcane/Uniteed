@@ -44,6 +44,13 @@ namespace game
 			Paint.m_TexTextureWidth = TextureWidth;
 			Paint.m_TexTextureHeight = TextureHeight;
 			Paint.m_Alpha = Alpha;
+			/*
+				A tile is one cell of a 16 by 16 sheet, and the last column sits
+				exactly at u = 1: the reference clamps a tilemap for this reason,
+				otherwise a rounding error wraps the sample to the far edge of
+				the sheet and the tile shows the wrong art.
+			*/
+			Paint.m_Address = ui::address_mode::clamp;
 			return Paint;
 		}
 

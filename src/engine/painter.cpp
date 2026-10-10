@@ -246,6 +246,20 @@ namespace engine::painter
 		if(pTexture != nullptr)
 			SDL_SetTextureBlendMode(pTexture, SDL_BLENDMODE_BLEND);
 
+		// the sampling mode is renderer state, so it is set per draw
+		switch(m_AddressMode)
+		{
+		case address_mode::clamp:
+			SDL_SetRenderTextureAddressMode(m_pRenderer, SDL_TEXTURE_ADDRESS_CLAMP, SDL_TEXTURE_ADDRESS_CLAMP);
+			break;
+		case address_mode::wrap:
+			SDL_SetRenderTextureAddressMode(m_pRenderer, SDL_TEXTURE_ADDRESS_WRAP, SDL_TEXTURE_ADDRESS_WRAP);
+			break;
+		case address_mode::automatic:
+			SDL_SetRenderTextureAddressMode(m_pRenderer, SDL_TEXTURE_ADDRESS_AUTO, SDL_TEXTURE_ADDRESS_AUTO);
+			break;
+		}
+
 		// SDL takes an interleaved vertex array; the painter's layout is the
 		// same, so the vector can be handed over directly
 		SDL_RenderGeometryRaw(m_pRenderer, pTexture,
@@ -345,6 +359,7 @@ namespace engine::painter
 			pTexture = LookupTexture(Paint.m_Texture);
 			if(pTexture == nullptr)
 				return;
+			m_AddressMode = Paint.m_Address;
 		}
 
 		// the shape is filled as a fan, which is what an axis aligned quad
@@ -504,6 +519,21 @@ namespace engine::painter
 			return;
 		if(Alpha <= 0.0f)
 			return;
+
+		/*
+			The reference picks wrapping per quad: repeat only when a texture
+			coordinate leaves 0..1, clamp otherwise, so a quad that asks for
+			several tiles is tiled and a plain one cannot bleed.
+		*/
+		bool bRepeatU = false, bRepeatV = false;
+		for(int i = 0; i < 4; i++)
+		{
+			if(paTexcoords[i].x < 0.0f || paTexcoords[i].x > 1.0f)
+				bRepeatU = true;
+			if(paTexcoords[i].y < 0.0f || paTexcoords[i].y > 1.0f)
+				bRepeatV = true;
+		}
+		m_AddressMode = (bRepeatU || bRepeatV) ? address_mode::wrap : address_mode::clamp;
 
 		const int Steps = std::clamp(Cells, 1, 32);
 		std::vector<CVertex> Vertices;

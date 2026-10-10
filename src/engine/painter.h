@@ -63,6 +63,20 @@ namespace engine::painter
 		return CColor{Color.r, Color.g, Color.b, Color.a * Alpha};
 	}
 
+	/*
+		How a texture is sampled outside its 0..1 range. A tile atlas needs
+		clamping: the last column of a sheet sits exactly at u = 1, and a wrap
+		triggered by a rounding error would sample the opposite edge of the
+		sheet into the tile. A quad that asks for more than one tile needs
+		wrapping instead.
+	*/
+	enum class address_mode
+	{
+		automatic, // wrap only when the coordinates leave 0..1
+		clamp,     // never wrap
+		wrap,      // repeat
+	};
+
 	// the paint of a fill: a flat colour, a linear gradient or a texture
 	struct CPaint
 	{
@@ -97,6 +111,8 @@ namespace engine::painter
 		int m_TexTextureWidth = 0;
 		int m_TexTextureHeight = 0;
 		float m_Alpha = 1.0f;
+		// how this fill samples outside 0..1
+		address_mode m_Address = address_mode::automatic;
 	};
 
 	enum class line_cap
@@ -152,6 +168,8 @@ namespace engine::painter
 		void FillColor(const CColor &Color);
 		void FillPaint(const CPaint &Paint);
 		void Fill();
+		// the address mode of the next textured draw; a paint overrides it
+		void SetTextureAddressMode(address_mode Mode) { m_AddressMode = Mode; }
 		void StrokeColor(const CColor &Color);
 		void StrokeWidth(float Width);
 		void Stroke();
@@ -276,6 +294,7 @@ namespace engine::painter
 		texture_lookup_fn m_pTextureLookup = nullptr;
 		void *m_pTextureUser = nullptr;
 
+		address_mode m_AddressMode = address_mode::automatic;
 		SDL_Texture *m_pGlyphTexture = nullptr;
 		int m_GlyphTextureWidth = 0;
 		int m_GlyphTextureHeight = 0;
