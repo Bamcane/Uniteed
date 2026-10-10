@@ -1,0 +1,89 @@
+All content under 'data' is released under CC-BY-SA 3.0
+(https://creativecommons.org/licenses/by-sa/3.0/).
+
+Nothing here was drawn for Uniteed. These are the original assets of the
+Teeworlds and DDRaceNetwork projects, committed so that a build needs no
+checkout of them and the editor has the right art for every map format it
+supports.
+
+Both the mapres file names and the sample map names repeat across the three
+sets with different contents, so every set lives in its own directory and is
+picked by the version of the map that is open (src/game/assets.h has the lookup
+order). Compared pixel by pixel, not by file size:
+
+  0.6 against 0.7    all 28 shared mapres names differ, none are identical
+  0.6 against ddnet  6 of the shared names are identical
+  0.7 against ddnet  15 of the shared names are identical
+                     the remaining 7 are DDRace's own art, and ddnet has 26
+                     names that neither 0.6 nor 0.7 has
+
+data/versions/06/mapres/
+    Teeworlds 0.6, 'data/mapres' of the Teeworlds Archive Project tag
+    '0.6-endofline' - 28 files.
+    Art by: android272, Chi11y (chi1), Crises, Daniel, Echchouik, Fisico,
+    leovilok, Landil, Lappi, LordSk, maikka, matricks, Pocram, red_com,
+    serpis, SkizZ, somerunce, Sonix, Stephanator, teetow, Ubu, Zatline.
+
+data/versions/07/mapres/
+    Teeworlds 0.7.6, 'datasrc/mapres' of the tag '0.7.6' - 32 files. Teeworlds
+    0.8 ships the same bytes, so this set is also used for 0.8 maps.
+    Art by the Teeworlds contributors listed above; 0.7 redrew and extended the
+    0.6 set.
+
+data/versions/ddnet/mapres/
+    DDRaceNetwork 20.x, 'data/mapres' - 54 files. This is a set of its own, not
+    a copy of either vanilla one: of the shared names 6 still carry the 0.6 art
+    and 15 the 0.7 art, while grass_main, winter_main, jungle_main, desert_main,
+    generic_unhookable, grass_doodads and jungle_background are DDRace's own
+    versions. The whole set descends from the Teeworlds repository that DDRace
+    grew out of (the earliest commits of those files are by Magnus Auvinen and
+    Alfred Eriksson) and has been added to since. Sheets added by hand are
+    credited in DDRaceNetwork's history to:
+
+        ddnet_tiles, round_tiles, generic_clear, fadeout,
+        desert_background, desert_mountains_new_background,
+        desert_mountains_new_foreground, snow_mountain      Dennis Felsing
+        basic_freeze                                        Savander
+        mixed_tiles                                         Soreu
+        ddmax_freeze                                        timgame
+
+    The '_0.7' files (grass_main_0.7.png and friends) are DDRace's variants for
+    the 0.7 tiles and are used when a 0.7 map is opened in DDRace mode.
+
+data/shared/editor/
+    entities.png, background.png, checker.png - byte identical in 0.6 and 0.7
+    ('data/editor' and 'datasrc/editor'). These are editor overlay sprites, not
+    map content. 'data/shared/mapres' is a search path for images that would be
+    identical in every version; it is currently empty.
+
+data/maps/06/
+    ctf1.map, dm1.map, dm2.map - the official Teeworlds maps, byte identical to
+    the ones of the tag '0.6-endofline'.
+    coverage.map - a DDRaceNetwork test map.
+
+data/maps/07/
+    Tsunami.map - Copyright louis, CC-BY-SA license.
+
+data/maps/08/
+    ctf1.map, dm1.map - the official Teeworlds maps, re-saved as datafile v5 by
+    the Teeworlds Archive Project. Re-saving is a modification under the terms
+    of CC-BY-SA 3.0, so the resulting maps stay under that license.
+
+Which file came from where:
+
+    data/versions/06/mapres/  teeworlds tag '0.6-endofline', data/mapres
+    data/versions/07/mapres/  teeworlds tag '0.7.6', datasrc/mapres
+    data/versions/ddnet/      ddnet, data/mapres
+    data/shared/editor/       teeworlds, data/editor and datasrc/editor
+    data/maps/06/             ddnet, data/maps
+    data/maps/07/             ddnet, data/maps7
+    data/maps/08/             teeworlds, data/maps
+
+The upstream notices are teeworlds/license.txt (the mapres author list),
+teeworlds/data/maps/license.txt, ddnet/license.txt and
+ddnet/data/maps/license.txt (the per map credits).
+
+------------------------------------------------------------------------
+
+If there is anything you want to do with these assets that CC-BY-SA 3.0 does
+not permit, contact the original authors listed above.

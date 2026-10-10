@@ -15,7 +15,9 @@
 
 	The resource paths are ordered so that the directory of the active version
 	wins, DDRace extras are still found, and the other version stays reachable
-	as a fallback. See tools/sync_assets.sh for how the directories are filled.
+	as a fallback. The directories are filled from the reference checkouts
+	(Teeworlds tags 0.6-endofline and 0.7.6, plus ddnet); data/LICENSE.txt
+	records which file came from where.
 */
 
 #include <optional>

@@ -18,11 +18,11 @@
 		items         item blob, every item {int typeAndID; int size; body}
 		data          compressed data blocks
 
-	Version 3 (Teeworlds 0.5) has no data sizes and compresses with zlib.
-	Version 4 (0.6, 0.7 and DDRaceNetwork) stores the uncompressed data sizes
-	and still uses zlib. Version 5 (0.8) compresses the whole item blob and
-	every data block with zstd, and stores the compressed size of the item
-	blob in the last int of the table area.
+	Version 3 (Teeworlds 0.5) has no data sizes and stores its data blocks
+	uncompressed. Version 4 (0.6, 0.7 and DDRaceNetwork) adds the uncompressed
+	data sizes and compresses every data block with zlib. Version 5 (0.8)
+	compresses the whole item blob and every data block with zstd, and stores
+	the compressed size of the item blob in the last int of the table area.
 
 	Reading an item body returns a view into the file. Reading a data block
 	inflates it once and keeps the result.
