@@ -2,14 +2,18 @@
 
 #include <algorithm>
 #include <cstring>
+#include <map>
 
 #include <GLFW/glfw3.h>
+
+#include <cmath>
 
 #include "base/logger.h"
 #include "base/string.h"
 #include "base/time.h"
 #include "engine/ui.h"
 #include "game/assets.h"
+#include "game/map/envelope.h"
 
 namespace game
 {
@@ -363,6 +367,11 @@ namespace game
 	{
 		if(m_pGraphics != nullptr)
 			m_pGraphics->ForgetTextures();
+		// the tint slots point at textures that no longer exist, and the decoded
+		// mapres pixels belong to the map that was just replaced
+		m_vTintSlots.clear();
+		m_SourceImages.clear();
+		m_TintClock = 0;
 	}
 
 	void CEditor::FitToMap()
@@ -418,8 +427,344 @@ namespace game
 		return m_pGraphics->LoadTextureFile("mapres:" + Image.m_Name, *File);
 	}
 
+	// ----------------------------------------------------------------- colours
+	namespace
+	{
+		int TintChannel(int Value, float Scale)
+		{
+			return base::clamp(static_cast<int>(std::lround(static_cast<float>(Value) * Scale)), 0, 255);
+		}
+	} // namespace
+
+	/*
+		The layer colour multiplies the texture, exactly like the reference does
+		it with vertex colours. A nanovg image pattern can only be faded by a
+		scalar alpha, so a coloured tint needs a copy of the image whose rgb is
+		already multiplied; those copies are kept in a small, fixed set of slots
+		per image, because a colour envelope animates and an unbounded texture
+		cache would grow with every frame of it.
+
+		Animated alpha (the common case, a fading layer) uses the pattern alpha
+		and costs nothing; only an animated *rgb* needs its slot rewritten, which
+		is a tint and one texture upload per frame.
+	*/
+	int CEditor::TextureForImage(int ImageIndex, const CColor &Tint)
+	{
+		if(Tint.r >= 255 && Tint.g >= 255 && Tint.b >= 255)
+			return TextureForImage(ImageIndex);
+		if(ImageIndex < 0 || ImageIndex >= static_cast<int>(m_Map.m_vImages.size()))
+			return -1;
+
+		m_TintClock++;
+
+		// an exact hit first: the static colour of a layer stays in its slot
+		int Slot = -1;
+		std::size_t PerImage = 0;
+		std::size_t LeastUsed = 0;
+		unsigned LeastUsedClock = 0;
+		bool bHasLeastUsed = false;
+		for(std::size_t i = 0; i < m_vTintSlots.size(); i++)
+		{
+			CTintSlot &Candidate = m_vTintSlots[i];
+			if(Candidate.m_Image == ImageIndex && Candidate.m_Tint.r == Tint.r && Candidate.m_Tint.g == Tint.g && Candidate.m_Tint.b == Tint.b)
+			{
+				Candidate.m_LastUse = m_TintClock;
+				return m_pGraphics->Texture(TintSlotKey(i));
+			}
+			if(Candidate.m_Image == ImageIndex)
+			{
+				PerImage++;
+				if(!bHasLeastUsed || Candidate.m_LastUse < LeastUsedClock)
+				{
+					bHasLeastUsed = true;
+					LeastUsedClock = Candidate.m_LastUse;
+					LeastUsed = i;
+				}
+			}
+		}
+
+		// then a free slot, then the oldest slot of this image, and only if this
+		// image has fewer than the cap one more slot
+		for(std::size_t i = 0; i < m_vTintSlots.size() && Slot < 0; i++)
+			if(m_vTintSlots[i].m_Image < 0)
+				Slot = static_cast<int>(i);
+		if(Slot < 0 && PerImage < MaxTintSlotsPerImage)
+		{
+			m_vTintSlots.push_back(CTintSlot{});
+			Slot = static_cast<int>(m_vTintSlots.size()) - 1;
+		}
+		if(Slot < 0 && bHasLeastUsed)
+			Slot = static_cast<int>(LeastUsed);
+		if(Slot < 0)
+			return TextureForImage(ImageIndex); // out of slots, show it untinted
+
+		const CImage &Image = m_Map.m_vImages[static_cast<std::size_t>(ImageIndex)];
+		int SourceWidth = Image.m_Width;
+		int SourceHeight = Image.m_Height;
+		std::vector<std::byte> Source;
+		if(Image.IsEmbedded())
+		{
+			if(Image.m_Data.empty() || SourceWidth <= 0 || SourceHeight <= 0)
+				return -1;
+			Source = Image.m_Data;
+		}
+		else
+		{
+			if(!TintSource(ImageIndex, Source, SourceWidth, SourceHeight))
+				return -1;
+		}
+
+		const std::size_t Count = static_cast<std::size_t>(SourceWidth) * static_cast<std::size_t>(SourceHeight);
+		if(Source.size() < Count * 4)
+			return -1;
+
+		const float Red = static_cast<float>(Tint.r) / 255.0f;
+		const float Green = static_cast<float>(Tint.g) / 255.0f;
+		const float Blue = static_cast<float>(Tint.b) / 255.0f;
+		storage::byte_vector Tinted(Source.size());
+		for(std::size_t i = 0; i < Count; i++)
+		{
+			const std::size_t At = i * 4;
+			Tinted[At + 0] = static_cast<std::byte>(TintChannel(static_cast<unsigned char>(Source[At + 0]), Red));
+			Tinted[At + 1] = static_cast<std::byte>(TintChannel(static_cast<unsigned char>(Source[At + 1]), Green));
+			Tinted[At + 2] = static_cast<std::byte>(TintChannel(static_cast<unsigned char>(Source[At + 2]), Blue));
+			Tinted[At + 3] = Source[At + 3]; // the alpha comes from the pattern
+		}
+
+		CTintSlot &Chosen = m_vTintSlots[static_cast<std::size_t>(Slot)];
+		const std::string Key = TintSlotKey(static_cast<std::size_t>(Slot));
+		int Handle = -1;
+		if(Chosen.m_Image == ImageIndex && Chosen.m_Width == SourceWidth && Chosen.m_Height == SourceHeight)
+			Handle = m_pGraphics->UpdateTextureRGBA(Key, SourceWidth, SourceHeight, Tinted) ? m_pGraphics->Texture(Key) : -1;
+		else
+			m_pGraphics->ForgetTexture(Key); // the slot changes image or size
+		if(Handle == -1)
+			Handle = m_pGraphics->CreateTextureRGBA(Key, SourceWidth, SourceHeight, Tinted);
+		if(Handle == -1)
+			return TextureForImage(ImageIndex);
+
+		Chosen.m_Image = ImageIndex;
+		Chosen.m_Tint = Tint;
+		Chosen.m_Width = SourceWidth;
+		Chosen.m_Height = SourceHeight;
+		Chosen.m_LastUse = m_TintClock;
+		return Handle;
+	}
+
+	// the decoded pixels of a mapres file, kept because a tint rewrite should
+	// not decode the png again
+	bool CEditor::TintSource(int ImageIndex, std::vector<std::byte> &Pixels, int &Width, int &Height)
+	{
+		if(ImageIndex < 0 || ImageIndex >= static_cast<int>(m_Map.m_vImages.size()))
+			return false;
+		const CImage &Image = m_Map.m_vImages[static_cast<std::size_t>(ImageIndex)];
+
+		const auto Cached = m_SourceImages.find(ImageIndex);
+		if(Cached != m_SourceImages.end())
+		{
+			Pixels = Cached->second.m_Pixels;
+			Width = Cached->second.m_Width;
+			Height = Cached->second.m_Height;
+			return !Pixels.empty();
+		}
+
+		const std::optional<storage::path> File = FindImageFile(Image.m_Name);
+		if(!File.has_value())
+			return false;
+		const std::optional<storage::byte_vector> Bytes = storage::read(*File);
+		if(!Bytes.has_value())
+			return false;
+		const std::optional<CDecodedImage> Decoded = DecodePng(*Bytes);
+		if(!Decoded.has_value())
+			return false;
+
+		CSourceImage Stored;
+		Stored.m_Width = Decoded->m_Width;
+		Stored.m_Height = Decoded->m_Height;
+		Stored.m_Pixels = Decoded->m_Pixels;
+		const auto Inserted = m_SourceImages.emplace(ImageIndex, std::move(Stored));
+		Pixels = Inserted.first->second.m_Pixels;
+		Width = Inserted.first->second.m_Width;
+		Height = Inserted.first->second.m_Height;
+		return !Pixels.empty();
+	}
+
+	std::string CEditor::TintSlotKey(std::size_t Slot) const
+	{
+		return base::Format("tintslot:%zu", Slot);
+	}
+
+	CColor CEditor::LayerColor(const CLayer &Layer) const
+	{
+		CEnvelopeSample Environment;
+		Environment[0] = Environment[1] = Environment[2] = Environment[3] = 1.0f;
+		if(Layer.m_ColorEnv >= 0 && Layer.m_ColorEnv < static_cast<int>(m_Map.m_vEnvelopes.size()))
+			EvaluateEnvelope(m_Map.m_vEnvelopes[static_cast<std::size_t>(Layer.m_ColorEnv)], m_EnvelopeTime + Layer.m_ColorEnvOffset / 1000.0f, Environment, 4);
+
+		CColor Color;
+		Color.r = TintChannel(Layer.m_Color.r, Environment[0]);
+		Color.g = TintChannel(Layer.m_Color.g, Environment[1]);
+		Color.b = TintChannel(Layer.m_Color.b, Environment[2]);
+		Color.a = TintChannel(Layer.m_Color.a, Environment[3]);
+		return Color;
+	}
+
+	void CEditor::QuadColors(const CQuad &Quad, CColor *paColors) const
+	{
+		CEnvelopeSample Environment;
+		Environment[0] = Environment[1] = Environment[2] = Environment[3] = 1.0f;
+		if(Quad.m_ColorEnv >= 0 && Quad.m_ColorEnv < static_cast<int>(m_Map.m_vEnvelopes.size()))
+			EvaluateEnvelope(m_Map.m_vEnvelopes[static_cast<std::size_t>(Quad.m_ColorEnv)], m_EnvelopeTime + Quad.m_ColorEnvOffset / 1000.0f, Environment, 4);
+
+		for(int i = 0; i < 4; i++)
+		{
+			paColors[i].r = TintChannel(Quad.m_aColors[i].r, Environment[0]);
+			paColors[i].g = TintChannel(Quad.m_aColors[i].g, Environment[1]);
+			paColors[i].b = TintChannel(Quad.m_aColors[i].b, Environment[2]);
+			paColors[i].a = TintChannel(Quad.m_aColors[i].a, Environment[3]);
+		}
+	}
+
+	void CEditor::QuadPoints(const CQuad &Quad, base::vec2 *paPoints) const
+	{
+		CEnvelopeSample Position;
+		if(Quad.m_PosEnv >= 0 && Quad.m_PosEnv < static_cast<int>(m_Map.m_vEnvelopes.size()))
+			EvaluateEnvelope(m_Map.m_vEnvelopes[static_cast<std::size_t>(Quad.m_PosEnv)], m_EnvelopeTime + Quad.m_PosEnvOffset / 1000.0f, Position, 3);
+
+		const base::vec2 Offset(Position[0], Position[1]);
+		const float Rotation = Position[2] / 180.0f * base::Pi;
+		// the fifth point is the pivot the rotation turns around
+		const base::vec2 Pivot(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y));
+
+		for(int i = 0; i < 4; i++)
+		{
+			base::vec2 Point(base::FixedToFloat(Quad.m_aPoints[i].x), base::FixedToFloat(Quad.m_aPoints[i].y));
+			if(Rotation != 0.0f)
+			{
+				const base::vec2 Relative = Point - Pivot;
+				const float Cos = std::cos(Rotation);
+				const float Sin = std::sin(Rotation);
+				Point = base::vec2(Relative.x * Cos - Relative.y * Sin, Relative.x * Sin + Relative.y * Cos) + Pivot;
+			}
+			paPoints[i] = Point + Offset;
+		}
+	}
+
+	float CEditor::EnvelopeLoopLength() const
+	{
+		float Length = 0.0f;
+		for(const CEnvelope &Envelope : m_Map.m_vEnvelopes)
+			Length = std::max(Length, EnvelopeLength(Envelope));
+		return Length > 0.05f ? Length : 1.0f;
+	}
+
+	bool CEditor::OpenColorPicker()
+	{
+		CColor Color;
+		if(!PickerColor(Color))
+			return false;
+		m_PickerColor = Color;
+		m_bShowColor = true;
+		// the hue is derived from the colour while the picker is drawn
+		return true;
+	}
+
+	bool CEditor::PickerTargetsQuad() const
+	{
+		const CLayer *pLayer = SelectedLayer();
+		return pLayer != nullptr && pLayer->IsQuads();
+	}
+
+	bool CEditor::PickerColor(CColor &Color) const
+	{
+		const CLayer *pLayer = SelectedLayer();
+		if(pLayer == nullptr)
+			return false;
+		if(pLayer->IsQuads())
+		{
+			// the first selected quad, or the first one of the layer when
+			// nothing was clicked yet
+			int Index = m_vSelectedQuads.empty() ? 0 : m_vSelectedQuads[0];
+			if(Index < 0 || Index >= static_cast<int>(pLayer->m_vQuads.size()))
+				return false;
+			Color = pLayer->m_vQuads[static_cast<std::size_t>(Index)].m_aColors[0];
+			return true;
+		}
+		if(pLayer->IsTiles())
+		{
+			Color = pLayer->m_Color;
+			return true;
+		}
+		return false;
+	}
+
+	void CEditor::SetPickerColor(const CColor &Color)
+	{
+		CLayer *pLayer = SelectedLayer();
+		if(pLayer == nullptr)
+			return;
+		if(pLayer->IsQuads())
+		{
+			// without a click selection the whole layer is the target, which is
+			// what the picker title says
+			std::vector<int> Indices = m_vSelectedQuads;
+			if(Indices.empty())
+			{
+				Indices.resize(pLayer->m_vQuads.size());
+				for(std::size_t i = 0; i < Indices.size(); i++)
+					Indices[i] = static_cast<int>(i);
+			}
+			for(const int Index : Indices)
+			{
+				if(Index < 0 || Index >= static_cast<int>(pLayer->m_vQuads.size()))
+					continue;
+				for(int i = 0; i < 4; i++)
+					pLayer->m_vQuads[static_cast<std::size_t>(Index)].m_aColors[i] = Color;
+			}
+			m_Dirty = true;
+			return;
+		}
+		if(pLayer->IsTiles())
+		{
+			pLayer->m_Color = Color;
+			m_Dirty = true;
+		}
+	}
+
+	std::string CEditor::PickerTargetName() const
+	{
+		const CLayer *pLayer = SelectedLayer();
+		if(pLayer == nullptr)
+			return "nothing";
+		const char *pName = pLayer->m_Name.empty() ? "layer" : pLayer->m_Name.c_str();
+		if(pLayer->IsQuads())
+			return m_vSelectedQuads.empty() ?
+				(pLayer->m_vQuads.size() == 1 ? base::Format("the quad of '%s'", pName) : base::Format("all %zu quads of '%s'", pLayer->m_vQuads.size(), pName)) :
+				base::Format("%zu of %zu quads of '%s'", m_vSelectedQuads.size(), pLayer->m_vQuads.size(), pName);
+		if(pLayer->IsTiles())
+			return base::Format("layer '%s'", pName);
+		return "nothing";
+	}
+
 	// ------------------------------------------------------------------ undo
-	void CEditor::PushUndo(int Group, int Layer)
+	CEditor::CUndoState CEditor::CaptureLayer(const CLayer &Layer, int Group, int LayerIndex, undo_scope Scope) const
+	{
+		CUndoState State;
+		State.m_Scope = Scope;
+		State.m_Group = Group;
+		State.m_Layer = LayerIndex;
+		State.m_Width = Layer.m_Width;
+		State.m_Height = Layer.m_Height;
+		if(Scope == undo_scope::tiles)
+			State.m_vTiles = Layer.m_vTiles;
+		else if(Scope == undo_scope::quads)
+			State.m_vQuads = Layer.m_vQuads;
+		else
+			State.m_Color = Layer.m_Color;
+		return State;
+	}
+
+	void CEditor::PushUndo(int Group, int Layer, undo_scope Scope)
 	{
 		if(Group < 0 || Group >= static_cast<int>(m_Map.m_vGroups.size()))
 			return;
@@ -427,16 +772,14 @@ namespace game
 		if(Layer < 0 || Layer >= static_cast<int>(G.m_vLayers.size()))
 			return;
 		const CLayer &L = G.m_vLayers[static_cast<std::size_t>(Layer)];
-		if(!L.IsTiles())
+		if(Scope == undo_scope::tiles && !L.IsTiles())
+			return;
+		if(Scope == undo_scope::quads && !L.IsQuads())
+			return;
+		if(Scope == undo_scope::colour && !L.IsTiles())
 			return;
 
-		CUndoState State;
-		State.m_Group = Group;
-		State.m_Layer = Layer;
-		State.m_Width = L.m_Width;
-		State.m_Height = L.m_Height;
-		State.m_vTiles = L.m_vTiles;
-		m_vUndo.push_back(std::move(State));
+		m_vUndo.push_back(CaptureLayer(L, Group, Layer, Scope));
 		if(m_vUndo.size() > 32)
 			m_vUndo.erase(m_vUndo.begin());
 		m_vRedo.clear();
@@ -456,11 +799,7 @@ namespace game
 		CGroup &G = m_Map.m_vGroups[static_cast<std::size_t>(State.m_Group)];
 		if(State.m_Layer >= static_cast<int>(G.m_vLayers.size()))
 			return;
-		CLayer &L = G.m_vLayers[static_cast<std::size_t>(State.m_Layer)];
-		m_vRedo.push_back({State.m_Group, State.m_Layer, L.m_Width, L.m_Height, L.m_vTiles});
-		L.m_vTiles = State.m_vTiles;
-		L.m_Width = State.m_Width;
-		L.m_Height = State.m_Height;
+		ApplyUndoState(State, m_vRedo);
 		m_Dirty = true;
 		SetStatus("undo");
 	}
@@ -479,13 +818,33 @@ namespace game
 		CGroup &G = m_Map.m_vGroups[static_cast<std::size_t>(State.m_Group)];
 		if(State.m_Layer >= static_cast<int>(G.m_vLayers.size()))
 			return;
-		CLayer &L = G.m_vLayers[static_cast<std::size_t>(State.m_Layer)];
-		m_vUndo.push_back({State.m_Group, State.m_Layer, L.m_Width, L.m_Height, L.m_vTiles});
-		L.m_vTiles = State.m_vTiles;
-		L.m_Width = State.m_Width;
-		L.m_Height = State.m_Height;
+		ApplyUndoState(State, m_vUndo);
 		m_Dirty = true;
 		SetStatus("redo");
+	}
+
+	// puts the current state of the layer on the other stack, then restores the
+	// captured one; both stacks must move together or redo would lose the scope
+	void CEditor::ApplyUndoState(const CUndoState &State, std::vector<CUndoState> &Other)
+	{
+		CGroup &G = m_Map.m_vGroups[static_cast<std::size_t>(State.m_Group)];
+		CLayer &L = G.m_vLayers[static_cast<std::size_t>(State.m_Layer)];
+		Other.push_back(CaptureLayer(L, State.m_Group, State.m_Layer, State.m_Scope));
+
+		switch(State.m_Scope)
+		{
+		case undo_scope::tiles:
+			L.m_vTiles = State.m_vTiles;
+			L.m_Width = State.m_Width;
+			L.m_Height = State.m_Height;
+			break;
+		case undo_scope::quads:
+			L.m_vQuads = State.m_vQuads;
+			break;
+		case undo_scope::colour:
+			L.m_Color = State.m_Color;
+			break;
+		}
 	}
 
 	// ------------------------------------------------------------- painting
@@ -662,6 +1021,28 @@ namespace game
 			FitToMap();
 		if(Input.KeyPressed(GLFW_KEY_G))
 			m_bGrid = !m_bGrid;
+		// the envelope preview clock
+		if(Input.KeyPressed(GLFW_KEY_SPACE))
+		{
+			m_bEnvelopePlaying = !m_bEnvelopePlaying;
+			SetStatus(m_bEnvelopePlaying ? "envelope preview running" : "envelope preview paused");
+		}
+		if(Input.KeyPressed(GLFW_KEY_MINUS))
+		{
+			m_EnvelopeSpeed = m_EnvelopeSpeed <= 0.25f ? 0.25f : m_EnvelopeSpeed * 0.5f;
+			SetStatus(base::Format("envelope speed %.2gx", m_EnvelopeSpeed));
+		}
+		if(Input.KeyPressed(GLFW_KEY_EQUAL))
+		{
+			m_EnvelopeSpeed = std::min(8.0f, m_EnvelopeSpeed * 2.0f);
+			SetStatus(base::Format("envelope speed %.2gx", m_EnvelopeSpeed));
+		}
+		// the colour picker for the selected tile layer or quads
+		if(Input.KeyPressed(GLFW_KEY_C))
+		{
+			if(!OpenColorPicker())
+				SetStatus("nothing to colour: select a tile layer or a quad");
+		}
 		if(Input.KeyPressed(GLFW_KEY_1))
 			m_Tool = editor_tool::paint;
 		if(Input.KeyPressed(GLFW_KEY_2))
@@ -766,6 +1147,41 @@ namespace game
 				}
 		}
 
+		// the quads of the selected quad layer are picked with the left button,
+		// which is also what gives the colour picker something to edit
+		UpdateQuadHover(bInCanvas);
+		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::left) && IsQuadLayerSelected())
+		{
+			const bool bAdd = Input.ModifierDown(GLFW_KEY_LEFT_CONTROL) || Input.ModifierDown(GLFW_KEY_RIGHT_CONTROL);
+			if(m_QuadHover < 0)
+			{
+				if(!bAdd && !m_vSelectedQuads.empty())
+					m_vSelectedQuads.clear();
+			}
+			else if(bAdd)
+			{
+				const auto At = std::find(m_vSelectedQuads.begin(), m_vSelectedQuads.end(), m_QuadHover);
+				if(At != m_vSelectedQuads.end())
+					m_vSelectedQuads.erase(At);
+				else
+					m_vSelectedQuads.push_back(m_QuadHover);
+			}
+			else if(m_vSelectedQuads.size() != 1 || m_vSelectedQuads[0] != m_QuadHover)
+			{
+				m_vSelectedQuads.assign(1, m_QuadHover);
+			}
+			if(!m_vSelectedQuads.empty())
+			{
+				std::sort(m_vSelectedQuads.begin(), m_vSelectedQuads.end());
+				CColor Color;
+				if(PickerColor(Color))
+					m_PickerColor = Color;
+			}
+			SetStatus(m_vSelectedQuads.empty() ? "no quad selected" :
+				base::Format("%zu quad%s selected, press C for the colour", m_vSelectedQuads.size(), m_vSelectedQuads.size() == 1 ? "" : "s"));
+			return;
+		}
+
 		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::left))
 		{
 			if(m_Tool == editor_tool::pick)
@@ -794,12 +1210,58 @@ namespace game
 			EndStroke();
 	}
 
+	bool CEditor::IsQuadLayerSelected() const
+	{
+		const CLayer *pLayer = SelectedLayer();
+		return pLayer != nullptr && pLayer->IsQuads();
+	}
+
+	// the quad under the mouse, topmost last so the newest is picked first
+	void CEditor::UpdateQuadHover(bool bInCanvas)
+	{
+		m_QuadHover = -1;
+		const CLayer *pLayer = SelectedLayer();
+		if(!bInCanvas || pLayer == nullptr || !pLayer->IsQuads())
+			return;
+
+		const base::vec2 Mouse = m_pGraphics->Input().MousePosition();
+		for(int Index = static_cast<int>(pLayer->m_vQuads.size()) - 1; Index >= 0; Index--)
+		{
+			base::vec2 aWorld[4];
+			QuadPoints(pLayer->m_vQuads[static_cast<std::size_t>(Index)], aWorld);
+			base::vec2 aScreen[4];
+			for(int i = 0; i < 4; i++)
+				aScreen[i] = m_View.WorldToScreen(aWorld[i]);
+			if(base::PointInQuad(aScreen, Mouse))
+			{
+				m_QuadHover = Index;
+				return;
+			}
+		}
+	}
+
 	void CEditor::Update()
 	{
 		// a minimized window can report itself as empty; there is nothing to lay
 		// out or hit test then, and nanovg must not be handed a zero size
 		if(m_pGraphics != nullptr && (m_pGraphics->WindowSize().x < 1.0f || m_pGraphics->WindowSize().y < 1.0f))
 			return;
+
+		// the envelope preview runs on its own clock, so colour envelopes and
+		// animated quads can be looked at while editing
+		const double Now = base::Now();
+		if(m_LastFrameTime > 0.0)
+		{
+			const float Delta = static_cast<float>(std::min(Now - m_LastFrameTime, 0.1));
+			if(m_bEnvelopePlaying && Delta > 0.0f)
+			{
+				const float Loop = EnvelopeLoopLength();
+				m_EnvelopeTime += Delta * m_EnvelopeSpeed;
+				if(m_EnvelopeTime > Loop)
+					m_EnvelopeTime = std::fmod(m_EnvelopeTime, Loop);
+			}
+		}
+		m_LastFrameTime = Now;
 
 		EnsureViewStates();
 		ClampSelection();
@@ -810,12 +1272,15 @@ namespace game
 		m_View.m_Origin = Canvas.m_TopLeft;
 		m_View.m_Viewport = base::vec2(Canvas.Width(), Canvas.Height());
 
-		HandleShortcuts();
-
-		// popups take the input first
-		if(m_bShowOpen || m_bShowSave || m_bShowExport || m_bShowHelp)
+		// a popup owns the keyboard and the canvas while it is open, otherwise
+		// typing a file name would also trigger the editor shortcuts
+		if(m_bShowOpen || m_bShowSave || m_bShowExport || m_bShowHelp || m_bShowColor)
+		{
+			HandlePopupInput();
 			return;
+		}
 
+		HandleShortcuts();
 		HandleCanvasInput(Canvas);
 	}
 } // namespace game

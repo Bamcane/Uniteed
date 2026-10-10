@@ -25,10 +25,12 @@ namespace game
 		constexpr float RowHeight = 22.0f;
 
 		// draws one tile of a tile sheet. The sheet is a 16 by 16 grid, so the
-		// pattern is offset by whole destination tiles.
-		void DrawTile(NVGcontext *pContext, int Texture, int Index, int Flags, float X, float Y, float Size)
+		// pattern is offset by whole destination tiles. Alpha carries the layer
+		// colour; the rgb part of it is baked into the texture instead, because
+		// a nanovg image pattern can only be faded, not tinted.
+		void DrawTile(NVGcontext *pContext, int Texture, int Index, int Flags, float X, float Y, float Size, float Alpha = 1.0f)
 		{
-			if(Texture <= 0 || Index <= 0)
+			if(Texture <= 0 || Index <= 0 || Alpha <= 0.0f)
 				return;
 			const int Col = Index % 16;
 			const int Row = Index / 16;
@@ -52,13 +54,124 @@ namespace game
 			}
 			// the whole 16x16 sheet spans 16 * Size, so the wanted cell starts at
 			// -Col * Size
-			const NVGpaint Paint = nvgImagePattern(pContext, -Col * Size, -Row * Size, Size * 16.0f, Size * 16.0f, 0.0f, Texture, 1.0f);
+			const NVGpaint Paint = nvgImagePattern(pContext, -Col * Size, -Row * Size, Size * 16.0f, Size * 16.0f, 0.0f, Texture, Alpha);
 			nvgBeginPath(pContext);
 			nvgRect(pContext, 0.0f, 0.0f, Size, Size);
 			nvgFillPaint(pContext, Paint);
 			nvgFill(pContext);
 			nvgRestore(pContext);
 		}
+
+		NVGcolor ToColor(const CColor &Color)
+		{
+			return nvgRGBA(static_cast<unsigned char>(base::clamp(Color.r, 0, 255)),
+				static_cast<unsigned char>(base::clamp(Color.g, 0, 255)),
+				static_cast<unsigned char>(base::clamp(Color.b, 0, 255)),
+				static_cast<unsigned char>(base::clamp(Color.a, 0, 255)));
+		}
+
+		// ------------------------------------------------------------------ hsv
+		// the colour picker works in hsv because that is what an sv square needs;
+		// the hue is handed in and back out so that picking a grey does not lose
+		// the hue the user had
+		void RgbToHsv(const CColor &Color, float &Hue, float &Saturation, float &Value, float &StoredHue)
+		{
+			const float R = static_cast<float>(Color.r) / 255.0f;
+			const float G = static_cast<float>(Color.g) / 255.0f;
+			const float B = static_cast<float>(Color.b) / 255.0f;
+			const float Max = std::max({R, G, B});
+			const float Min = std::min({R, G, B});
+			const float Delta = Max - Min;
+
+			Value = Max;
+			Saturation = Max <= 0.0f ? 0.0f : Delta / Max;
+			if(Delta <= 0.0f)
+			{
+				Hue = StoredHue;
+				return;
+			}
+
+			float H = 0.0f;
+			if(Max == R)
+				H = std::fmod((G - B) / Delta, 6.0f);
+			else if(Max == G)
+				H = (B - R) / Delta + 2.0f;
+			else
+				H = (R - G) / Delta + 4.0f;
+			H *= 60.0f;
+			if(H < 0.0f)
+				H += 360.0f;
+			Hue = H;
+			StoredHue = H;
+		}
+
+		CColor HsvToColorRaw(float Hue, float Saturation, float Value, int Alpha)
+		{
+			const float H = Hue / 60.0f;
+			const int Sector = static_cast<int>(std::floor(H)) % 6;
+			const float F = H - std::floor(H);
+			const float P = Value * (1.0f - Saturation);
+			const float Q = Value * (1.0f - Saturation * F);
+			const float T = Value * (1.0f - Saturation * (1.0f - F));
+
+			float R = 0.0f, G = 0.0f, B = 0.0f;
+			switch(Sector)
+			{
+			case 0: R = Value; G = T; B = P; break;
+			case 1: R = Q; G = Value; B = P; break;
+			case 2: R = P; G = Value; B = T; break;
+			case 3: R = P; G = Q; B = Value; break;
+			case 4: R = T; G = P; B = Value; break;
+			default: R = Value; G = P; B = Q; break;
+			}
+
+			CColor Color;
+			Color.r = base::clamp(static_cast<int>(std::lround(R * 255.0f)), 0, 255);
+			Color.g = base::clamp(static_cast<int>(std::lround(G * 255.0f)), 0, 255);
+			Color.b = base::clamp(static_cast<int>(std::lround(B * 255.0f)), 0, 255);
+			Color.a = Alpha;
+			return Color;
+		}
+
+		NVGcolor HsvToColor(float Hue, float Saturation, float Value, int Alpha)
+		{
+			return ToColor(HsvToColorRaw(Hue, Saturation, Value, Alpha));
+		}
+
+		NVGcolor MixColor(const NVGcolor &A, const NVGcolor &B, float T)
+		{
+			return nvgRGBAf(base::lerp(A.r, B.r, T), base::lerp(A.g, B.g, T), base::lerp(A.b, B.b, T), base::lerp(A.a, B.a, T));
+		}
+
+		bool SameColor(const CColor &A, const CColor &B)
+		{
+			return A.r == B.r && A.g == B.g && A.b == B.b && A.a == B.a;
+		}
+
+		// the four corners as screen points, in the (top left, top right, bottom
+		// right, bottom left) order the colours use
+		void QuadScreenPoints(const base::view_transform &View, const base::vec2 *paWorld, base::vec2 *paScreen)
+		{
+			for(int i = 0; i < 4; i++)
+				paScreen[i] = View.WorldToScreen(paWorld[i]);
+		}
+
+		// the point of the bilinear surface of the quad at (u,v)
+		base::vec2 QuadPointAt(const base::vec2 *paScreen, float u, float v)
+		{
+			const base::vec2 Top = paScreen[0] + (paScreen[1] - paScreen[0]) * u;
+			const base::vec2 Bottom = paScreen[3] + (paScreen[2] - paScreen[3]) * u;
+			return Top + (Bottom - Top) * v;
+		}
+
+		// the colour of the quad at (u,v), bilinear over the four corners
+		NVGcolor QuadColorAt(const CColor *paColors, float u, float v)
+		{
+			const NVGcolor Top = MixColor(ToColor(paColors[0]), ToColor(paColors[1]), u);
+			const NVGcolor Bottom = MixColor(ToColor(paColors[3]), ToColor(paColors[2]), u);
+			return MixColor(Top, Bottom, v);
+		}
+
 
 		NVGcolor EntityColor(int Entity)
 		{
@@ -106,9 +219,17 @@ namespace game
 	} // namespace
 
 	// ------------------------------------------------------------------ canvas
-	void CEditor::DrawTileLayer(NVGcontext *pContext, const base::rect &Canvas, const CLayer &Layer, bool Selected)
+	void CEditor::DrawTileLayer(NVGcontext *pContext, const CLayer &Layer, bool Selected)
 	{
-		const int Texture = TextureForImage(Layer.m_Image);
+		/*
+			The layer colour is a real RGBA multiplier over the tiles and the
+			client applies it always, not only to the layer being edited. Its
+			alpha goes to the image pattern, its rgb to a pre tinted copy of the
+			sheet.
+		*/
+		const CColor Color = LayerColor(Layer);
+		const int Texture = TextureForImage(Layer.m_Image, Color);
+		const float Alpha = static_cast<float>(Color.a) / 255.0f;
 		const base::rect World = m_View.VisibleWorld();
 
 		const int x0 = std::max(0, static_cast<int>(std::floor(World.m_TopLeft.x / TileSize)) - 1);
@@ -131,14 +252,8 @@ namespace game
 			return;
 		}
 
-		// a color tint on the whole layer
-		if(Layer.m_Color.a != 255 && Layer.m_Color.a > 0 && Selected)
-		{
-			const base::vec2 TopLeft = m_View.WorldToScreen(base::vec2(0.0f, 0.0f));
-			ui::Rect(pContext, base::rect::FromSize(TopLeft, base::vec2(Layer.m_Width * TileSize * m_View.m_Zoom, Layer.m_Height * TileSize * m_View.m_Zoom)),
-				nvgRGBA(static_cast<unsigned char>(Layer.m_Color.r), static_cast<unsigned char>(Layer.m_Color.g), static_cast<unsigned char>(Layer.m_Color.b),
-					static_cast<unsigned char>(255 - Layer.m_Color.a)));
-		}
+		if(Alpha <= 0.0f)
+			return; // a layer colour of zero alpha hides the layer
 
 		const float Size = TileSize * m_View.m_Zoom;
 		for(int y = y0; y < y1; y++)
@@ -149,7 +264,7 @@ namespace game
 				if(pTile == nullptr || pTile->m_Index == 0)
 					continue;
 				const base::vec2 Screen = m_View.WorldToScreen(base::vec2(x * TileSize, y * TileSize));
-				DrawTile(pContext, Texture, pTile->m_Index, pTile->m_Flags, Screen.x, Screen.y, Size);
+				DrawTile(pContext, Texture, pTile->m_Index, pTile->m_Flags, Screen.x, Screen.y, Size, Alpha);
 			}
 		}
 	}
@@ -225,26 +340,93 @@ namespace game
 
 	void CEditor::DrawQuadLayer(NVGcontext *pContext, const CLayer &Layer)
 	{
-		for(const CQuad &Quad : Layer.m_vQuads)
+		const base::rect Canvas = CanvasRect(m_pGraphics->WindowSize());
+
+		for(std::size_t Index = 0; Index < Layer.m_vQuads.size(); Index++)
 		{
-			nvgBeginPath(pContext);
-			for(int i = 0; i < 5; i++)
+			const CQuad &Quad = Layer.m_vQuads[Index];
+
+			base::vec2 aWorld[4];
+			QuadPoints(Quad, aWorld);
+
+			base::vec2 aScreen[4];
+			QuadScreenPoints(m_View, aWorld, aScreen);
+
+			// a cheap cull, most quads of a big map are off screen
+			base::rect Bounds(aScreen[0], aScreen[0]);
+			for(int i = 1; i < 4; i++)
+				Bounds = base::rect(
+					base::vec2(std::min(Bounds.m_TopLeft.x, aScreen[i].x), std::min(Bounds.m_TopLeft.y, aScreen[i].y)),
+					base::vec2(std::max(Bounds.m_BottomRight.x, aScreen[i].x), std::max(Bounds.m_BottomRight.y, aScreen[i].y)));
+			if(Bounds.Intersect(Canvas).Width() <= 0.0f || Bounds.Intersect(Canvas).Height() <= 0.0f)
+				continue;
+
+			const bool Selected = std::find(m_vSelectedQuads.begin(), m_vSelectedQuads.end(), static_cast<int>(Index)) != m_vSelectedQuads.end();
+			const bool Hovered = m_QuadHover == static_cast<int>(Index);
+
+			// the four corner colours with the quad colour envelope applied
+			CColor aColors[4];
+			QuadColors(Quad, aColors);
+			if(aColors[0].a <= 0 && aColors[1].a <= 0 && aColors[2].a <= 0 && aColors[3].a <= 0)
+				continue;
+
+			const auto Path = [&pContext](const base::vec2 *paPoints) {
+				nvgBeginPath(pContext);
+				nvgMoveTo(pContext, paPoints[0].x, paPoints[0].y);
+				for(int i = 1; i < 4; i++)
+					nvgLineTo(pContext, paPoints[i].x, paPoints[i].y);
+				nvgClosePath(pContext);
+			};
+
+			const bool bFlat = SameColor(aColors[0], aColors[1]) && SameColor(aColors[0], aColors[2]) && SameColor(aColors[0], aColors[3]);
+			if(bFlat)
 			{
-				const base::vec2 Screen = m_View.WorldToScreen(base::vec2(base::FixedToFloat(Quad.m_aPoints[i].x), base::FixedToFloat(Quad.m_aPoints[i].y)));
-				if(i == 0)
-					nvgMoveTo(pContext, Screen.x, Screen.y);
-				else
-					nvgLineTo(pContext, Screen.x, Screen.y);
+				Path(aScreen);
+				nvgFillColor(pContext, ToColor(aColors[0]));
+				nvgFill(pContext);
 			}
-			nvgClosePath(pContext);
-			const int Alpha = base::clamp(Quad.m_aColors[0].a / 8, 12, 90);
-			nvgFillColor(pContext, nvgRGBA(static_cast<unsigned char>(base::clamp(Quad.m_aColors[0].r / 4, 40, 255)),
-				static_cast<unsigned char>(base::clamp(Quad.m_aColors[0].g / 4, 40, 255)),
-				static_cast<unsigned char>(base::clamp(Quad.m_aColors[0].b / 4, 40, 255)), static_cast<unsigned char>(Alpha)));
-			nvgFill(pContext);
-			nvgStrokeColor(pContext, nvgRGBA(200, 210, 230, 90));
-			nvgStrokeWidth(pContext, 1.0f);
+			else
+			{
+				/*
+					nanovg fills a path with a single colour, so a quad whose
+					corners differ is drawn as a grid of cells over its bilinear
+					surface, each filled with the colour at its centre. Anti
+					aliasing is off for those cells: they tile the surface
+					exactly, and the shared edges would show as seams. The cell
+					count follows the size on screen.
+				*/
+				const int Cells = base::clamp(static_cast<int>(std::max(Bounds.Width(), Bounds.Height()) / 16.0f), 1, 8);
+				nvgShapeAntiAlias(pContext, 0);
+				for(int CellY = 0; CellY < Cells; CellY++)
+				{
+					for(int CellX = 0; CellX < Cells; CellX++)
+					{
+						const float u0 = static_cast<float>(CellX) / Cells;
+						const float u1 = static_cast<float>(CellX + 1) / Cells;
+						const float v0 = static_cast<float>(CellY) / Cells;
+						const float v1 = static_cast<float>(CellY + 1) / Cells;
+
+						const base::vec2 aCell[4] = {QuadPointAt(aScreen, u0, v0), QuadPointAt(aScreen, u1, v0),
+							QuadPointAt(aScreen, u1, v1), QuadPointAt(aScreen, u0, v1)};
+						Path(aCell);
+						nvgFillColor(pContext, QuadColorAt(aColors, (u0 + u1) * 0.5f, (v0 + v1) * 0.5f));
+						nvgFill(pContext);
+					}
+				}
+				nvgShapeAntiAlias(pContext, 1);
+			}
+
+			Path(aScreen);
+			nvgStrokeColor(pContext, Selected ? ui::Theme.m_Accent : (Hovered ? nvgRGBA(200, 210, 230, 170) : nvgRGBA(200, 210, 230, 90)));
+			nvgStrokeWidth(pContext, Selected ? 2.0f : 1.0f);
 			nvgStroke(pContext);
+
+			// the pivot point the position envelope turns the quad around
+			if(Selected)
+			{
+				const base::vec2 Pivot = m_View.WorldToScreen(base::vec2(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y)));
+				ui::Rect(pContext, base::rect::FromSize(Pivot - base::vec2(3.0f, 3.0f), base::vec2(6.0f, 6.0f)), ui::Theme.m_Accent);
+			}
 		}
 	}
 
@@ -306,7 +488,7 @@ namespace game
 					else if(Layer.IsPhysicsLayer())
 						DrawPhysicsLayer(pContext, Canvas, Layer, Layer.m_Flags);
 					else
-						DrawTileLayer(pContext, Canvas, Layer, Selected);
+						DrawTileLayer(pContext, Layer, Selected);
 				}
 				else if(Layer.IsQuads())
 				{
@@ -431,7 +613,7 @@ namespace game
 
 		const base::rect List = base::rect(
 			base::vec2(Area.m_TopLeft.x, Area.m_TopLeft.y + 32.0f),
-			base::vec2(Area.m_BottomRight.x, Area.m_BottomRight.y - 40.0f));
+			base::vec2(Area.m_BottomRight.x, Area.m_BottomRight.y - 74.0f));
 
 		nvgSave(pContext);
 		nvgScissor(pContext, List.m_TopLeft.x, List.m_TopLeft.y, List.Width(), List.Height());
@@ -488,12 +670,54 @@ namespace game
 						Kind = base::Format("sounds %zu", Layer.m_vSources.size());
 					const std::string Label = (Layer.m_Name.empty() ? std::string("layer") : Layer.m_Name) + "  " + Kind;
 					const NVGcolor TextColor = (pView != nullptr && !pView->m_Visible) ? ui::Theme.m_TextDim : ui::Theme.m_Text;
-					ui::TextClipped(pContext, m_pGraphics->Font(), base::vec2(LayerRow.m_TopLeft.x + 36.0f, LayerRow.m_TopLeft.y + 15.0f), 12.0f, TextColor, Label, LayerRow.Width() - 40.0f);
+					ui::TextClipped(pContext, m_pGraphics->Font(), base::vec2(LayerRow.m_TopLeft.x + 36.0f, LayerRow.m_TopLeft.y + 15.0f), 12.0f, TextColor, Label, LayerRow.Width() - 60.0f);
+
+					/*
+						The colour of a tile layer, or of the quads selected in a
+						quad layer, is shown as a swatch at the end of the row and
+						opens the picker. It is the only way to see a layer colour
+						without opening anything.
+					*/
+					if(Layer.IsTiles() || Layer.IsQuads())
+					{
+						const base::rect Swatch = base::rect::FromSize(base::vec2(LayerRow.m_BottomRight.x - 22.0f, LayerRow.m_TopLeft.y + 5.0f), base::vec2(16.0f, 12.0f));
+						CColor SwatchColor;
+						bool bHasColor = false;
+						if(Layer.IsTiles())
+						{
+							SwatchColor = LayerColor(Layer);
+							bHasColor = true;
+						}
+						else if(Selected && !m_vSelectedQuads.empty() && m_vSelectedQuads[0] < static_cast<int>(Layer.m_vQuads.size()))
+						{
+							CColor aColors[4];
+							QuadColors(Layer.m_vQuads[static_cast<std::size_t>(m_vSelectedQuads[0])], aColors);
+							SwatchColor = aColors[0];
+							bHasColor = true;
+						}
+						if(bHasColor)
+						{
+							ui::Rect(pContext, Swatch, ToColor(SwatchColor));
+							ui::RectOutline(pContext, Swatch, ui::Hovered(Input, Swatch) ? ui::Theme.m_Accent : ui::Theme.m_Border);
+							if(ui::Hovered(Input, Swatch) && Input.MousePressed(engine::CInput::mouse_button::left))
+							{
+								m_SelectedGroup = static_cast<int>(g);
+								m_SelectedLayer = static_cast<int>(l);
+								if(PickerColor(SwatchColor))
+								{
+									m_PickerColor = SwatchColor;
+									m_bShowColor = true;
+								}
+							}
+						}
+					}
 
 					if(ui::Hovered(Input, LayerRow) && Input.MousePressed(engine::CInput::mouse_button::left))
 					{
 						m_SelectedGroup = static_cast<int>(g);
 						m_SelectedLayer = static_cast<int>(l);
+						// another layer means another set of quads
+						m_vSelectedQuads.clear();
 					}
 				}
 				y += RowHeight;
@@ -518,6 +742,9 @@ namespace game
 			ButtonX += Width + 6.0f;
 			return ui::Button(pContext, Input, m_pGraphics->Font(), Rect, Label);
 		};
+		// the envelope preview clock sits right above the buttons
+		DrawEnvelopeBar(pContext, base::rect::FromSize(base::vec2(Area.m_TopLeft.x + 8.0f, Area.m_BottomRight.y - 68.0f),
+			base::vec2(Area.Width() - 16.0f, 22.0f)));
 		if(SmallButton("+ Group"))
 		{
 			CGroup &Group = m_Map.NewGroup();
@@ -555,6 +782,17 @@ namespace game
 					SetStatus("deleted the layer");
 				}
 			}
+		}
+		if(SmallButton("Colour"))
+		{
+			CColor Color;
+			if(PickerColor(Color))
+			{
+				m_PickerColor = Color;
+				m_bShowColor = true;
+			}
+			else
+				SetStatus("select a tile layer, or a quad with the left button");
 		}
 	}
 
@@ -760,9 +998,12 @@ namespace game
 
 		if(Input.KeyPressed(GLFW_KEY_ESCAPE))
 		{
-			m_bShowOpen = m_bShowSave = m_bShowExport = m_bShowHelp = false;
+			m_bShowOpen = m_bShowSave = m_bShowExport = m_bShowHelp = m_bShowColor = false;
 			return;
 		}
+
+		if(m_bShowColor)
+			return; // the picker handles its own mouse input while it is drawn
 
 		if(m_bShowOpen)
 		{
@@ -948,6 +1189,11 @@ namespace game
 			"Ctrl+S / Ctrl+E         save the .unitwp package / export a map",
 			"Ctrl+L / Ctrl+G         add a tile layer / a group",
 			"Delete / Shift+Delete   delete the layer / the group",
+			"left click on a quad    select it (ctrl adds, then C colours it)",
+			"C                       colour of the layer or of the selected quads",
+			"space                   run / pause the envelope preview",
+			"- / =                   envelope preview slower / faster",
+			"                        (scrubbing the layer panel bar sets the time)",
 			"Ctrl+Q                  quit",
 		};
 		float y = Popup.m_TopLeft.y + 56.0f;
@@ -958,6 +1204,180 @@ namespace game
 		}
 		ui::Text(pContext, m_pGraphics->Font(), base::vec2(Popup.m_TopLeft.x + 18.0f, Popup.m_BottomRight.y - 16.0f), 12.0f, ui::Theme.m_TextDim,
 			"esc closes this panel");
+	}
+
+	void CEditor::DrawColorPopup(NVGcontext *pContext)
+	{
+		engine::CInput &Input = m_pGraphics->Input();
+		const base::vec2 Size = m_pGraphics->WindowSize();
+		const base::rect Popup = base::rect::FromSize(base::vec2(Size.x * 0.5f - 148.0f, Size.y * 0.5f - 150.0f), base::vec2(296.0f, 300.0f));
+		ui::Rect(pContext, Popup, ui::Theme.m_Panel);
+		ui::RectOutline(pContext, Popup, ui::Theme.m_Border, 2.0f);
+
+		ui::Text(pContext, m_pGraphics->FontBold(), base::vec2(Popup.m_TopLeft.x + 16.0f, Popup.m_TopLeft.y + 24.0f), 15.0f, ui::Theme.m_Text, "Colour");
+		ui::TextClipped(pContext, m_pGraphics->Font(), base::vec2(Popup.m_BottomRight.x - 16.0f, Popup.m_TopLeft.y + 24.0f), 11.5f, ui::Theme.m_TextDim,
+			PickerTargetName(), Popup.Width() * 0.55f, ui::text_align::right);
+
+		const float X = Popup.m_TopLeft.x + 16.0f;
+		const float Width = Popup.Width() - 32.0f;
+		float y = Popup.m_TopLeft.y + 36.0f;
+
+		// the hue is kept aside, because a grey has no hue to derive it from
+		float Hue = m_PickerHue;
+		float Saturation = 0.0f, Value = 0.0f;
+		RgbToHsv(m_PickerColor, Hue, Saturation, Value, m_PickerHue);
+
+		// saturation / value square
+		const base::rect Square = base::rect::FromSize(base::vec2(X, y), base::vec2(Width, 130.0f));
+		const NVGcolor HueColor = HsvToColor(Hue, 1.0f, 1.0f, 255);
+		nvgBeginPath(pContext);
+		nvgRect(pContext, Square.m_TopLeft.x, Square.m_TopLeft.y, Square.Width(), Square.Height());
+		nvgFillPaint(pContext, nvgLinearGradient(pContext, Square.m_TopLeft.x, Square.m_TopLeft.y, Square.m_BottomRight.x, Square.m_TopLeft.y, nvgRGB(255, 255, 255), HueColor));
+		nvgFill(pContext);
+		nvgBeginPath(pContext);
+		nvgRect(pContext, Square.m_TopLeft.x, Square.m_TopLeft.y, Square.Width(), Square.Height());
+		nvgFillPaint(pContext, nvgLinearGradient(pContext, Square.m_TopLeft.x, Square.m_TopLeft.y, Square.m_TopLeft.x, Square.m_BottomRight.y, nvgRGBA(0, 0, 0, 0), nvgRGBA(0, 0, 0, 255)));
+		nvgFill(pContext);
+		ui::RectOutline(pContext, Square, ui::Theme.m_Border);
+
+		if(ui::Hovered(Input, Square) && Input.MouseDown(engine::CInput::mouse_button::left))
+		{
+			if(Input.MousePressed(engine::CInput::mouse_button::left))
+				PushUndo(m_SelectedGroup, m_SelectedLayer, PickerTargetsQuad() ? undo_scope::quads : undo_scope::colour);
+			Saturation = base::clamp((Input.MousePosition().x - Square.m_TopLeft.x) / Square.Width(), 0.0f, 1.0f);
+			Value = 1.0f - base::clamp((Input.MousePosition().y - Square.m_TopLeft.y) / Square.Height(), 0.0f, 1.0f);
+			m_PickerHue = Hue;
+			m_PickerColor = HsvToColorRaw(Hue, Saturation, Value, m_PickerColor.a);
+			SetPickerColor(m_PickerColor);
+		}
+
+		// the marker inside the square
+		const base::vec2 Marker(Square.m_TopLeft.x + Saturation * Square.Width(), Square.m_TopLeft.y + (1.0f - Value) * Square.Height());
+		nvgBeginPath(pContext);
+		nvgCircle(pContext, Marker.x, Marker.y, 5.0f);
+		nvgStrokeColor(pContext, nvgRGBA(0, 0, 0, 200));
+		nvgStrokeWidth(pContext, 2.0f);
+		nvgStroke(pContext);
+		nvgBeginPath(pContext);
+		nvgCircle(pContext, Marker.x, Marker.y, 5.0f);
+		nvgStrokeColor(pContext, nvgRGBA(255, 255, 255, 230));
+		nvgStrokeWidth(pContext, 1.0f);
+		nvgStroke(pContext);
+		y += Square.Height() + 10.0f;
+
+		// the hue strip
+		const base::rect HueBar = base::rect::FromSize(base::vec2(X, y), base::vec2(Width, 14.0f));
+		const NVGcolor aHues[7] = {nvgRGB(255, 0, 0), nvgRGB(255, 255, 0), nvgRGB(0, 255, 0), nvgRGB(0, 255, 255),
+			nvgRGB(0, 0, 255), nvgRGB(255, 0, 255), nvgRGB(255, 0, 0)};
+		for(int i = 0; i < 6; i++)
+		{
+			const float x0 = HueBar.m_TopLeft.x + HueBar.Width() * i / 6.0f;
+			const float x1 = HueBar.m_TopLeft.x + HueBar.Width() * (i + 1) / 6.0f;
+			nvgBeginPath(pContext);
+			nvgRect(pContext, x0, HueBar.m_TopLeft.y, x1 - x0, HueBar.Height());
+			nvgFillPaint(pContext, nvgLinearGradient(pContext, x0, HueBar.m_TopLeft.y, x1, HueBar.m_TopLeft.y, aHues[i], aHues[i + 1]));
+			nvgFill(pContext);
+		}
+		ui::RectOutline(pContext, HueBar, ui::Theme.m_Border);
+		if(ui::Hovered(Input, HueBar) && Input.MouseDown(engine::CInput::mouse_button::left))
+		{
+			if(Input.MousePressed(engine::CInput::mouse_button::left))
+				PushUndo(m_SelectedGroup, m_SelectedLayer, PickerTargetsQuad() ? undo_scope::quads : undo_scope::colour);
+			Hue = base::clamp((Input.MousePosition().x - HueBar.m_TopLeft.x) / HueBar.Width(), 0.0f, 1.0f) * 360.0f;
+			m_PickerHue = Hue;
+			m_PickerColor = HsvToColorRaw(Hue, Saturation, Value, m_PickerColor.a);
+			SetPickerColor(m_PickerColor);
+		}
+		const float HueX = HueBar.m_TopLeft.x + HueBar.Width() * (Hue / 360.0f);
+		ui::Rect(pContext, base::rect::FromSize(base::vec2(HueX - 2.0f, HueBar.m_TopLeft.y - 2.0f), base::vec2(4.0f, HueBar.Height() + 4.0f)), nvgRGBA(255, 255, 255, 230));
+		y += HueBar.Height() + 8.0f;
+
+		// the alpha strip, over a checkerboard so transparency is visible
+		const base::rect AlphaBar = base::rect::FromSize(base::vec2(X, y), base::vec2(Width, 14.0f));
+		for(int i = 0; i < 20; i++)
+			ui::Rect(pContext, base::rect::FromSize(base::vec2(AlphaBar.m_TopLeft.x + i * AlphaBar.Width() / 20.0f, AlphaBar.m_TopLeft.y),
+				base::vec2(AlphaBar.Width() / 20.0f + 0.5f, AlphaBar.Height())), (i % 2 == 0) ? nvgRGBA(90, 90, 96, 255) : nvgRGBA(60, 60, 66, 255));
+		const NVGcolor Opaque = nvgRGBA(static_cast<unsigned char>(m_PickerColor.r), static_cast<unsigned char>(m_PickerColor.g), static_cast<unsigned char>(m_PickerColor.b), 255);
+		nvgBeginPath(pContext);
+		nvgRect(pContext, AlphaBar.m_TopLeft.x, AlphaBar.m_TopLeft.y, AlphaBar.Width(), AlphaBar.Height());
+		nvgFillPaint(pContext, nvgLinearGradient(pContext, AlphaBar.m_TopLeft.x, AlphaBar.m_TopLeft.y, AlphaBar.m_BottomRight.x, AlphaBar.m_TopLeft.y,
+			nvgRGBA(static_cast<unsigned char>(m_PickerColor.r), static_cast<unsigned char>(m_PickerColor.g), static_cast<unsigned char>(m_PickerColor.b), 0), Opaque));
+		nvgFill(pContext);
+		ui::RectOutline(pContext, AlphaBar, ui::Theme.m_Border);
+		if(ui::Hovered(Input, AlphaBar) && Input.MouseDown(engine::CInput::mouse_button::left))
+		{
+			if(Input.MousePressed(engine::CInput::mouse_button::left))
+				PushUndo(m_SelectedGroup, m_SelectedLayer, PickerTargetsQuad() ? undo_scope::quads : undo_scope::colour);
+			m_PickerColor.a = base::clamp(static_cast<int>((Input.MousePosition().x - AlphaBar.m_TopLeft.x) / AlphaBar.Width() * 255.0f), 0, 255);
+			SetPickerColor(m_PickerColor);
+		}
+		ui::Rect(pContext, base::rect::FromSize(base::vec2(AlphaBar.m_TopLeft.x + AlphaBar.Width() * m_PickerColor.a / 255.0f - 2.0f, AlphaBar.m_TopLeft.y - 2.0f),
+			base::vec2(4.0f, AlphaBar.Height() + 4.0f)), nvgRGBA(255, 255, 255, 230));
+		y += AlphaBar.Height() + 12.0f;
+
+		// the colour being picked, next to a couple of handy presets
+		const base::rect Preview = base::rect::FromSize(base::vec2(X, y), base::vec2(48.0f, 22.0f));
+		ui::Rect(pContext, Preview, nvgRGBA(static_cast<unsigned char>(m_PickerColor.r), static_cast<unsigned char>(m_PickerColor.g), static_cast<unsigned char>(m_PickerColor.b),
+			static_cast<unsigned char>(m_PickerColor.a)));
+		ui::RectOutline(pContext, Preview, ui::Theme.m_Border);
+		ui::Text(pContext, m_pGraphics->Font(), base::vec2(Preview.m_BottomRight.x + 8.0f, Preview.Center().y + 4.0f), 12.0f, ui::Theme.m_TextDim,
+			base::Format("%d %d %d %d", m_PickerColor.r, m_PickerColor.g, m_PickerColor.b, m_PickerColor.a));
+
+		const CColor aPresets[8] = {{255, 255, 255, 255}, {0, 0, 0, 255}, {255, 255, 255, 128}, {140, 90, 50, 255},
+			{120, 200, 120, 255}, {90, 140, 240, 255}, {240, 200, 90, 255}, {200, 90, 90, 255}};
+		for(int i = 0; i < 8; i++)
+		{
+			const base::rect Swatch = base::rect::FromSize(base::vec2(X + i * 26.0f, y + 30.0f), base::vec2(22.0f, 22.0f));
+			ui::Rect(pContext, Swatch, nvgRGBA(static_cast<unsigned char>(aPresets[i].r), static_cast<unsigned char>(aPresets[i].g),
+				static_cast<unsigned char>(aPresets[i].b), static_cast<unsigned char>(aPresets[i].a)));
+			ui::RectOutline(pContext, Swatch, ui::Hovered(Input, Swatch) ? ui::Theme.m_Accent : ui::Theme.m_Border);
+			if(ui::Hovered(Input, Swatch) && Input.MousePressed(engine::CInput::mouse_button::left))
+			{
+				PushUndo(m_SelectedGroup, m_SelectedLayer, PickerTargetsQuad() ? undo_scope::quads : undo_scope::colour);
+				m_PickerColor = aPresets[i];
+				RgbToHsv(m_PickerColor, m_PickerHue, Saturation, Value, m_PickerHue);
+				SetPickerColor(m_PickerColor);
+			}
+		}
+
+		ui::Text(pContext, m_pGraphics->Font(), base::vec2(Popup.m_TopLeft.x + 16.0f, Popup.m_BottomRight.y - 14.0f), 11.5f, ui::Theme.m_TextDim,
+			"esc closes, live on the map");
+	}
+
+	// ------------------------------------------------------------- envelopes
+	void CEditor::DrawEnvelopeBar(NVGcontext *pContext, const base::rect &Area)
+	{
+		engine::CInput &Input = m_pGraphics->Input();
+		const float Loop = EnvelopeLoopLength();
+
+		float x = Area.m_TopLeft.x;
+		const base::rect Play = base::rect::FromSize(base::vec2(x, Area.m_TopLeft.y), base::vec2(26.0f, Area.Height()));
+		if(ui::Button(pContext, Input, m_pGraphics->Font(), Play, m_bEnvelopePlaying ? "II" : ">"))
+			m_bEnvelopePlaying = !m_bEnvelopePlaying;
+		x += 30.0f;
+
+		const base::rect Speed = base::rect::FromSize(base::vec2(x, Area.m_TopLeft.y), base::vec2(40.0f, Area.Height()));
+		if(ui::Button(pContext, Input, m_pGraphics->Font(), Speed, base::Format("%.2gx", m_EnvelopeSpeed)))
+		{
+			const float aSpeeds[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f};
+			std::size_t Next = 0;
+			for(std::size_t i = 0; i < std::size(aSpeeds); i++)
+				if(m_EnvelopeSpeed >= aSpeeds[i])
+					Next = (i + 1) % std::size(aSpeeds);
+			m_EnvelopeSpeed = aSpeeds[Next];
+		}
+		x += 44.0f;
+
+		const float TextWidth = 92.0f;
+		const base::rect Track = base::rect::FromSize(base::vec2(x, Area.m_TopLeft.y), base::vec2(std::max(Area.m_BottomRight.x - TextWidth - x, 20.0f), Area.Height()));
+		float Time = m_EnvelopeTime;
+		if(ui::Slider(pContext, Input, Track, Time, 0.0f, Loop))
+		{
+			m_EnvelopeTime = Time;
+			m_bEnvelopePlaying = false; // scrubbing is a deliberate position
+		}
+		ui::Text(pContext, m_pGraphics->Font(), base::vec2(Area.m_BottomRight.x, Area.m_TopLeft.y + 15.0f), 11.5f, ui::Theme.m_TextDim,
+			base::Format("%.2fs / %.2fs", m_EnvelopeTime, Loop), ui::text_align::right);
 	}
 
 	void CEditor::DrawPopups(NVGcontext *pContext)
@@ -971,6 +1391,8 @@ namespace game
 			DrawExportPopup(pContext);
 		if(m_bShowHelp)
 			DrawHelpPopup(pContext);
+		if(m_bShowColor)
+			DrawColorPopup(pContext);
 
 		// clicking outside a popup closes it, except for the help panel
 		if((m_bShowOpen || m_bShowSave || m_bShowExport) && Input.MousePressed(engine::CInput::mouse_button::left))

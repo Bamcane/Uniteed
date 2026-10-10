@@ -61,6 +61,11 @@ namespace engine
 		int Texture(const std::string &Key) const;
 		int LoadTextureFile(const std::string &Key, const storage::path &File);
 		int CreateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels);
+		// replaces the pixels of an existing texture of the same size; returns
+		// false when there is nothing to update, so the caller creates it instead
+		bool UpdateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels);
+		// drops one texture, for a caller that reuses a key for another image
+		void ForgetTexture(const std::string &Key);
 		void ForgetTextures();
 
 		// ------------------------------------------------------------- fonts

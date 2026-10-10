@@ -82,11 +82,16 @@ def main(path):
                 v = rd(body,12,'i')[0]
                 if ltype == 2 and size >= 60:
                     w,h,flags = rd(body,16,'3i')
-                    img, data_idx = rd(body,44,'2i')
+                    # the colour is four ints, not four bytes: the item is 92
+                    # bytes with image at 52 and data at 56, and verify_map.py
+                    # decodes the tile data through offset 56
+                    colour = rd(body,28,'4i')
+                    img, data_idx = rd(body,52,'2i')
                     s2 = ''
                     if size >= 80:
                         s2 = ' tele=%d speedup=%d front=%d switch=%d tune=%d' % rd(body,60,'5i')
-                    extra = f'tilemap ver={v} {w}x{h} flags={flags} layerflags={lflags} image={img} data={data_idx} size={size}{s2}'
+                    extra = (f'tilemap ver={v} {w}x{h} flags={flags} layerflags={lflags} '
+                             f'colour={colour[0]},{colour[1]},{colour[2]},{colour[3]} image={img} data={data_idx} size={size}{s2}')
                 elif ltype == 3:
                     nq, di, img = rd(body,12,'3i')
                     extra = f'quads ver={v} numquads={nq} data={di} image={img} size={size}'

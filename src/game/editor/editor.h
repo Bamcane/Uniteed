@@ -30,6 +30,8 @@
 #include <string>
 #include <vector>
 
+#include <map>
+
 #include "base/math.h"
 #include "engine/graphics.h"
 #include "game/map/map.h"
@@ -63,6 +65,15 @@ namespace game
 		void Update();
 		void Render();
 
+		// the envelope preview clock, so the screenshot mode can pin it down
+		void SetEnvelopePlaying(bool Playing) { m_bEnvelopePlaying = Playing; }
+		void SetEnvelopeTime(float Time) { m_EnvelopeTime = Time; }
+		bool EnvelopePlaying() const { return m_bEnvelopePlaying; }
+		float EnvelopeTime() const { return m_EnvelopeTime; }
+		// opens the colour picker on the selected tile layer or quads; false when
+		// there is nothing to colour
+		bool OpenColorPicker();
+
 		// file operations, also used by the command line and the screenshot mode
 		bool OpenFile(const std::string &Path);
 		bool SavePackage(const std::string &Path);
@@ -91,6 +102,15 @@ namespace game
 		void SetCursor(base::vec2 World) { m_CursorWorld = World; m_bCursorValid = true; }
 
 	private:
+		// undo: the scope says what was touched, so a colour change does not
+		// have to snapshot a whole tile layer
+		enum class undo_scope
+		{
+			tiles,
+			quads,
+			colour,
+		};
+
 		// ------------------------------------------------------------- helpers
 		CLayer *SelectedLayer();		const CLayer *SelectedLayer() const;
 		CGroup *SelectedGroup();
@@ -105,24 +125,45 @@ namespace game
 		base::rect MapBounds() const;
 
 		int TextureForImage(int ImageIndex);
+		// the same image with every pixel multiplied by Tint, for the layer
+		// colours: nanovg image patterns cannot modulate a texture's rgb
+		int TextureForImage(int ImageIndex, const CColor &Tint);
+		bool TintSource(int ImageIndex, std::vector<std::byte> &Pixels, int &Width, int &Height);
+		std::string TintSlotKey(std::size_t Slot) const;
 		bool SetupVersionForMap();
+
+		// ------------------------------------------------------------- colours
+		// the effective colour of a tile layer: its own colour times its colour
+		// envelope, the way the reference multiplies them
+		CColor LayerColor(const CLayer &Layer) const;
+		// the four corner colours of a quad with the quad colour envelope
+		void QuadColors(const CQuad &Quad, CColor *paColors) const;
+		// the quad's points moved and turned by its position envelope
+		void QuadPoints(const CQuad &Quad, base::vec2 *paPoints) const;
+		// the colour the picker is editing, and whether a quad or a layer owns it
+		bool PickerColor(CColor &Color) const;
+		void SetPickerColor(const CColor &Color);
+		bool PickerTargetsQuad() const;
+		std::string PickerTargetName() const;
 
 		// -------------------------------------------------------------- actions
 		void HandleShortcuts();
 		void HandleCanvasInput(const base::rect &Canvas);
+		bool IsQuadLayerSelected() const;
+		void UpdateQuadHover(bool bInCanvas);
 		void HandlePopupInput();
 		void OpenBrowser();
 		void PaintAt(base::vec2 World);
 		void BeginStroke();
 		void EndStroke();
-		void PushUndo(int Group, int Layer);
+		void PushUndo(int Group, int Layer, undo_scope Scope = undo_scope::tiles);
 		void Undo();
 		void Redo();
 		void ResetTextures();
 
 		// ------------------------------------------------------------- drawing
 		void DrawMap(NVGcontext *pContext, const base::rect &Canvas);
-		void DrawTileLayer(NVGcontext *pContext, const base::rect &Canvas, const CLayer &Layer, bool Selected);
+		void DrawTileLayer(NVGcontext *pContext, const CLayer &Layer, bool Selected);
 		void DrawQuadLayer(NVGcontext *pContext, const CLayer &Layer);
 		void DrawGameLayer(NVGcontext *pContext, const base::rect &Canvas, const CLayer &Layer);
 		void DrawPhysicsLayer(NVGcontext *pContext, const base::rect &Canvas, const CLayer &Layer, int Flags);
@@ -136,6 +177,8 @@ namespace game
 		void DrawSavePopup(NVGcontext *pContext);
 		void DrawExportPopup(NVGcontext *pContext);
 		void DrawHelpPopup(NVGcontext *pContext);
+		void DrawColorPopup(NVGcontext *pContext);
+		void DrawEnvelopeBar(NVGcontext *pContext, const base::rect &Area);
 
 		// ---------------------------------------------------------------- state
 		engine::CGraphics *m_pGraphics = nullptr;
@@ -166,6 +209,26 @@ namespace game
 		base::vec2 m_CursorWorld;
 		bool m_bCursorValid = false;
 
+		// envelope preview: the reference plays the envelopes on a clock the
+		// user can pause and speed up, which is what makes colour envelopes and
+		// animated quads visible while editing
+		float m_EnvelopeTime = 0.0f;
+		bool m_bEnvelopePlaying = true;
+		float m_EnvelopeSpeed = 1.0f;
+		double m_LastFrameTime = 0.0;
+		float EnvelopeLoopLength() const;
+
+		// quads selected in the selected quad layer, by index
+		std::vector<int> m_vSelectedQuads;
+		int m_QuadHover = -1;
+
+		// the colour picker popup
+		bool m_bShowColor = false;
+		CColor m_PickerColor;
+		// the hue survives a trip through grey, which the rgb colour cannot store
+		float m_PickerHue = 0.0f;
+		bool m_bPickerDragging = false;
+
 		// the palette of the active image, if any
 		float m_PaletteScroll = 0.0f;
 		int m_PaletteHover = -1;
@@ -183,17 +246,43 @@ namespace game
 		float m_BrowserScroll = 0.0f;
 		int m_ExportTarget = 3; // index into AllTargets plus the package entry
 
-		// undo
 		struct CUndoState
 		{
+			undo_scope m_Scope = undo_scope::tiles;
 			int m_Group = 0;
 			int m_Layer = 0;
 			int m_Width = 0;
 			int m_Height = 0;
 			std::vector<CTile> m_vTiles;
+			std::vector<CQuad> m_vQuads;
+			CColor m_Color;
 		};
 		std::vector<CUndoState> m_vUndo;
 		std::vector<CUndoState> m_vRedo;
+		CUndoState CaptureLayer(const CLayer &Layer, int Group, int LayerIndex, undo_scope Scope) const;
+		void ApplyUndoState(const CUndoState &State, std::vector<CUndoState> &Other);
+
+		// the tinted copies of the tile sheets: a small fixed set of slots, so an
+		// animated colour envelope cannot grow the texture cache without bound
+		static constexpr std::size_t MaxTintSlotsPerImage = 4;
+		struct CTintSlot
+		{
+			int m_Image = -1;
+			CColor m_Tint;
+			int m_Width = 0;
+			int m_Height = 0;
+			unsigned m_LastUse = 0;
+		};
+		std::vector<CTintSlot> m_vTintSlots;
+		unsigned m_TintClock = 0;
+		// decoded mapres pixels, so a tint rewrite does not decode the png again
+		struct CSourceImage
+		{
+			int m_Width = 0;
+			int m_Height = 0;
+			std::vector<std::byte> m_Pixels;
+		};
+		std::map<int, CSourceImage> m_SourceImages;
 
 		std::string m_Status;
 		double m_StatusTime = 0.0;

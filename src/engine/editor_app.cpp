@@ -76,6 +76,11 @@ namespace engine
 
 		if(bScreenshot)
 		{
+			// the envelope preview would make the picture depend on when it was
+			// taken, so the clock is pinned for the screenshot
+			Editor.SetEnvelopePlaying(false);
+			Editor.SetEnvelopeTime(0.0f);
+
 			// show the most representative state: the first tile layer that has
 			// an image, with the brush in the middle of the canvas
 			const game::CMap &Map = Editor.Map();

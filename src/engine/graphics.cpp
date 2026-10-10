@@ -334,6 +334,33 @@ namespace engine
 		return Handle;
 	}
 
+	bool CGraphics::UpdateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels)
+	{
+		if(!m_Textures.contains(Key))
+			return false;
+		const int Handle = m_Textures.at(Key).value();
+		if(Handle <= 0 || Width <= 0 || Height <= 0 || Pixels.empty())
+			return false;
+
+		int ExistingWidth = 0, ExistingHeight = 0;
+		nvgImageSize(m_pContext, Handle, &ExistingWidth, &ExistingHeight);
+		if(ExistingWidth != Width || ExistingHeight != Height)
+			return false;
+
+		nvgUpdateImage(m_pContext, Handle, reinterpret_cast<const unsigned char *>(Pixels.data()));
+		return true;
+	}
+
+	void CGraphics::ForgetTexture(const std::string &Key)
+	{
+		if(m_pContext == nullptr || !m_Textures.contains(Key))
+			return;
+		const int Handle = m_Textures.at(Key).value();
+		if(Handle > 0)
+			nvgDeleteImage(m_pContext, Handle);
+		m_Textures.lazy_remove(Key);
+	}
+
 	void CGraphics::ForgetTextures()
 	{
 		if(m_pContext == nullptr)

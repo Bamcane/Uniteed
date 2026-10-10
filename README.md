@@ -117,6 +117,10 @@ ok   data/maps/06/coverage.map: datafile v4 19 items, 17 data blocks, 8 tile lay
 | `Ctrl+E` | export, choose the target version |
 | `Ctrl+L`, `Ctrl+G` | add a tile layer, add a group |
 | `Delete`, `Shift+Delete` | delete the layer, delete the group |
+| left click on a quad | select it, `Ctrl` adds to the selection |
+| `C` | colour picker for the selected tile layer, or for the quads |
+| `Space` | run / pause the envelope preview |
+| `-`, `=` | envelope preview slower / faster |
 | `Ctrl+Q` | quit |
 
 Settings (window size, brush size, default target, last opened map) are kept in
@@ -124,8 +128,28 @@ Settings (window size, brush size, default target, last opened map) are kept in
 
 The palette on the right shows the 16x16 tile sheet of the selected layer's image,
 so picking a tile is a click. The layer panel on the left lists the groups and
-layers with visibility and lock toggles; DDRace physics layers are locked because
-their payload is not editable in this version.
+layers with visibility and lock toggles, and shows the colour of a tile layer (or of
+the selected quads) as a swatch; clicking the swatch opens the picker. DDRace physics
+layers are locked because their payload is not editable in this version.
+
+### Colours and the envelope preview
+
+A tile layer colour is a real RGBA multiplier over the tiles, applied the way the
+client applies it: always, and combined with the layer's colour envelope. Quads are
+drawn with all four of their corner colours (a smooth gradient over the quad) instead
+of one flat colour, and a quad's position envelope moves and turns it.
+
+Envelopes run on the editor's own clock, in the bar at the bottom of the layer panel:
+play/pause, a speed from 0.25x to 8x, and a track you can scrub to sit at an exact
+time. Scrubbing pauses, so the picture is reproducible; `Space` starts it again. The
+evaluation is the reference one down to the details — the time wraps at the last
+point, before the first point the last value is used, the curve of the point before
+the time decides the interpolation (step, slow, fast, smooth, linear and bezier with
+its tangents), and the values are 22.10 fixed point.
+
+The picker edits the selected tile layer's colour, or — when a quad layer is selected
+— the colour of the selected quads, or of all quads in the layer when none is
+clicked. Everything is undoable (`Ctrl+Z`) and is written out by every export target.
 
 ## Assets: 0.6 and 0.7 are not interchangeable
 
@@ -182,14 +206,19 @@ Working:
 * the `.unitwp` package with embedded resources
 * the editor: camera, grid, tile painting with brush size and flips, layer panel
   with visibility and locks, tile palette, undo/redo, open and export popups
+* the colours: the tile layer colour as a real RGBA multiplier, all four quad corner
+  colours as a gradient, a colour picker for both, and an envelope preview clock to
+  watch colour and position envelopes (see
+  [Colours and the envelope preview](#colours-and-the-envelope-preview))
 * `--selftest`, the round trip regression test
 
 Not in the MVP (called out so nothing is a surprise):
 
 * editing DDRace physics payloads (teleporters, speedups, switches, tune) - the
   layers are shown, marked read only and preserved verbatim
-* creating or editing envelopes and quads in the UI (they load, are preserved and
-  are exported correctly)
+* moving, creating or deleting quads, and editing envelope points: both load, are
+  preserved, are exported correctly, and a quad's colour can be changed, but its
+  points cannot be dragged yet
 * DDRace envelope bezier, which lives in a separate UUID item: it is preserved
   verbatim, but editing envelope points would invalidate it
 * an automapper, tile thumbnails in the palette beyond the sheet, copy/paste,

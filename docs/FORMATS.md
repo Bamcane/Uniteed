@@ -86,6 +86,31 @@ are `1 = xflip, 2 = yflip, 4 = opaque, 8 = rotate`. Game layer entities are stor
 Short names are packed four bytes per int with **every byte biased by +128**, most
 significant byte first, and the last byte of the array is always zero.
 
+### Colours and envelopes
+
+A colour in a map item (`CColor`) is **four ints**, not four bytes: that is what makes
+the tiles layer 60 B in version 2 (12 header + 4 version + 12 size/flags + 16 colour +
+8 colour envelope + 8 image/data), and it is why the tile data index of a 92 B DDRace
+item sits at byte 56. Reading it as four bytes gives plausible looking but wrong
+values.
+
+Envelope points are 22.10 fixed point like everything else, so 1024 is 1.0: a colour
+envelope holds 1024,0,0 for red and a position envelope holds 32*1024 for one tile.
+A tile layer's colour is multiplied with its colour envelope; a quad's four corner
+colours are multiplied with the quad's colour envelope, and a quad's position envelope
+adds an offset in world units and a rotation in degrees around `m_aPoints[4]`.
+
+Evaluation, matching the reference implementation the client and the upstream editor
+share:
+
+* the time wraps at the last point's time, so an envelope loops by itself
+* before the first point, and for a single point, the last (only) point's value is used
+* the curve type of the point *before* the time decides the interpolation:
+  `LINEAR` 1, `SLOW` (a³) 2, `FAST` (1-(1-a)³) 3, `SMOOTH` (hermite) 4,
+  `BEZIER` 5, and `STEP` (a = 0) 0
+* a bezier solves x(t) = time per channel with the point's out tangent and the next
+  point's in tangent, both clamped to the time span so the curve stays monotonic
+
 ## 3. Tile run length coding (tilemap item version >= 4)
 
 The tile blob is a sequence of runs over the flattened layer (`i = 0 .. w*h-1`). Each

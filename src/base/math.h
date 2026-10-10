@@ -40,6 +40,22 @@ namespace base
 
 	inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
+	// is the point inside the quad given by its four corners? Used to pick a
+	// quad with the mouse, and by the drawing code for the same test.
+	inline bool PointInQuad(const vec2 *paPoints, vec2 Point)
+	{
+		bool bInside = false;
+		for(int i = 0, j = 3; i < 4; j = i++)
+		{
+			const vec2 &A = paPoints[i];
+			const vec2 &B = paPoints[j];
+			if(((A.y > Point.y) != (B.y > Point.y)) &&
+				(Point.x < (B.x - A.x) * (Point.y - A.y) / (B.y - A.y) + A.x))
+				bInside = !bInside;
+		}
+		return bInside;
+	}
+
 	// 22.10 fixed point, the unit Teeworlds stores coordinates in
 	inline constexpr float FixedPointScale = 1.0f / 1024.0f;
 	inline float FixedToFloat(int Value) { return Value * FixedPointScale; }
