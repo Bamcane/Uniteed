@@ -643,6 +643,18 @@ namespace game
 				aCorners[CQuad::s_aCornerAt[0][1]] != aCorners[2] ||
 				aCorners[CQuad::s_aCornerAt[1][1]] != aCorners[3])
 				bOk = false;
+			/*
+				A quad is drawn as a grid of cells whose corners are placed by
+				(u,v), and that walk has to be the same perimeter. Routing those
+				points through the stored corner order a second time crossed
+				every cell into a bowtie, which is what showed up as black
+				triangles tiled across the sky.
+			*/
+			const int aByUV[4] = {CQuad::s_aCornerAt[0][0], CQuad::s_aCornerAt[1][0],
+				CQuad::s_aCornerAt[1][1], CQuad::s_aCornerAt[0][1]};
+			for(int i = 0; i < 4; i++)
+				if(aByUV[i] != CQuad::s_aPerimeter[i])
+					bOk = false;
 
 			if(bOk)
 				std::cout << "  ok   quad   the corner order traces the quad without crossing it\n";

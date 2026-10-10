@@ -191,11 +191,6 @@ namespace game
 			return ToColor(HsvToColorRaw(Hue, Saturation, Value, Alpha));
 		}
 
-		ui::CColor MixColor(const ui::CColor &A, const ui::CColor &B, float T)
-		{
-			return ui::RGBAf(base::lerp(A.r, B.r, T), base::lerp(A.g, B.g, T), base::lerp(A.b, B.b, T), base::lerp(A.a, B.a, T));
-		}
-
 		bool SameColor(const CColor &A, const CColor &B)
 		{
 			return A.r == B.r && A.g == B.g && A.b == B.b && A.a == B.a;
@@ -208,25 +203,6 @@ namespace game
 			for(int i = 0; i < 4; i++)
 				paScreen[i] = View.WorldToScreen(paWorld[i]);
 		}
-
-		// the point of the bilinear surface of the quad at (u,v)
-		base::vec2 QuadPointAt(const base::vec2 *paScreen, float u, float v)
-		{
-			const base::vec2 Top = paScreen[CQuad::s_aCornerAt[0][0]] +
-				(paScreen[CQuad::s_aCornerAt[1][0]] - paScreen[CQuad::s_aCornerAt[0][0]]) * u;
-			const base::vec2 Bottom = paScreen[CQuad::s_aCornerAt[0][1]] +
-				(paScreen[CQuad::s_aCornerAt[1][1]] - paScreen[CQuad::s_aCornerAt[0][1]]) * u;
-			return Top + (Bottom - Top) * v;
-		}
-
-		// the colour of the quad at (u,v), bilinear over the four corners
-		ui::CColor QuadColorAt(const CColor *paColors, float u, float v)
-		{
-			const ui::CColor Top = MixColor(ToColor(paColors[0]), ToColor(paColors[1]), u);
-			const ui::CColor Bottom = MixColor(ToColor(paColors[3]), ToColor(paColors[2]), u);
-			return MixColor(Top, Bottom, v);
-		}
-
 
 		ui::CColor EntityColor(int Entity)
 		{
@@ -247,30 +223,6 @@ namespace game
 			}
 		}
 
-		const char *EntityName(int Entity)
-		{
-			for(const auto &Entry : {
-					std::pair<int, const char *>{ENTITY_SPAWN, "spawn"},
-					std::pair<int, const char *>{ENTITY_SPAWN_RED, "spawn red"},
-					std::pair<int, const char *>{ENTITY_SPAWN_BLUE, "spawn blue"},
-					std::pair<int, const char *>{ENTITY_FLAGSTAND_RED, "flag red"},
-					std::pair<int, const char *>{ENTITY_FLAGSTAND_BLUE, "flag blue"},
-					std::pair<int, const char *>{ENTITY_ARMOR_1, "armor"},
-					std::pair<int, const char *>{ENTITY_HEALTH_1, "health"},
-					std::pair<int, const char *>{ENTITY_WEAPON_SHOTGUN, "shotgun"},
-					std::pair<int, const char *>{ENTITY_WEAPON_GRENADE, "grenade"},
-					std::pair<int, const char *>{ENTITY_POWERUP_NINJA, "ninja"},
-					std::pair<int, const char *>{ENTITY_WEAPON_LASER, "laser"},
-					std::pair<int, const char *>{ENTITY_LASER_NORMAL_CCW, "laser ccw"},
-					std::pair<int, const char *>{ENTITY_LASER_STOP, "laser stop"},
-					std::pair<int, const char *>{ENTITY_LASER_NORMAL_CW, "laser cw"},
-					std::pair<int, const char *>{ENTITY_DRAGGER_NORMAL, "dragger"},
-					std::pair<int, const char *>{ENTITY_DRAGGER_STRONG, "dragger strong"},
-					std::pair<int, const char *>{ENTITY_DOOR, "door"}})
-				if(Entry.first == Entity)
-					return Entry.second;
-			return "entity";
-		}
 	} // namespace
 
 	// ------------------------------------------------------------------ canvas
@@ -434,21 +386,25 @@ namespace game
 				perimeter walk: point 0 and 1 are the top edge, 2 and 3 the
 				bottom one (the same layout DDNet's editor creates, with the
 				texcoords (0,0) (1,0) (0,1) (1,1)). Joining them in stored order
-				would cross the quad into a bowtie, so the outline is walked as
-				0 -> 1 -> 3 -> 2.
+				would cross the quad into a bowtie, so the outline is reordered
+				here once.
 			*/
-			const auto Outline = [](const base::vec2 *paPoints, base::vec2 *paOut) {
-				for(int i = 0; i < 4; i++)
-					paOut[i] = paPoints[CQuad::s_aPerimeter[i]];
-			};
+			base::vec2 aOutline[4];
+			for(int i = 0; i < 4; i++)
+				aOutline[i] = aScreen[CQuad::s_aPerimeter[i]];
 
-			const auto Path = [pPainter, &Outline](const base::vec2 *paPoints) {
-				base::vec2 aOutline[4];
-				Outline(paPoints, aOutline);
+			/*
+				A path from points that are already in perimeter order. The grid
+				of cells below builds its corners with QuadPointAt, which walks
+				them top left, top right, bottom right, bottom left; routing
+				those through the stored corner order again would cross every
+				cell into a bowtie, which is exactly what it used to do.
+			*/
+			const auto Path = [pPainter](const base::vec2 *paPoints) {
 				pPainter->BeginPath();
-				pPainter->MoveTo(aOutline[0].x, aOutline[0].y);
+				pPainter->MoveTo(paPoints[0].x, paPoints[0].y);
 				for(int i = 1; i < 4; i++)
-					pPainter->LineTo(aOutline[i].x, aOutline[i].y);
+					pPainter->LineTo(paPoints[i].x, paPoints[i].y);
 				pPainter->ClosePath();
 			};
 
@@ -486,38 +442,26 @@ namespace game
 			}
 			else if(bFlat)
 			{
-				Path(aScreen);
+				Path(aOutline);
 				pPainter->FillColor( ToColor(aColors[0]));
 				pPainter->Fill();
 			}
 			else
 			{
 				/*
-					a path fill takes a single colour, so a quad whose corners
-					differ is drawn as a grid of cells over its bilinear surface,
-					each filled with the colour at its centre. The cell count
-					follows the size on screen.
+					A quad whose corners differ is a gradient, and a path fill
+					takes a single colour. Filling it as a grid of flat cells
+					showed the gradient as banding, so it goes through the same
+					per vertex mesh as a textured quad does, with no texture:
+					the colours are then interpolated instead of staircased.
 				*/
-				const int Cells = base::clamp(static_cast<int>(std::max(Bounds.Width(), Bounds.Height()) / 16.0f), 1, 8);
-				for(int CellY = 0; CellY < Cells; CellY++)
-				{
-					for(int CellX = 0; CellX < Cells; CellX++)
-					{
-						const float u0 = static_cast<float>(CellX) / Cells;
-						const float u1 = static_cast<float>(CellX + 1) / Cells;
-						const float v0 = static_cast<float>(CellY) / Cells;
-						const float v1 = static_cast<float>(CellY + 1) / Cells;
-
-						const base::vec2 aCell[4] = {QuadPointAt(aScreen, u0, v0), QuadPointAt(aScreen, u1, v0),
-							QuadPointAt(aScreen, u1, v1), QuadPointAt(aScreen, u0, v1)};
-						Path(aCell);
-						pPainter->FillColor( QuadColorAt(aColors, (u0 + u1) * 0.5f, (v0 + v1) * 0.5f));
-						pPainter->Fill();
-					}
-				}
+				const int Cells = base::clamp(static_cast<int>(std::max(Bounds.Width(), Bounds.Height()) / 24.0f), 1, 16);
+				const base::vec2 aNoTexcoords[4] = {base::vec2(), base::vec2(), base::vec2(), base::vec2()};
+				const std::array<ui::CColor, 4> aQuadColors = ToColors(aColors);
+				pPainter->TexturedQuad(-1, aScreen, aNoTexcoords, aQuadColors.data(), Cells);
 			}
 
-			Path(aScreen);
+			Path(aOutline);
 			pPainter->StrokeColor( Selected ? ui::Theme.m_Accent : (Hovered ? ui::RGBA(200, 210, 230, 170) : ui::RGBA(200, 210, 230, 90)));
 			pPainter->StrokeWidth( Selected ? 2.0f : 1.0f);
 			pPainter->Stroke();
@@ -690,13 +634,11 @@ namespace game
 			m_bShowExport = true;
 		}
 		Separator();
-		int TargetIndex = 0;
 		for(const map_target Target : AllTargets())
 		{
 			const CMapTargetProfile &Profile = GetTargetProfile(Target);
 			if(Button(Profile.m_pId, m_Target == Target))
 				m_Target = Target;
-			TargetIndex++;
 		}
 		Separator();
 		if(Button("Fit"))

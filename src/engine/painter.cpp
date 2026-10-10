@@ -494,8 +494,15 @@ namespace engine::painter
 	void CPainter::TexturedQuad(int Texture, const base::vec2 *paCorners, const base::vec2 *paTexcoords,
 		const CColor *paColors, int Cells, float Alpha)
 	{
-		SDL_Texture *pTexture = LookupTexture(Texture);
-		if(pTexture == nullptr || Alpha <= 0.0f)
+		/*
+			A texture index below zero draws the mesh with its vertex colours
+			only, which is how a quad that has no image gets a smooth gradient
+			instead of a grid of flat cells.
+		*/
+		SDL_Texture *pTexture = (Texture >= 0) ? LookupTexture(Texture) : nullptr;
+		if(Texture >= 0 && pTexture == nullptr)
+			return;
+		if(Alpha <= 0.0f)
 			return;
 
 		const int Steps = std::clamp(Cells, 1, 32);
