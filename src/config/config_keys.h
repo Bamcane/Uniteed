@@ -19,6 +19,13 @@ namespace config
 	inline const key<std::string> LastMap{"uniteed_last_map", ""};
 	inline const key<std::string> AssetVersion{"uniteed_asset_version", ""};
 
+	// fonts: override the per platform lookup; empty means "ask the system" and
+	// a value is a full path to a .ttf, .ttc or .otf
+	inline const key<std::string> FontPath{"uniteed_font", ""};
+	inline const key<std::string> FontPathBold{"uniteed_font_bold", ""};
+	// the face the interface falls back to for CJK labels
+	inline const key<std::string> FontPathCjk{"uniteed_font_cjk", ""};
+
 	// logging: trace, info, warn or error
 	inline const key<std::string> LogLevel{"uniteed_log_level", "info"};
 } // namespace config

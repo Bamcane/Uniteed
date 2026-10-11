@@ -72,7 +72,7 @@ namespace engine
 		const int WindowHeight = bScreenshot ? 900 : base::clamp(Config.Get(config::WindowHeight), 480, 4320);
 
 		CGraphics Graphics;
-		if(!Graphics.Init(std::string(GAME_DISPLAY_NAME) + " " + GAME_VERSION, WindowWidth, WindowHeight, !bScreenshot))
+		if(!Graphics.Init(std::string(GAME_DISPLAY_NAME) + " " + GAME_VERSION, WindowWidth, WindowHeight, !bScreenshot, &Config))
 			return 1;
 
 		game::CEditor Editor;

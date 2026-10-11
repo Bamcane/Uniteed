@@ -64,6 +64,36 @@ cmake --build build
 ./build/uniteed --selftest
 ```
 
+### Fonts
+
+The editor ships no fonts of its own; it asks the system for three faces — a regular
+sans serif, its bold companion and one with CJK coverage — and each platform is
+asked in the way that platform expects (`src/engine/font_find.cpp`):
+
+| platform | where the faces come from |
+|---|---|
+| Windows | `%WINDIR%\Fonts` and `%LOCALAPPDATA%\Microsoft\Windows\Fonts`, plus the `Fonts` registry key, which is the only record of a font installed without copying a file into the directory. Segoe UI is preferred, then Tahoma/Verdana/Arial; the CJK face is Microsoft YaHei, then JhengHei, SimSun or DengXian. |
+| macOS | `/System/Library/Fonts` and `/Library/Fonts` |
+| Linux | `fc-match` when fontconfig is installed, then the usual distribution directories |
+
+On Windows the font file is read into memory rather than opened by path: FreeType's
+path based entry point takes a narrow string, which Windows reads in the active code
+page, so a font under a non ASCII directory (`C:\Users\张伟\...\Fonts\...`) would not
+open.
+
+Any of the three can be overridden in `config.cfg` — `<data home>/uniteed/config.cfg`,
+which is `%LOCALAPPDATA%\uniteed\config.cfg` on Windows and
+`~/.local/share/uniteed/config.cfg` on Linux:
+
+```
+uniteed_font       C:\Users\me\Fonts\Inter-Regular.ttf
+uniteed_font_bold  C:\Users\me\Fonts\Inter-Bold.ttf
+uniteed_font_cjk   C:\Windows\Fonts\msyh.ttc
+```
+
+An override that does not exist is reported as a warning and the system lookup runs
+instead, so a typo never leaves the editor without a font.
+
 ## Command line
 
 ```

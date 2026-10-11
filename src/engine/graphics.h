@@ -30,6 +30,11 @@ struct SDL_Window;
 struct SDL_Renderer;
 struct SDL_Texture;
 
+namespace config
+{
+	class CConfig;
+}
+
 namespace engine
 {
 	class CGraphics
@@ -37,7 +42,8 @@ namespace engine
 	public:
 		~CGraphics();
 
-		bool Init(const std::string &Title, int Width, int Height, bool Visible = true);
+		// pConfig is optional; its font overrides win over the platform lookup
+		bool Init(const std::string &Title, int Width, int Height, bool Visible = true, const config::CConfig *pConfig = nullptr);
 		void Close();
 
 		bool ShouldQuit() const;

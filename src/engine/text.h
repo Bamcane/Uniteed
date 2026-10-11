@@ -37,6 +37,9 @@ namespace engine
 		FT_Face m_Face = nullptr;
 		hb_font_t *m_pHbFont = nullptr;
 		hb_face_t *m_pHbFace = nullptr;
+		// the file the face was opened from, kept alive while the face is:
+		// FreeType points into it instead of copying
+		storage::byte_vector m_FontData;
 		// the size the metrics below were read at
 		float m_Size = 0.0f;
 		float m_Ascent = 0.0f;

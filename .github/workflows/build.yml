@@ -1,0 +1,103 @@
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # the reference build, with the system SDL3, FreeType and HarfBuzz
+  linux:
+    name: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake ninja-build pkg-config \
+            libsdl3-dev libfreetype-dev libharfbuzz-dev \
+            zlib1g-dev libzstd-dev libssl-dev \
+            fonts-dejavu-core fonts-noto-cjk
+
+      - name: configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUNITEED_WERROR=ON
+
+      - name: build
+        run: cmake --build build
+
+      # the headless configuration has to keep building too
+      - name: configure (headless)
+        run: cmake -S . -B build-headless -G Ninja -DCMAKE_BUILD_TYPE=Release -DUNITEED_GUI=OFF
+
+      - name: build (headless)
+        run: cmake --build build-headless
+
+  # the platform the font lookup was written for
+  windows:
+    name: windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: install dependencies
+        shell: pwsh
+        run: |
+          # vcpkg ships on the runner image and is the simplest source of these
+          vcpkg install sdl3:x64-windows freetype:x64-windows harfbuzz:x64-windows `
+            zlib:x64-windows zstd:x64-windows openssl:x64-windows
+
+      - name: configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DUNITEED_WERROR=ON `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: build
+        shell: pwsh
+        run: cmake --build build
+
+      # the editor must find its three faces on a Windows install; the hidden
+      # window means no desktop is needed
+      - name: check the font lookup
+        shell: pwsh
+        run: |
+          $log = & .\build\uniteed.exe --screenshot "$env:RUNNER_TEMP\uniteed.png" --map data\maps\08\ctf1.map 2>&1
+          $log | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "the editor exited with $LASTEXITCODE" }
+          $found = $log | Select-String -Pattern 'fonts\s+interface font:'
+          if (-not $found) { throw 'no interface font was resolved' }
+          if (-not (Test-Path "$env:RUNNER_TEMP\uniteed.png")) { throw 'no screenshot was written' }
+
+      # a font is loaded from its bytes, so a non ASCII path still opens; the
+      # happy path above would not catch a regression here
+      - name: check a non ASCII font path
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP '字体 目录'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item C:\Windows\Fonts\tahoma.ttf (Join-Path $dir '界面.ttf')
+
+          # the config sits in the app data directory, derived from LOCALAPPDATA
+          $cfgDir = Join-Path $env:LOCALAPPDATA 'uniteed'
+          New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+          "uniteed_font $dir\界面.ttf" | Set-Content -Encoding UTF8 (Join-Path $cfgDir 'config.cfg')
+
+          $log = & .\build\uniteed.exe --screenshot "$env:RUNNER_TEMP\uniteed-cjk-path.png" --map data\maps\08\ctf1.map 2>&1
+          $log | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw "the editor exited with $LASTEXITCODE" }
+          if (-not ($log | Select-String -Pattern '界面\.ttf')) {
+            throw 'the configured font was not used'
+          }
+          if ($log | Select-String -Pattern 'failed to read the font|failed to open the font') {
+            throw 'the font could not be opened'
+          }

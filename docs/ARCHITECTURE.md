@@ -73,8 +73,10 @@ FreeType rasterizes them into one shared 8 bit coverage atlas, which the painter
 uploads as white with the coverage in the alpha channel. Shaping is done in runs of
 codepoints that resolve to the same face, which is what makes the CJK fallback work -
 HarfBuzz reports the glyphs the interface font is missing and those runs are reshaped
-with the fallback face. The face is picked from the file of the system default sans
-serif found through `fc-match`, with a path fallback list.
+with the fallback face. The faces come from `engine::fonts` (`font_find.h/cpp`), the
+only platform specific part of the text pipeline: Windows reads the font directories
+and the `Fonts` registry key, macOS the system font directories, Linux `fc-match` with
+a path fallback list. Each face can be overridden from `config.cfg`.
 
 `CInput` collects the SDL events; `engine::ui` is the tiny widget set (rects, text,
 buttons, checkboxes, sliders) that draws through the painter.

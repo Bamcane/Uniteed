@@ -79,17 +79,33 @@ namespace engine
 	{
 		if(Path.empty())
 			return false;
-		if(FT_New_Face(m_pLibrary, Path.c_str(), 0, &Face.m_Face) != 0)
+
+		// Read into memory rather than opened by path: FT_New_Face takes a narrow
+		// string, which Windows reads in the active code page, so a font under a
+		// non ASCII directory would not open. The bytes are the same everywhere.
+		const std::optional<storage::byte_vector> Bytes = storage::read(Path);
+		if(!Bytes.has_value() || Bytes->empty())
+		{
+			LOG_WARN("text", "failed to read the font '%s'", Path.c_str());
+			return false;
+		}
+		Face.m_FontData = *Bytes;
+
+		if(FT_New_Memory_Face(m_pLibrary, reinterpret_cast<const FT_Byte *>(Face.m_FontData.data()),
+			   static_cast<FT_Long>(Face.m_FontData.size()), 0, &Face.m_Face) != 0)
 		{
 			LOG_WARN("text", "failed to open the font '%s'", Path.c_str());
+			Face.m_FontData.clear();
 			Face.m_Face = nullptr;
 			return false;
 		}
 		Face.m_pHbFace = hb_ft_face_create_referenced(Face.m_Face);
 		if(Face.m_pHbFace == nullptr)
 		{
+			// the face goes first: FreeType reads the data while tearing down
 			FT_Done_Face(Face.m_Face);
 			Face.m_Face = nullptr;
+			Face.m_FontData.clear();
 			return false;
 		}
 		Face.m_pHbFont = hb_font_create(Face.m_pHbFace);
@@ -99,6 +115,7 @@ namespace engine
 			FT_Done_Face(Face.m_Face);
 			Face.m_pHbFace = nullptr;
 			Face.m_Face = nullptr;
+			Face.m_FontData.clear();
 			return false;
 		}
 		hb_ot_font_set_funcs(Face.m_pHbFont);

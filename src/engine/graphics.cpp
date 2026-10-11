@@ -1,10 +1,10 @@
 #include "graphics.h"
 
-#include <cstdio>
-
 #include <SDL3/SDL.h>
 
 #include "base/logger.h"
+#include "config/config_keys.h"
+#include "engine/font_find.h"
 #include "game/assets.h"
 
 namespace engine
@@ -14,36 +14,12 @@ namespace engine
 		// the drivers to try, in order: an accelerated one first, the software
 		// renderer as the last resort
 		const char *const g_apDrivers[] = {"opengl", "opengles2", "vulkan", "gpu", nullptr};
-
-		// asks fontconfig for the file of a font pattern, with a plain path
-		// fallback list when fontconfig is not installed
-		std::string MatchFont(const char *pPattern, const std::vector<std::string> &Fallbacks)
-		{
-			const std::string Command = std::string("fc-match -f '%{file}' '") + pPattern + "' 2>/dev/null";
-			if(std::FILE *pPipe = popen(Command.c_str(), "r"))
-			{
-				char aBuffer[1024] = {0};
-				const std::size_t Read = std::fread(aBuffer, 1, sizeof(aBuffer) - 1, pPipe);
-				pclose(pPipe);
-				if(Read > 0)
-				{
-					std::string Path(aBuffer, Read);
-					while(!Path.empty() && (Path.back() == '\n' || Path.back() == '\r'))
-						Path.pop_back();
-					if(!Path.empty() && storage::is_file(Path))
-						return Path;
-				}
-			}
-			for(const std::string &Path : Fallbacks)
-				if(storage::is_file(Path))
-					return Path;
-			return {};
-		}
 	} // namespace
 
 	CGraphics::~CGraphics() { Close(); }
 
-	bool CGraphics::Init(const std::string &Title, int Width, int Height, bool Visible)
+	bool CGraphics::Init(
+		const std::string &Title, int Width, int Height, bool Visible, const config::CConfig *pConfig)
 	{
 		// the editor may ask for the window size before the first frame
 		m_WindowSize = base::vec2(static_cast<float>(Width), static_cast<float>(Height));
@@ -99,33 +75,20 @@ namespace engine
 		LOG_INFO("graphics", "renderer '%s'", SDL_GetRendererName(m_pRenderer));
 		SDL_SetRenderVSync(m_pRenderer, 1);
 
-		// the system default sans serif, plus a CJK fallback for the labels
-		const std::string FontPath = MatchFont("sans", {
-			"/usr/share/fonts/noto/NotoSans-Regular.ttf",
-			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-			"/usr/share/fonts/TTF/DejaVuSans.ttf",
-			"/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
-			"/usr/share/fonts/TTF/Hack-Regular.ttf",
-		});
-		const std::string BoldPath = MatchFont("sans:bold", {
-			"/usr/share/fonts/noto/NotoSans-Bold.ttf",
-			"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-			"/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-			"/usr/share/fonts/TTF/Hack-Bold.ttf",
-		});
-		const std::string CjkPath = MatchFont("sans:lang=zh-cn", {
-			"/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
-			"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-		});
-		m_FontPath = FontPath;
-		if(!m_Text.Init(FontPath, BoldPath, CjkPath))
+		// the three system faces, with the configured overrides taking precedence
+		fonts::request FontRequest;
+		FontRequest.m_Primary = pConfig != nullptr ? pConfig->Get(config::FontPath) : std::string{};
+		FontRequest.m_Bold = pConfig != nullptr ? pConfig->Get(config::FontPathBold) : std::string{};
+		FontRequest.m_Cjk = pConfig != nullptr ? pConfig->Get(config::FontPathCjk) : std::string{};
+		const fonts::result Fonts = fonts::Resolve(FontRequest);
+
+		m_FontPath = Fonts.m_Primary;
+		if(!m_Text.Init(Fonts.m_Primary, Fonts.m_Bold, Fonts.m_Cjk))
 		{
 			LOG_ERROR("graphics", "failed to initialise the text engine");
 			Close();
 			return false;
 		}
-		if(!CjkPath.empty())
-			LOG_INFO("graphics", "CJK fallback font: %s", CjkPath.c_str());
 
 		m_Painter.Init(m_pRenderer, &m_Text);
 		m_Painter.SetTextureLookup(&CGraphics::LookupTextureCallback, this);
