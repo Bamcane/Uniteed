@@ -45,10 +45,6 @@ namespace game
 		constexpr float PivotSize = 11.0f;
 		constexpr float HandleBorder = 1.5f;
 
-		// the four corner colours are indexed the way a map stores a quad: 0 and
-		// 1 are the top edge, 2 and 3 the bottom one
-		const char *const g_apCornerName[4] = {"top left", "top right", "bottom left", "bottom right"};
-
 		// a linear gradient from one colour to the other along an axis
 		ui::CPaint GradientPaint(base::vec2 Start, base::vec2 End, ui::CColor Inner, ui::CColor Outer)
 		{
@@ -139,6 +135,36 @@ namespace game
 			pPainter->Rect(X, Y, Size, Size);
 			pPainter->FillPaint(Paint);
 			pPainter->Fill();
+		}
+
+		/*
+			The name field of a row in the layer tree: what has been typed so
+			far, with a caret behind it, drawn where the row's label would be so
+			the row does not move while it is being renamed.
+		*/
+		void DrawNameField(ui::CPainter *pPainter, int Font, const base::rect &Row, float Left, const std::string &Text,
+			bool bAllSelected)
+		{
+			const base::rect Field = base::rect::FromSize(base::vec2(Row.m_TopLeft.x + Left, Row.m_TopLeft.y + 2.0f),
+				base::vec2(std::max(Row.Width() - Left - 6.0f, 20.0f), Row.Height() - 4.0f));
+			ui::Rect(pPainter, Field, ui::Theme.m_PanelDark);
+			ui::RectOutline(pPainter, Field, ui::Theme.m_Accent);
+			// the whole name is selected until something is typed over it
+			if(bAllSelected && !Text.empty())
+			{
+				const float Width = std::min(ui::Measure(pPainter, Font, 12.0f, Text) + 2.0f, Field.Width() - 12.0f);
+				ui::Rect(pPainter, base::rect::FromSize(base::vec2(Field.m_TopLeft.x + 5.0f, Field.m_TopLeft.y + 4.0f),
+					base::vec2(Width, Field.Height() - 8.0f)), ui::Theme.m_Selection);
+			}
+			ui::TextClipped(pPainter, Font, base::vec2(Field.m_TopLeft.x + 5.0f, Field.Center().y + 4.5f), 12.0f,
+				ui::Theme.m_Text, Text, Field.Width() - 14.0f);
+			// the caret follows the text and stays inside the field when the
+			// name is wider than it
+			const float CaretX = std::min(Field.m_TopLeft.x + 6.0f + ui::Measure(pPainter, Font, 12.0f, Text),
+				Field.m_BottomRight.x - 4.0f);
+			if(!bAllSelected)
+				ui::Line(pPainter, base::vec2(CaretX, Field.m_TopLeft.y + 4.0f),
+					base::vec2(CaretX, Field.m_BottomRight.y - 4.0f), ui::Theme.m_Accent);
 		}
 
 		// draws one tile of a tile sheet. Alpha carries the layer colour; the
@@ -967,6 +993,9 @@ namespace game
 		pPainter->Scissor( List.m_TopLeft.x, List.m_TopLeft.y, List.Width(), List.Height());
 
 		float y = List.m_TopLeft.y - m_LayerScroll;
+		// the row the open name field sits in, so a click anywhere else can
+		// keep what was typed
+		base::rect RenameRow;
 		for(std::size_t g = 0; g < m_Map.m_vGroups.size(); g++)
 		{
 			CGroup &Group = m_Map.m_vGroups[g];
@@ -975,11 +1004,19 @@ namespace game
 			{
 				ui::Rect(pPainter, Row, ui::RGBA(255, 255, 255, 8));
 				const std::string Label = Group.m_Name.empty() ? ("group " + std::to_string(g)) : Group.m_Name;
-				ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(Row.m_TopLeft.x + 8.0f, Row.m_TopLeft.y + 15.0f), 12.5f, ui::Theme.m_Text, Label, Row.Width() - 16.0f);
+				if(Renaming() && m_RenameGroup == static_cast<int>(g) && m_RenameLayer < 0)
+				{
+					RenameRow = Row;
+					DrawNameField(pPainter, m_pGraphics->FontBold(), Row, 8.0f, m_RenameText, m_bRenameAll);
+				}
+				else
+					ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(Row.m_TopLeft.x + 8.0f, Row.m_TopLeft.y + 15.0f), 12.5f, ui::Theme.m_Text, Label, Row.Width() - 16.0f);
 				if(ui::Hovered(Input, Row))
-					Hint(Row, Label, base::Format("group %d: parallax %d%%/%d%%, %zu layers - click to select it",
+					Hint(Row, Label, base::Format("group %d: parallax %d%%/%d%%, %zu layers - click to select it, double click to rename it",
 						static_cast<int>(g), Group.m_ParallaxX, Group.m_ParallaxY, Group.m_vLayers.size()));
-				if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
+				if(ui::Hovered(Input, Row) && Input.MouseDoubleClicked(engine::CInput::mouse_button::left))
+					BeginRename(static_cast<int>(g), -1);
+				else if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
 				{
 					m_SelectedGroup = static_cast<int>(g);
 					m_SelectedLayer = 0;
@@ -1025,7 +1062,13 @@ namespace game
 						Kind = base::Format("sounds %zu", Layer.m_vSources.size());
 					const std::string Label = (Layer.m_Name.empty() ? std::string("layer") : Layer.m_Name) + "  " + Kind;
 					const ui::CColor TextColor = (pView != nullptr && !pView->m_Visible) ? ui::Theme.m_TextDim : ui::Theme.m_Text;
-					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(LayerRow.m_TopLeft.x + 36.0f, LayerRow.m_TopLeft.y + 15.0f), 12.0f, TextColor, Label, LayerRow.Width() - 60.0f);
+					if(Renaming() && m_RenameGroup == static_cast<int>(g) && m_RenameLayer == static_cast<int>(l))
+					{
+						RenameRow = LayerRow;
+						DrawNameField(pPainter, m_pGraphics->Font(), LayerRow, 36.0f, m_RenameText, m_bRenameAll);
+					}
+					else
+						ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(LayerRow.m_TopLeft.x + 36.0f, LayerRow.m_TopLeft.y + 15.0f), 12.0f, TextColor, Label, LayerRow.Width() - 60.0f);
 
 					/*
 						The colour of a tile layer is shown as a swatch at the end
@@ -1073,13 +1116,21 @@ namespace game
 					}
 
 					if(ui::Hovered(Input, LayerRow))
-						Hint(LayerRow, Layer.m_Name.empty() ? "layer" : Layer.m_Name,
-							Layer.IsTiles() ? (Layer.IsGameLayer() ? "a game layer: painted with entities from the sheet" :
+					{
+						const std::string Detail = Layer.IsTiles() ?
+							(Layer.IsGameLayer() ? "a game layer: painted with entities from the sheet" :
 								(Layer.IsPhysicsLayer() ? "a DDRace physics layer: its payloads are read only" :
 								"a tile layer: painted with the tile brush")) :
 							(Layer.IsQuads() ? "a quad layer: its points are dragged on the map" :
-							(Layer.IsSounds() ? "a sound layer: its sources are placed on the map" : "a layer this build cannot edit")));
-					if(ui::Hovered(Input, LayerRow) && Input.MousePressed(engine::CInput::mouse_button::left))
+							(Layer.IsSounds() ? "a sound layer: its sources are placed on the map" :
+							"a layer this build cannot edit"));
+						Hint(LayerRow, Layer.m_Name.empty() ? "layer" : Layer.m_Name, Detail + " - double click to rename it");
+					}
+					// a double click on the row renames the layer, which is what
+					// the same gesture does to a file everywhere else
+					if(ui::Hovered(Input, LayerRow) && Input.MouseDoubleClicked(engine::CInput::mouse_button::left))
+						BeginRename(static_cast<int>(g), static_cast<int>(l));
+					else if(ui::Hovered(Input, LayerRow) && Input.MousePressed(engine::CInput::mouse_button::left))
 					{
 						// another layer is another kind of canvas: the quad
 						// selection and the corner the picker edits only make
@@ -1101,6 +1152,17 @@ namespace game
 			}
 		}
 		pPainter->Restore();
+
+		/*
+			A click outside the open name field keeps what was typed, the way an
+			inline rename does everywhere else; Escape is the way out for whoever
+			changed their mind. The click still does whatever it was going to do,
+			so picking another layer both renames and selects.
+		*/
+		if(Renaming() && Input.MousePressed(engine::CInput::mouse_button::left) &&
+			!Input.MouseDoubleClicked(engine::CInput::mouse_button::left) &&
+			!RenameRow.Contains(Input.MousePosition()))
+			CommitRename();
 
 		// the list can be scrolled with the wheel over the panel
 		if(ui::Hovered(Input, List) && Input.Scroll() != 0.0f)
@@ -1515,6 +1577,13 @@ namespace game
 
 		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 12.0f), 13.0f, ui::Theme.m_Text, "Corner colours");
 		y += 22.0f;
+		/*
+			A readout rather than a row of buttons: which corner is coloured is
+			decided on the map, by right clicking the point itself, so the panel
+			shows the four colours and marks the one the picker is aimed at.
+			Asking for a corner here was the step that made a gradient a matter
+			of hitting a swatch in a panel.
+		*/
 		const float SwatchWidth = (Area.Width() - 24.0f - 18.0f) * 0.25f;
 		for(int i = 0; i < 4; i++)
 		{
@@ -1523,32 +1592,13 @@ namespace game
 			ui::Rect(pPainter, Swatch, ToColor(aColors[i]));
 			ui::RectOutline(pPainter, Swatch, bActive ? ui::Theme.m_Accent : (ui::Hovered(Input, Swatch) ? ui::RGB(200, 205, 215) : ui::Theme.m_Border), bActive ? 2.5f : 1.0f);
 			if(ui::Hovered(Input, Swatch))
-			{
-				Hint(Swatch, base::Format("the %s corner", g_apCornerName[i]),
-					base::Format("colour of the %s corner: click to aim the picker at it, C to open it", g_apCornerName[i]));
-				if(Input.MousePressed(engine::CInput::mouse_button::left))
-				{
-					SetQuadColorTarget(i);
-					m_PickerColor = aColors[i];
-					SetStatus(base::Format("the picker now edits the %s corner", g_apCornerName[i]));
-				}
-			}
+				Hint(Swatch, base::Format("the %s corner", CornerName(i)),
+					base::Format("colour of the %s corner: right click it on the map to colour it", CornerName(i)));
 		}
 		y += 30.0f;
 
 		x = Area.m_TopLeft.x + 12.0f;
 		const bool bAll = m_QuadColorTarget >= 4;
-		{
-			const base::rect Rect = base::rect::FromSize(base::vec2(x, y), base::vec2(90.0f, 24.0f));
-			x += 96.0f;
-			if(ui::Hovered(Input, Rect))
-				Hint(Rect, "All corners", "aim the picker at the four corner colours at once");
-			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, "All corners", bAll))
-			{
-				SetQuadColorTarget(AllQuadCorners);
-				SetStatus("the picker now edits all four corners");
-			}
-		}
 		{
 			const base::rect Rect = base::rect::FromSize(base::vec2(x, y), base::vec2(70.0f, 24.0f));
 			x += 76.0f;
@@ -1564,8 +1614,10 @@ namespace game
 				}
 			}
 		}
+		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(x, y + 16.0f), 11.5f, ui::Theme.m_TextDim,
+			"right click a corner on the map", Area.m_BottomRight.x - 12.0f - x);
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 40.0f), 11.5f, ui::Theme.m_TextDim,
-			bAll ? "editing all four corners (C)" : base::Format("editing the %s corner (C)", g_apCornerName[m_QuadColorTarget]), Area.Width() - 24.0f);
+			bAll ? "editing all four corners (C)" : base::Format("editing the %s corner (C)", CornerName(m_QuadColorTarget)), Area.Width() - 24.0f);
 		y += 52.0f;
 
 		ui::Line(pPainter, base::vec2(Area.m_TopLeft.x + 8.0f, y), base::vec2(Area.m_BottomRight.x - 8.0f, y), ui::Theme.m_Border);
@@ -1582,7 +1634,7 @@ namespace game
 			const base::rect Swatch = base::rect::FromSize(base::vec2(Area.m_TopLeft.x + 12.0f, y + 3.0f), base::vec2(10.0f, 10.0f));
 			ui::Rect(pPainter, Swatch, (m_QuadColorTarget == i) ? ui::Theme.m_Accent : ui::Theme.m_TextDim);
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 28.0f, y + 12.0f), 11.5f, ui::Theme.m_Text,
-				base::Format("%-13s %8.1f %8.1f", g_apCornerName[i], aWorld[i].x, aWorld[i].y));
+				base::Format("%-13s %8.1f %8.1f", CornerName(i), aWorld[i].x, aWorld[i].y));
 			y += 16.0f;
 		}
 		const base::vec2 Pivot = m_LayerView.WorldToScreen(base::vec2(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y)));
@@ -1893,7 +1945,7 @@ namespace game
 								SetQuadColorTarget(i);
 								m_PickerColor = pLayer->m_vQuads[static_cast<std::size_t>(Index)].m_aColors[i];
 								RgbToHsv(m_PickerColor, m_PickerHue, Saturation, Value, m_PickerHue);
-								SetStatus(base::Format("the picker now edits the %s corner", g_apCornerName[i]));
+								SetStatus(base::Format("the picker now edits the %s corner", CornerName(i)));
 							}
 						}
 						const base::rect All = base::rect::FromSize(base::vec2(X, y + 20.0f), base::vec2(Width, 18.0f));

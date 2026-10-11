@@ -207,9 +207,25 @@ namespace engine
 			Event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
 			Event.button.button = static_cast<std::uint8_t>(Step.m_PressButton);
 			Event.button.down = true;
-			Event.button.clicks = 1;
+			Event.button.clicks = static_cast<std::uint8_t>(Step.m_Clicks > 0 ? Step.m_Clicks : 1);
 			Event.button.x = Cursor.x;
 			Event.button.y = Cursor.y;
+			Push(Event);
+		}
+		if(!Step.m_TypeText.empty())
+		{
+			/*
+				What SDL sends for a key that produces text: the fields in the
+				interface read the string, not the keycode. SDL 3 keeps the text
+				behind a pointer it does not own, so the script holds the string
+				itself - the event is consumed on the next frame and the step
+				after it is pushed only when that one has been read.
+			*/
+			static std::string s_TypeText;
+			s_TypeText = Step.m_TypeText;
+			SDL_Event Event{};
+			Event.type = SDL_EVENT_TEXT_INPUT;
+			Event.text.text = s_TypeText.c_str();
 			Push(Event);
 		}
 		if(Step.m_ReleaseButton != 0)
@@ -474,7 +490,19 @@ namespace engine
 		std::vector<SDL_Keycode> ModifierKeys;
 		for(const CInputStep &Step : Steps)
 		{
-			PushInputFrame(Step, Cursor, ModifierKeys);
+			/*
+				A step aimed at a point of a quad asks the editor where that point
+				is on this frame: the corner of a map quad is a world position, and
+				the pixel it lands on depends on the view and the layout.
+			*/
+			CInputStep Resolved = Step;
+			if(Step.m_QuadPoint.x >= 0)
+			{
+				Resolved.m_Move = Editor.QuadPointScreen(Step.m_QuadPoint.x, Step.m_QuadPoint.y);
+				if(Resolved.m_Move.x < 0.0f)
+					LOG_WARN("editor", "quad %d has no point %d to click", Step.m_QuadPoint.x, Step.m_QuadPoint.y);
+			}
+			PushInputFrame(Resolved, Cursor, ModifierKeys);
 			Graphics.BeginFrame(true);
 			Editor.Update();
 			Editor.Render();

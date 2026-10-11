@@ -208,6 +208,70 @@ int main(int argc, char **argv)
 			}
 			continue;
 		}
+		if(Argument == "--click-point" && i + 1 < Arguments.size())
+		{
+			/*
+				quad:point[,button]: the same click, aimed at a point of a quad of
+				the selected layer instead of at a pixel - 0..3 are the corners
+				and 4 the pivot. It is how a script colours a corner, which is a
+				right click on the point, without knowing where the corner is on
+				screen; the editor is asked for that while the script runs.
+			*/
+			const std::string Value = Arguments[++i];
+			int Quad = 0, Point = 0, Button = 1;
+			if(std::sscanf(Value.c_str(), "%d:%d,%d", &Quad, &Point, &Button) >= 2)
+			{
+				engine::CInputStep Move;
+				Move.m_QuadPoint = base::ivec2(Quad, Point);
+				Script.push_back(Move);
+				engine::CInputStep Click;
+				Click.m_PressButton = Button;
+				Script.push_back(Click);
+				engine::CInputStep Release;
+				Release.m_ReleaseButton = Button;
+				Script.push_back(Release);
+			}
+			continue;
+		}
+		if(Argument == "--double-click" && i + 1 < Arguments.size())
+		{
+			/*
+				The two presses of a double click, counted the way the platform
+				counts them: the first selects, the second is the one a name
+				field in the layer tree opens on.
+			*/
+			const std::string Value = Arguments[++i];
+			int X = 0, Y = 0, Button = 1;
+			if(std::sscanf(Value.c_str(), "%d,%d,%d", &X, &Y, &Button) >= 2)
+			{
+				engine::CInputStep Move;
+				Move.m_Move = base::vec2(static_cast<float>(X), static_cast<float>(Y));
+				Script.push_back(Move);
+				engine::CInputStep First;
+				First.m_PressButton = Button;
+				Script.push_back(First);
+				engine::CInputStep FirstUp;
+				FirstUp.m_ReleaseButton = Button;
+				Script.push_back(FirstUp);
+				Script.push_back(Move);
+				engine::CInputStep Second;
+				Second.m_PressButton = Button;
+				Second.m_Clicks = 2;
+				Script.push_back(Second);
+				engine::CInputStep SecondUp;
+				SecondUp.m_ReleaseButton = Button;
+				Script.push_back(SecondUp);
+			}
+			continue;
+		}
+		if(Argument == "--type" && i + 1 < Arguments.size())
+		{
+			// text for the field the script has just opened
+			engine::CInputStep Step;
+			Step.m_TypeText = Arguments[++i];
+			Script.push_back(Step);
+			continue;
+		}
 		if(Argument == "--key" && i + 1 < Arguments.size())
 		{
 			/*
@@ -291,7 +355,8 @@ int main(int argc, char **argv)
 			Argument == "--ui-scale-change" || Argument == "--titlebar" || Argument == "--menu" ||
 			Argument == "--reopen" || Argument == "--mods" || Argument == "--press" ||
 			Argument == "--release" || Argument == "--move" || Argument == "--scroll" ||
-			Argument == "--click" || Argument == "--key" || Argument == "--quit-after";
+			Argument == "--click" || Argument == "--click-point" || Argument == "--key" || Argument == "--quit-after" ||
+			Argument == "--double-click" || Argument == "--type";
 	};
 	const bool bWindowOptions = !Arguments.empty() && IsWindowOption(Arguments.front());
 

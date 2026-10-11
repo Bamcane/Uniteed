@@ -166,6 +166,10 @@ uniteed --screenshot out.png map --color         open the colour picker
 uniteed --screenshot out.png map --time S        set the envelope preview clock
 uniteed --screenshot out.png map --move X,Y      move the cursor
 uniteed --screenshot out.png map --click X,Y[,B] move, press and release button B
+uniteed --screenshot out.png map --click-point Q:P[,B]
+                                                  the same, aimed at point P of quad Q
+                                                  (0..3 are its corners, 4 the pivot),
+                                                  which is how a script colours a corner
 uniteed --screenshot out.png map --press B        press button B, held until --release
 uniteed --screenshot out.png map --release B      release button B
 uniteed --screenshot out.png map --scroll N       turn the wheel, so the canvas zooms
@@ -185,6 +189,8 @@ uniteed --screenshot out.png map --reopen other  open another map after the firs
 uniteed --quit-after N                           run a windowed session for N frames and
                                                   quit as if it had been closed, which is
                                                   how the settings it saves are checked
+uniteed --screenshot out.png map --double-click X,Y[,B]  both presses of a double click
+uniteed --screenshot out.png map --type TEXT     type text into the field that is open
 ```
 
 `--dock` takes `layers`, `tiles`, `assets`, `envelopes` or `rules` for each of the two
@@ -423,6 +429,12 @@ docker, dropping it on the other docker moves the workspace there, and an accent
 shows where it will land. The tab order, the widths, the heights and the collapsed
 states all travel with the project.
 
+**Double clicking a row of the layer tree renames it**, a group as well as a layer: the
+name that was there comes up selected, so the first letter typed replaces it, `Enter` or
+a click anywhere else keeps what was typed and `Escape` leaves the name as it was. While
+the field is open it owns the keyboard, so a name is never also a shortcut, and the
+rename is one step of the undo history like any other edit.
+
 Two panels are **floating** rather than docked, because they are about the session
 rather than about the map: the **welcome page** (new map, open a project or a map,
 reopen the last one, open the shortcut list) and the **shortcut list** (`?`, or the
@@ -466,9 +478,9 @@ want height, while painting tiles wants the palette and the canvas.
 | left drag | move the selected quads |
 | `Shift` + drag a point | move that one corner, or the pivot |
 | `Ctrl` + left click | add a quad to the selection |
-| corner swatches | aim the colour picker at one corner |
-| `All corners` | colour all four corners at once |
-| `C` | colour picker for the quad, or for its aimed corner |
+| right click a corner | colour that corner: the picker opens aimed at it |
+| right click inside a quad | colour its four corners at once |
+| `C` | colour picker for the quad, or for the corner it is aimed at |
 | **both** | |
 | middle / right drag | pan |
 | wheel | zoom |
@@ -481,6 +493,7 @@ want height, while painting tiles wants the palette and the canvas.
 | `Ctrl+E` | export the map for the target shown in the toolbar, through the system file dialog |
 | `Ctrl+L` | add a tile layer (`Ctrl+Shift+L` adds a quad layer) |
 | `Ctrl+G` | add a group |
+| double click a row in the layer tree | rename that layer, or that group |
 | `Delete` | delete the layer (`Shift+Delete` deletes the group) |
 | `Space` | run / pause the envelope preview (on a quad layer) |
 | `-`, `=` | envelope preview slower / faster |
@@ -555,10 +568,12 @@ in, but they are not boxed, so selecting a quad does not cover the map in the bo
 of the layers underneath it.
 
 The right panel lists the four corners with their current map coordinates and their
-colours. A corner swatch aims the colour picker at that corner, `All corners` widens it
-back to the whole quad, and the picker popup shows the same four swatches live so a
-gradient can be built corner by corner without closing it. The status bar reports how
-many quads are selected.
+colours. Which corner is being coloured is decided **on the map**: a right click on a
+corner opens the picker aimed at that corner, and a right click inside the shape widens
+it to the four corners at once. The panel only reads the four colours back (the aimed
+one is outlined), and the picker popup shows the same four swatches live so a gradient
+can be built corner by corner without closing it. The status bar reports how many quads
+are selected.
 
 Selecting a quad tests the **animated** points, the same ones that are drawn: a quad
 whose position envelope has moved it is picked where it appears on the map, not where
@@ -579,9 +594,11 @@ last value is used, the curve of the point before the time decides the interpola
 (step, slow, fast, smooth, linear and bezier with its tangents), and the values are
 22.10 fixed point.
 
-The picker edits the selected tile layer's colour, or a quad's colour: one corner when
-a corner swatch is aimed, all four otherwise. Everything is undoable (`Ctrl+Z`) and is
-written out by every export target.
+The picker edits the selected tile layer's colour, or a quad's colour: one corner when a
+right click landed on it, all four when it landed inside the shape. Everything is
+undoable (`Ctrl+Z`) and is written out by every export target.
+
+![the picker, opened by a right click on the top right corner of a quad](docs/screenshots/editor-color.png)
 
 ### The envelope editor
 
@@ -843,8 +860,9 @@ Working:
 * **the agent interface**: every operation as a JSON method, both as a one shot
   subcommand and as a resident session (see [docs/AGENT.md](docs/AGENT.md))
 * the colours: the tile layer colour as a real RGBA multiplier, all four quad corner
-  colours as a gradient, a colour picker that can aim at a single corner or at all
-  four, and an envelope preview clock to watch colour and position envelopes (see
+  colours as a gradient, a colour picker that a right click aims at the corner it landed
+  on — or at all four from inside the shape — and an envelope preview clock to watch
+  colour and position envelopes (see
   [Colours and the envelope preview](#colours-and-the-envelope-preview))
 * **a Krita style workspace**: a drawn icon tool box on the left with a hover tooltip
   per tool, two stacked dockers on the right (the layer tree at the bottom, the way

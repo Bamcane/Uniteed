@@ -194,6 +194,12 @@ through `ui::Hovered`. The offscreen test for it is a click on the `New map` row
 lies over the `06` target button of the toolbar: the target has to read `08` afterwards,
 and `--menu files` is how a picture of an open menu is taken.
 
+The name field of the layer tree (`CEditor::BeginRename`) is the same idea for the
+keyboard rather than the mouse: `Update()` skips the canvas and every shortcut while one
+is open, so a layer called "grid" is not also a grid toggle. The rename is editor state
+rather than drawing state, which is what lets `--selftest` drive it a frame at a time
+with `Input().OnText()` and the keys that end it.
+
 `engine::svg` and the editor's `game/editor/editor_icons.cpp` are the two halves of it:
 the first turns documents into pixels, the second knows which document belongs to which
 tool and registers them from `data/icons` when the editor starts.
@@ -279,6 +285,12 @@ the selection are ever on screen. Three derived rules matter:
   selection and only `Shift` bends a single point, so a click that was meant to select
   cannot deform the shape; on a tile layer the pick tool drags a marquee and the brush
   is replaced on release, not while the region is still being chosen.
+* **the button follows the layer.** The right button takes the brush off a tile layer,
+  and on a quad layer it colours instead: `OpenQuadColorPickerAt()` resolves the point
+  under the cursor to the corner it names, so the picker is aimed by the click rather
+  than by a selection in the panel. `QuadHandleAt()` is the one place that decides
+  which point was hit, and `QuadPointScreen()` is its inverse, which is what lets a
+  scripted run or `--selftest` put the cursor on a corner without knowing the layout.
 
 The tile brush is a **stamp**, `m_vBrush` with its own size and a tile index and flags
 per cell, not a single index. A 1x1 stamp is the plain tile brush, the palette and the
@@ -343,7 +355,10 @@ The screenshot mode (`--screenshot` with `--layer`, `--quad`, `--dock`,
 `--envelope`, `--move`, `--click`, `--key` and friends) drives the same input path
 the window does, one event per frame, which is how the interface is verified
 without a display. `--dock` and `--envelope` exist because the two new workspaces
-are otherwise only reachable with a mouse.
+are otherwise only reachable with a mouse. `--click-point Q:P` is the same click
+aimed at a point of a quad: the corner of a map quad is a world position, so the
+pixel it lands on is asked for while the script runs instead of being written down
+where a layout change would invalidate it.
 
 ## Data flow
 

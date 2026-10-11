@@ -503,6 +503,23 @@ namespace game
 		void SetCenter(base::vec2 Center) { m_View.m_Center = Center; }
 		void SetTarget(map_target Target);
 		void SetSelectedLayer(int Group, int Layer);
+		/*
+			Renaming a layer or a group, which is what a double click on its row
+			in the layer tree starts: the row turns into a name field, Enter or
+			a click elsewhere keeps what was typed, Escape leaves the name as it
+			was. With Layer < 0 the group itself is renamed.
+		*/
+		void BeginRename(int Group, int Layer);
+		bool Renaming() const { return m_RenameGroup >= 0; }
+		int RenameGroup() const { return m_RenameGroup; }
+		int RenameLayer() const { return m_RenameLayer; }
+		const std::string &RenameText() const { return m_RenameText; }
+		bool RenameAllSelected() const { return m_bRenameAll; }
+		void CommitRename();
+		void CancelRename();
+		// reads the keyboard for the open name field; the canvas and the
+		// shortcuts are skipped while one is open
+		void HandleRenameInput();
 		void SetBrushTile(int Index);
 		void SetCursor(base::vec2 World) { m_CursorWorld = World; m_bCursorValid = true; }
 
@@ -512,9 +529,37 @@ namespace game
 		// the quad selection of a quad layer, also used by the screenshot mode
 		void SelectQuad(int Index);
 		void ClearQuadSelection();
+		// the target that means the four corners at once rather than one of
+		// them, which SetQuadColorTarget and QuadColorTarget both carry
+		static constexpr int AllQuadCorners = 4;
 		void SetQuadColorTarget(int Target);
 		int QuadColorTarget() const { return m_QuadColorTarget; }
 		const std::vector<int> &SelectedQuads() const { return m_vSelectedQuads; }
+		/*
+			Colouring a corner from the map, which is what a right click on a
+			point of a quad does: the point under the cursor is the corner, so
+			the picker opens aimed at it rather than the panel having to be told
+			which one is meant. Screen is the canvas position clicked and
+			QuadUnderCursor the quad the cursor is inside (-1 for none), which
+			widens the target to the four corners of that quad. A click on the
+			pivot colours nothing, and says so.
+		*/
+		bool OpenQuadColorPickerAt(base::vec2 Screen, int QuadUnderCursor);
+		// whether the picker popup is up, so a scripted run can see that the
+		// right click landed
+		bool ColorPopupShown() const { return m_bShowColor; }
+		/*
+			Where a point of a quad is drawn, in window pixels. The canvas hit
+			tests in screen space, so anything that wants to click a corner - the
+			offscreen script of a screenshot, or `--selftest` - has to ask where
+			that corner is instead of carrying a coordinate the layout would
+			move. Point 4 is the pivot; the result is negative when there is no
+			such point.
+		*/
+		base::vec2 QuadPointScreen(int Quad, int Point) const;
+		// how the interface names a corner, so the panel, the status line and
+		// the picker title cannot say different things
+		static const char *CornerName(int Corner);
 
 	public:
 		/*
@@ -897,7 +942,6 @@ namespace game
 		std::vector<int> m_vSelectedQuads;
 		int m_QuadHover = -1;
 		// the corner whose colour the picker is editing: 0..3, or all four
-		static constexpr int AllQuadCorners = 4;
 		int m_QuadColorTarget = AllQuadCorners;
 		// and the handle that is being dragged: the quad it belongs to, the
 		// point index (4 is the pivot) and whether the drag has moved it yet
@@ -933,6 +977,20 @@ namespace game
 		float m_PaletteScroll = 0.0f;
 		int m_PaletteHover = -1;
 		float m_LayerScroll = 0.0f;
+
+		/*
+			The row of the layer tree whose name is being typed. A layer is
+			(group, layer >= 0) and a group is (group, -1); Group is -1 when
+			nothing is being renamed. It is editor state rather than a local of
+			the drawing code because the name field keeps the keyboard while it
+			is open, and a headless run has to be able to drive it.
+		*/
+		int m_RenameGroup = -1;
+		int m_RenameLayer = -1;
+		std::string m_RenameText;
+		// the name that was there is selected, so the first letter typed or the
+		// first backspace replaces it instead of being appended to it
+		bool m_bRenameAll = true;
 
 		/*
 			The dock layout: which workspace each of the two stacked dockers

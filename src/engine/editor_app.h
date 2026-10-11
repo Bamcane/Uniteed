@@ -111,8 +111,18 @@ namespace engine
 	struct CInputStep
 	{
 		base::vec2 m_Move{-1.0f, -1.0f};  // -1 keeps the previous position
+		// a point of the selected quad to move onto instead of a pixel: the
+		// canvas hit tests in screen space, so a script that means "the top
+		// right corner" asks the editor where that is rather than carrying a
+		// coordinate a layout change would invalidate. x < 0 for none.
+		base::ivec2 m_QuadPoint{-1, -1};
 		int m_PressButton = 0;            // SDL button number, 0 for none
 		int m_ReleaseButton = 0;
+		// the platform's click count: 2 is the second press of a double click,
+		// which is what a name field in the tree opens on
+		int m_Clicks = 1;
+		// text as the keyboard would type it, for the fields that read it
+		std::string m_TypeText;
 		int m_PressKey = 0;               // SDLK_* value, 0 for none
 		int m_ReleaseKey = 0;
 		int m_Modifiers = 0;              // SDL_KMOD_*

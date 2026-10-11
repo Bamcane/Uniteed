@@ -36,6 +36,15 @@ case "$OUT$WORK" in
 *data/maps*) echo "refusing to write screenshots into the bundled maps" >&2; exit 1 ;;
 esac
 
+# The settings file lives in the application data directory, and a session that
+# was used normally has one: a remembered target or a grid setting would then be
+# baked into the reference pictures. Point that directory at the scratch one, so
+# what is written is the state each command line asks for and the images are the
+# same on every machine. The maps and the assets are found through the data
+# directory next to the executable, which this does not touch.
+XDG_DATA_HOME=$WORK/xdg
+export XDG_DATA_HOME
+
 shot() {
 	Out=$1
 	shift
@@ -65,6 +74,11 @@ shot "$OUT/editor-quads.png" "$MAPS/08/dm1.map" --layer 0:0 --quad -2
 
 # the game layer: the entity palette of a DDRace map
 shot "$OUT/editor-entities.png" "$MAPS/08/dm1.map" --layer 6:2
+
+# the colour picker, opened the way a user opens it: a right click on a corner
+# of a quad. --click-point asks the editor where that corner is rather than
+# naming a pixel, so the picture survives a change of the layout
+shot "$OUT/editor-color.png" "$MAPS/08/dm1.map" --layer 0:0 --quad 0 --click-point 0:1,3
 
 # ------------------------------------------------------------- the workspaces
 shot "$OUT/editor-envelope.png" "$MAPS/08/dm1.map" --dock envelopes:tiles --envelope 0

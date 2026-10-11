@@ -13,6 +13,7 @@
 #include "base/string.h"
 #include "base/time.h"
 #include "engine/chrome.h"
+#include "engine/keycodes.h"
 #include "engine/svg.h"
 #include "game/assets.h"
 #include "game/editor/editor.h"
@@ -1362,6 +1363,42 @@ namespace game
 			bOk = bOk && Editor.Menu() == CEditor::menu_id::files;
 			Editor.OpenMenu(CEditor::menu_id::none);
 
+			/*
+				Renaming a layer from its row in the tree. The state machine is
+				the editor's rather than the drawing code's, so this runs with
+				no window: one frame is the queued text or key, the read, and
+				the end of the frame, exactly as the window does it.
+			*/
+			if(!Editor.Map().m_vGroups.empty() && !Editor.Map().m_vGroups[0].m_vLayers.empty())
+			{
+				const auto Frame = [&Editor](const char *pText, int Key) {
+					Editor.Input().NewFrame();
+					if(pText != nullptr)
+						Editor.Input().OnText(pText);
+					if(Key != 0)
+						Editor.Input().OnKey(Key, engine::CInput::action_press, 0);
+					Editor.HandleRenameInput();
+					Editor.Input().EndFrame();
+				};
+				const std::string Original = Editor.Layer(0, 0)->m_Name;
+				Editor.BeginRename(0, 0);
+				// the name that was there comes up selected, so the first
+				// letter typed replaces it instead of being appended
+				bOk = bOk && Editor.Renaming() && Editor.RenameText() == Original && Editor.RenameAllSelected();
+				Frame("renamed", 0);
+				bOk = bOk && Editor.RenameText() == "renamed" && !Editor.RenameAllSelected();
+				Frame(nullptr, engine::keys::Return);
+				bOk = bOk && !Editor.Renaming() && Editor.Layer(0, 0)->m_Name == "renamed";
+				// and it is a step of the undo history like any other edit
+				bOk = bOk && Editor.CanUndo();
+				Editor.UndoOp();
+				bOk = bOk && Editor.Layer(0, 0)->m_Name == Original;
+				// Escape leaves the name exactly as it was
+				Editor.BeginRename(0, 0);
+				Frame("nope", engine::keys::Escape);
+				bOk = bOk && !Editor.Renaming() && Editor.Layer(0, 0)->m_Name == Original;
+			}
+
 			// the image and sound operations are part of the model, so they run
 			// without a renderer: an image that is added is listed, embedding a
 			// mapres one is refused when the name does not exist, and removing
@@ -1394,6 +1431,86 @@ namespace game
 			else
 			{
 				std::cout << "  FAIL editor  a model operation did not behave\n";
+				Failures++;
+			}
+		}
+
+		/*
+			Colouring a quad corner from the map: a right click on a point is
+			what aims the picker, so the corner a click means is the corner
+			under the cursor, and nothing in the panel has to be set first. The
+			check drives the real path - a headless frame with the mouse on the
+			corner - because the dispatch is part of the behaviour: on a quad
+			layer the right button must not also reach for the tile brush.
+		*/
+		{
+			Checks++;
+			CEditor Editor;
+			Editor.InitHeadless();
+			bool bOk = true;
+
+			CGroup &Group = Editor.Map().m_vGroups[0];
+			CLayer &QuadLayer = Editor.Map().NewQuadLayer(Group, -1);
+			QuadLayer.m_vQuads.emplace_back();
+			CQuad &Quad = QuadLayer.m_vQuads.back();
+			// a 100 by 100 quad stored top left / top right / bottom left /
+			// bottom right, with its pivot in the middle
+			const int aCorners[4][2] = {{0, 0}, {100, 0}, {0, 100}, {100, 100}};
+			for(int i = 0; i < 4; i++)
+			{
+				Quad.m_aPoints[i].x = aCorners[i][0] * 1024;
+				Quad.m_aPoints[i].y = aCorners[i][1] * 1024;
+			}
+			Quad.m_aPoints[4].x = 50 * 1024;
+			Quad.m_aPoints[4].y = 50 * 1024;
+			Editor.SetSelectedLayer(0, static_cast<int>(Group.m_vLayers.size()) - 1);
+			bOk = bOk && Editor.Mode() == edit_mode::quads;
+			Editor.SelectQuad(0);
+
+			// one frame lays the canvas out, the way the window does before it
+			// hit tests anything
+			Editor.UpdateHeadless();
+
+			// the pivot carries no colour, so it neither opens the picker nor
+			// aims it at a corner that was not clicked
+			bOk = bOk && !Editor.OpenQuadColorPickerAt(Editor.QuadPointScreen(0, 4), -1);
+			bOk = bOk && !Editor.ColorPopupShown() && Editor.QuadColorTarget() == CEditor::AllQuadCorners;
+
+			// a well clear point: no handle is within grabbing distance of it,
+			// whichever way the view happens to be laid out
+			const base::vec2 Far = Editor.QuadPointScreen(0, 4) + base::vec2(300.0f, 300.0f);
+
+			// a right click that hits no quad at all leaves everything alone
+			bOk = bOk && !Editor.OpenQuadColorPickerAt(Far, -1);
+			bOk = bOk && !Editor.ColorPopupShown();
+
+			// and a corner, through a real frame: the mouse is put on the top
+			// right corner and the right button pressed there
+			const base::vec2 Corner = Editor.QuadPointScreen(0, 1);
+			Editor.Input().OnCursorPos(Corner.x, Corner.y);
+			Editor.Input().OnMouseButton(static_cast<int>(engine::CInput::mouse_button::right), engine::CInput::action_press);
+			Editor.UpdateHeadless();
+			bOk = bOk && Editor.ColorPopupShown() && Editor.QuadColorTarget() == 1;
+			bOk = bOk && Editor.SelectedQuads().size() == 1 && Editor.SelectedQuads()[0] == 0;
+			// the tile brush is not what the right button means on a quad layer
+			bOk = bOk && Editor.Status().find("tile layer") == std::string::npos;
+
+			// a point inside the shape, away from the handles, is the quad
+			// rather than one of its corners: all four of them at once
+			bOk = bOk && Editor.OpenQuadColorPickerAt(Far, 0);
+			bOk = bOk && Editor.QuadColorTarget() == CEditor::AllQuadCorners;
+
+			// a point of a quad is reported where the transform puts it, so a
+			// script can aim at a corner instead of at a pixel
+			const base::vec2 Left = Editor.QuadPointScreen(0, 0);
+			bOk = bOk && Corner.x > Left.x && std::abs(Corner.y - Left.y) < 0.5f;
+			bOk = bOk && Editor.QuadPointScreen(1, 0).x < 0.0f && Editor.QuadPointScreen(0, 5).x < 0.0f;
+
+			if(bOk)
+				std::cout << "  ok   quad   a right click colours the corner it lands on\n";
+			else
+			{
+				std::cout << "  FAIL quad   a right click does not aim the picker at the corner under it\n";
 				Failures++;
 			}
 		}

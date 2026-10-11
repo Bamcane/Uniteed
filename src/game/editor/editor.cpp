@@ -150,9 +150,21 @@ namespace game
 		// canvas, exactly the order Update() uses
 		engine::CInput &In = Input();
 		In.NewFrame();
+		EnsureViewStates();
+		ClampSelection();
 		HandleShortcuts();
 		const base::vec2 Window = WindowSize();
-		HandleCanvasInput(CanvasRect(Window));
+		const base::rect Canvas = CanvasRect(Window);
+		/*
+			The view transform works in window coordinates, so the layout the
+			window does before it hit tests has to happen here too: without it a
+			scripted frame would test the cursor against a canvas that is not
+			where it draws.
+		*/
+		m_View.m_Origin = Canvas.m_TopLeft;
+		m_View.m_Viewport = base::vec2(Canvas.Width(), Canvas.Height());
+		m_LayerView = SelectionView();
+		HandleCanvasInput(Canvas);
 		In.EndFrame();
 	}
 
@@ -765,6 +777,103 @@ namespace game
 		ClampSelection();
 	}
 
+	/*
+		Renaming a layer or a group from the layer tree. The row that is being
+		edited keeps the keyboard while the field is open - Update() skips the
+		canvas and the shortcuts for it - so what is typed is a name and never a
+		tool. Layer < 0 means the group row itself.
+	*/
+	void CEditor::BeginRename(int Group, int Layer)
+	{
+		if(Group < 0 || Group >= static_cast<int>(m_Map.m_vGroups.size()))
+			return;
+		CGroup &Target = m_Map.m_vGroups[static_cast<std::size_t>(Group)];
+		if(Layer >= static_cast<int>(Target.m_vLayers.size()))
+			return;
+		if(Layer >= 0)
+			m_RenameText = Target.m_vLayers[static_cast<std::size_t>(Layer)].m_Name;
+		else
+			m_RenameText = Target.m_Name;
+		m_RenameGroup = Group;
+		m_RenameLayer = Layer;
+		// the name that is there starts selected, so typing replaces it
+		m_bRenameAll = true;
+		SetStatus(base::Format("type a name for %s, Enter to keep it, Escape to leave it",
+			Layer >= 0 ? "the layer" : "the group"));
+	}
+
+	void CEditor::CancelRename()
+	{
+		if(!Renaming())
+			return;
+		m_RenameGroup = -1;
+		m_RenameLayer = -1;
+		m_RenameText.clear();
+		m_bRenameAll = true;
+		SetStatus("the name is unchanged");
+	}
+
+	void CEditor::CommitRename()
+	{
+		if(!Renaming())
+			return;
+		const int Group = m_RenameGroup;
+		const int Layer = m_RenameLayer;
+		std::string Name = m_RenameText;
+		m_RenameGroup = -1;
+		m_RenameLayer = -1;
+		m_RenameText.clear();
+		m_bRenameAll = true;
+
+		if(Group >= static_cast<int>(m_Map.m_vGroups.size()))
+			return;
+		CGroup &Target = m_Map.m_vGroups[static_cast<std::size_t>(Group)];
+		if(Layer >= static_cast<int>(Target.m_vLayers.size()))
+			return;
+		std::string &Current = Layer >= 0 ? Target.m_vLayers[static_cast<std::size_t>(Layer)].m_Name : Target.m_Name;
+		if(Current == Name)
+			return;
+		/*
+			A name is part of the map, so the change is undoable like any other:
+			the whole scope is the one that carries the layer list, and a rename
+			is one step rather than one per keystroke.
+		*/
+		PushUndo(Group, Layer >= 0 ? Layer : 0, undo_scope::whole);
+		Current = std::move(Name);
+		MarkDirty();
+		LOG_TRACE("editor", "renamed group %d layer %d to '%s'", Group, Layer, Current.c_str());
+		SetStatus(base::Format("renamed to '%s'", Current.empty() ? "(no name)" : Current.c_str()));
+	}
+
+	void CEditor::HandleRenameInput()
+	{
+		if(!Renaming())
+			return;
+		engine::CInput &Input = this->Input();
+		const std::string &Typed = Input.TypedText();
+		if(!Typed.empty())
+		{
+			// the first letter replaces the selected name rather than being
+			// appended to it, which is what a rename does everywhere else
+			if(m_bRenameAll)
+				m_RenameText.clear();
+			m_bRenameAll = false;
+			m_RenameText += Typed;
+		}
+		if(Input.BackspacePressed())
+		{
+			if(m_bRenameAll)
+				m_RenameText.clear();
+			else if(!m_RenameText.empty())
+				m_RenameText.pop_back();
+			m_bRenameAll = false;
+		}
+		if(Input.KeyPressed(engine::keys::Return) || Input.KeyPressed(engine::keys::KpEnter))
+			CommitRename();
+		else if(Input.KeyPressed(engine::keys::Escape))
+			CancelRename();
+	}
+
 	void CEditor::ForgetImageTextures()
 	{
 		/*
@@ -935,6 +1044,68 @@ namespace game
 		return true;
 	}
 
+	const char *CEditor::CornerName(int Corner)
+	{
+		static const char *const s_apName[4] = {"top left", "top right", "bottom left", "bottom right"};
+		return s_apName[base::clamp(Corner, 0, 3)];
+	}
+
+	bool CEditor::OpenQuadColorPickerAt(base::vec2 Screen, int QuadUnderCursor)
+	{
+		CLayer *pLayer = SelectedLayer();
+		if(pLayer == nullptr || !pLayer->IsQuads())
+			return false;
+
+		/*
+			The handle under the cursor names the corner, so nothing has to
+			guess which one was meant. Without a handle the click was inside the
+			shape, which colours the four corners at once; the pivot carries no
+			colour, so it is reported rather than silently opening the picker on
+			a corner that was not clicked.
+		*/
+		int Quad = QuadUnderCursor;
+		int Corner = AllQuadCorners;
+		const int Handle = QuadHandleAt(Screen);
+		if(Handle >= 0)
+		{
+			Quad = m_vSelectedQuads[static_cast<std::size_t>(Handle / 5)];
+			if(Handle % 5 == 4)
+			{
+				SetStatus("the pivot of a quad has no colour, right click one of its corners");
+				return false;
+			}
+			Corner = Handle % 5;
+		}
+		if(Quad < 0 || Quad >= static_cast<int>(pLayer->m_vQuads.size()))
+			return false;
+
+		// the quad that was clicked is the one the picker edits, so it becomes
+		// the selection the popup and the corner swatches read
+		m_vSelectedQuads.assign(1, Quad);
+		SetQuadColorTarget(Corner);
+		m_PickerColor = pLayer->m_vQuads[static_cast<std::size_t>(Quad)].m_aColors[Corner < 4 ? Corner : 0];
+		m_bShowColor = true;
+		SetStatus(Corner < 4 ?
+			base::Format("the picker edits the %s corner of quad %d", CornerName(Corner), Quad) :
+			base::Format("the picker edits all four corners of quad %d", Quad));
+		return true;
+	}
+
+	base::vec2 CEditor::QuadPointScreen(int Quad, int Point) const
+	{
+		const CLayer *pLayer = SelectedLayer();
+		if(pLayer == nullptr || !pLayer->IsQuads() || Quad < 0 || Quad >= static_cast<int>(pLayer->m_vQuads.size()) ||
+			Point < 0 || Point > 4)
+			return base::vec2(-1.0f, -1.0f);
+		const CQuad &Quad2 = pLayer->m_vQuads[static_cast<std::size_t>(Quad)];
+		const base::view_transform View = SelectionView();
+		if(Point == 4)
+			return View.WorldToScreen(base::vec2(base::FixedToFloat(Quad2.m_aPoints[4].x), base::FixedToFloat(Quad2.m_aPoints[4].y)));
+		base::vec2 aWorld[4];
+		QuadPoints(Quad2, aWorld);
+		return View.WorldToScreen(aWorld[Point]);
+	}
+
 	bool CEditor::PickerTargetsQuad() const
 	{
 		const CLayer *pLayer = SelectedLayer();
@@ -1019,9 +1190,8 @@ namespace game
 		{
 			// which corner is being edited has to be visible in the title, or
 			// the picker looks like it colours everything at once
-			const char *apCorners[4] = {"top left", "top right", "bottom left", "bottom right"};
 			const std::string Corner = m_QuadColorTarget < 4 ?
-				base::Format(" (%s corner)", apCorners[m_QuadColorTarget]) : std::string(" (all corners)");
+				base::Format(" (%s corner)", CornerName(m_QuadColorTarget)) : std::string(" (all corners)");
 			if(m_vSelectedQuads.empty())
 				return (pLayer->m_vQuads.size() == 1 ? base::Format("the quad of '%s'", pName) :
 					base::Format("all %zu quads of '%s'", pLayer->m_vQuads.size(), pName)) + Corner;
@@ -1760,9 +1930,14 @@ namespace game
 			m_bCursorValid = false;
 		}
 
-		// right click takes the brush from the map, which is how a tile (or the
-		// region the brush is) is read off and painted with again
-		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::right) && !Input.ModifierDown(engine::keys::LAlt))
+		/*
+			Right click takes the brush from the map, which is how a tile (or the
+			region the brush is) is read off and painted with again. On a quad
+			layer the button belongs to the quads instead - it colours the point
+			under the cursor - so the two do not fight over it.
+		*/
+		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::right) && !Input.ModifierDown(engine::keys::LAlt) &&
+			Mode() != edit_mode::quads)
 			PickBrushAt(m_CursorWorld);
 
 		// a quad layer is edited by its points, a tile layer by the tile brush;
@@ -1987,6 +2162,19 @@ namespace game
 		const base::vec2 Mouse = Input.MousePosition();
 		UpdateQuadHover(bInCanvas);
 
+		/*
+			Right clicking a point of the quad colours it: the point under the
+			cursor is the corner, so the picker opens aimed at that one instead
+			of the corner having to be picked in the panel first. Alt is left
+			out because Alt and the right button pan the view.
+		*/
+		if(bInCanvas && Input.MousePressed(engine::CInput::mouse_button::right) &&
+			!Input.ModifierDown(engine::keys::LAlt))
+		{
+			OpenQuadColorPickerAt(Mouse, m_QuadHover);
+			return;
+		}
+
 		const bool bHeld = Input.MouseDown(engine::CInput::mouse_button::left);
 
 		// the selection being carried around
@@ -2157,8 +2345,8 @@ namespace game
 			if(PickerColor(Color))
 				m_PickerColor = Color;
 			SetStatus(m_vSelectedQuads.size() == 1 ?
-				base::Format("quad %d selected: drag it to move, Shift drags a point", m_vSelectedQuads[0]) :
-				base::Format("%zu quads selected: drag to move them", m_vSelectedQuads.size()));
+				base::Format("quad %d selected: drag it to move, Shift drags a point, right click colours a corner", m_vSelectedQuads[0]) :
+				base::Format("%zu quads selected: drag to move them, right click colours a corner", m_vSelectedQuads.size()));
 		}
 
 		if(bStartMove && !bAdd && !m_vSelectedQuads.empty())
@@ -2321,13 +2509,16 @@ namespace game
 
 		// a popup owns the keyboard and the canvas while it is open, otherwise
 		// typing a file name would also trigger the editor shortcuts. An open
-		// menu owns them for the same reason: a click on one of its rows must
-		// not also paint the tile under it.
-		if(m_bShowOpen || m_bShowSave || m_bShowExport || m_bShowHelp || m_bShowColor || m_Menu != menu_id::none)
+		// menu owns them for the same reason, and so does a name field in the
+		// layer tree: a click on a menu row, or the letter of a layer name,
+		// must not also paint the tile under it.
+		if(m_bShowOpen || m_bShowSave || m_bShowExport || m_bShowHelp || m_bShowColor || m_Menu != menu_id::none ||
+			Renaming())
 		{
 #if UNITEED_GUI
 			HandlePopupInput();
 #endif
+			HandleRenameInput();
 			return;
 		}
 
