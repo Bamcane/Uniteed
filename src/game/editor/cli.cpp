@@ -1463,6 +1463,21 @@ namespace game
 			}
 			Quad.m_aPoints[4].x = 50 * 1024;
 			Quad.m_aPoints[4].y = 50 * 1024;
+			/*
+				A second quad in the far corner of the map, so the check below
+				has a point that really is near the corner of the canvas rather
+				than one it assumes is.
+			*/
+			QuadLayer.m_vQuads.emplace_back();
+			CQuad &FarQuad = QuadLayer.m_vQuads.back();
+			const int aFar[4][2] = {{1500, 1500}, {1600, 1500}, {1500, 1600}, {1600, 1600}};
+			for(int i = 0; i < 4; i++)
+			{
+				FarQuad.m_aPoints[i].x = aFar[i][0] * 1024;
+				FarQuad.m_aPoints[i].y = aFar[i][1] * 1024;
+			}
+			FarQuad.m_aPoints[4].x = 1550 * 1024;
+			FarQuad.m_aPoints[4].y = 1550 * 1024;
 			Editor.SetSelectedLayer(0, static_cast<int>(Group.m_vLayers.size()) - 1);
 			bOk = bOk && Editor.Mode() == edit_mode::quads;
 			Editor.SelectQuad(0);
@@ -1494,17 +1509,77 @@ namespace game
 			bOk = bOk && Editor.SelectedQuads().size() == 1 && Editor.SelectedQuads()[0] == 0;
 			// the tile brush is not what the right button means on a quad layer
 			bOk = bOk && Editor.Status().find("tile layer") == std::string::npos;
+			Editor.Input().OnMouseButton(static_cast<int>(engine::CInput::mouse_button::right), engine::CInput::action_release);
+			Editor.UpdateHeadless();
+			bOk = bOk && Editor.ColorPopupShown();
 
 			// a point inside the shape, away from the handles, is the quad
 			// rather than one of its corners: all four of them at once
 			bOk = bOk && Editor.OpenQuadColorPickerAt(Far, 0);
 			bOk = bOk && Editor.QuadColorTarget() == CEditor::AllQuadCorners;
 
+			/*
+				The popup sits beside the point it was opened from rather than
+				over it - the corner being coloured has to stay visible - and a
+				point that is itself in a corner of the canvas flips it to the
+				other side instead of pushing it off the window.
+			*/
+			const auto Near = [](const base::rect &Rect, base::vec2 Point) {
+				const float dx = std::max(std::max(Rect.m_TopLeft.x - Point.x, Point.x - Rect.m_BottomRight.x), 0.0f);
+				const float dy = std::max(std::max(Rect.m_TopLeft.y - Point.y, Point.y - Rect.m_BottomRight.y), 0.0f);
+				return std::sqrt(dx * dx + dy * dy);
+			};
+			const auto InsideWindow = [](const base::rect &Rect, base::vec2 Window) {
+				return Rect.m_TopLeft.x >= 0.0f && Rect.m_TopLeft.y >= 0.0f &&
+					Rect.m_BottomRight.x <= Window.x && Rect.m_BottomRight.y <= Window.y;
+			};
+			const base::vec2 Window = Editor.WindowSize();
+			Editor.OpenQuadColorPickerAt(Corner, -1);
+			const base::rect Beside = Editor.ColorPopupRect();
+			bOk = bOk && Editor.ColorPopupShown() && !Beside.Contains(Corner);
+			// down and to the right of the point, close enough to belong to it
+			bOk = bOk && Beside.m_TopLeft.x > Corner.x && Beside.m_TopLeft.y > Corner.y;
+			bOk = bOk && Near(Beside, Corner) <= 20.0f && InsideWindow(Beside, Window);
+
+			Editor.SelectQuad(1);
+			const base::vec2 BottomRight = Editor.QuadPointScreen(1, 3);
+			bOk = bOk && Editor.OpenQuadColorPickerAt(BottomRight, -1);
+			const base::rect Flipped = Editor.ColorPopupRect();
+			// the point is in the corner of the canvas, so the popup is the
+			// other way round: above and to the left of it
+			bOk = bOk && !Flipped.Contains(BottomRight);
+			bOk = bOk && Flipped.m_BottomRight.x < BottomRight.x && Flipped.m_BottomRight.y < BottomRight.y;
+			bOk = bOk && Near(Flipped, BottomRight) <= 60.0f && InsideWindow(Flipped, Window);
+			Editor.SelectQuad(0);
+
+			/*
+				A click that is not on the popup closes it, and that frame does
+				nothing else with the click: the picker is a popup, so clicking
+				away is the way out and Escape is only the other one. The closing
+				click here is a right click on the same corner, which would open
+				the picker again if the canvas had seen it.
+			*/
+			Editor.OpenQuadColorPickerAt(Corner, -1);
+			bOk = bOk && Editor.ColorPopupShown();
+			const base::vec2 Inside = Editor.ColorPopupRect().Center();
+			Editor.Input().OnCursorPos(Inside.x, Inside.y);
+			Editor.Input().OnMouseButton(static_cast<int>(engine::CInput::mouse_button::left), engine::CInput::action_press);
+			Editor.UpdateHeadless();
+			bOk = bOk && Editor.ColorPopupShown();
+			Editor.Input().OnMouseButton(static_cast<int>(engine::CInput::mouse_button::left), engine::CInput::action_release);
+			Editor.UpdateHeadless();
+			Editor.Input().OnCursorPos(Corner.x, Corner.y);
+			Editor.Input().OnMouseButton(static_cast<int>(engine::CInput::mouse_button::right), engine::CInput::action_press);
+			Editor.UpdateHeadless();
+			bOk = bOk && !Editor.ColorPopupShown();
+			Editor.Input().OnMouseButton(static_cast<int>(engine::CInput::mouse_button::right), engine::CInput::action_release);
+			Editor.UpdateHeadless();
+
 			// a point of a quad is reported where the transform puts it, so a
 			// script can aim at a corner instead of at a pixel
 			const base::vec2 Left = Editor.QuadPointScreen(0, 0);
 			bOk = bOk && Corner.x > Left.x && std::abs(Corner.y - Left.y) < 0.5f;
-			bOk = bOk && Editor.QuadPointScreen(1, 0).x < 0.0f && Editor.QuadPointScreen(0, 5).x < 0.0f;
+			bOk = bOk && Editor.QuadPointScreen(2, 0).x < 0.0f && Editor.QuadPointScreen(0, 5).x < 0.0f;
 
 			if(bOk)
 				std::cout << "  ok   quad   a right click colours the corner it lands on\n";

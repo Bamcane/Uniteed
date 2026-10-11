@@ -549,6 +549,15 @@ namespace game
 		// right click landed
 		bool ColorPopupShown() const { return m_bShowColor; }
 		/*
+			Where the picker popup is drawn. Opened from the map it sits beside
+			the point it was opened from - the corner the right click landed on,
+			which stays visible - and it flips to the other side of that point
+			when it would leave the canvas, so a corner that is itself in a
+			corner of the window still gets a popup next to it. Without a point
+			(C, or the button in the panel) it is centred.
+		*/
+		base::rect ColorPopupRect() const;
+		/*
 			Where a point of a quad is drawn, in window pixels. The canvas hit
 			tests in screen space, so anything that wants to click a corner - the
 			offscreen script of a screenshot, or `--selftest` - has to ask where
@@ -729,6 +738,9 @@ namespace game
 		void HandleQuadMoveStart();
 		void UpdateQuadHover(bool bInCanvas);
 		void HandlePopupInput();
+		// the mouse half of the picker popup, which is the half a windowless
+		// frame can run: a click anywhere else closes it
+		void HandleColorPopupInput();
 		void OpenBrowser();
 		void PaintAt(base::vec2 World);
 		// the game layer is painted with entities rather than tiles, so it has
@@ -968,6 +980,9 @@ namespace game
 
 		// the colour picker popup
 		bool m_bShowColor = false;
+		// where it was opened from, so the popup can sit beside the corner that
+		// was clicked rather than over it; negative means centred
+		base::vec2 m_PickerAnchor{-1.0f, -1.0f};
 		CColor m_PickerColor;
 		// the hue survives a trip through grey, which the rgb colour cannot store
 		float m_PickerHue = 0.0f;

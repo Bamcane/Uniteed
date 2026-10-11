@@ -270,7 +270,8 @@ layer, through `CEditor::Mode()`: a tile layer gives `edit_mode::tiles` and the 
 brush, a quad layer gives `edit_mode::quads` and the point handles, a locked or
 unknown layer gives `edit_mode::none`. The toolbar, the layer panel and the right
 panel all branch on that one function, which is why only the controls that apply to
-the selection are ever on screen. Three derived rules matter:
+the selection are ever on screen. What follows from that is a short list of rules, and
+every one of them has bitten this code already:
 
 * **hit tests use the same points that are drawn.** `QuadPoints()` applies the
   position envelope, and both `DrawQuadLayer()` and `UpdateQuadHover()` go through it,
@@ -291,6 +292,14 @@ the selection are ever on screen. Three derived rules matter:
   than by a selection in the panel. `QuadHandleAt()` is the one place that decides
   which point was hit, and `QuadPointScreen()` is its inverse, which is what lets a
   scripted run or `--selftest` put the cursor on a corner without knowing the layout.
+* **a popup is one rectangle and one owner.** `ColorPopupRect()` is where the picker is
+  drawn and it is also what the dismissal is tested against: it is placed beside the
+  point the picker was opened from - flipped to the other side of it near an edge of the
+  canvas, so the corner being coloured is never covered - and `HandleColorPopupInput()`
+  closes the popup on a press outside it. That function is deliberately free of the
+  painter: `Update()` and `UpdateHeadless()` run it in the same place, so a windowless
+  frame exercises the same dismissal the window does, and Escape is only the other way
+  out rather than the only one.
 
 The tile brush is a **stamp**, `m_vBrush` with its own size and a tile index and flags
 per cell, not a single index. A 1x1 stamp is the plain tile brush, the palette and the

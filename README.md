@@ -595,8 +595,11 @@ last value is used, the curve of the point before the time decides the interpola
 22.10 fixed point.
 
 The picker edits the selected tile layer's colour, or a quad's colour: one corner when a
-right click landed on it, all four when it landed inside the shape. Everything is
-undoable (`Ctrl+Z`) and is written out by every export target.
+right click landed on it, all four when it landed inside the shape. Opened from the map it
+sits **beside** the point that was clicked, so the corner being coloured stays visible; near
+an edge of the canvas it flips to the other side of that point instead of leaving the view.
+Clicking anywhere else closes it, and `Escape` does the same. Everything is undoable
+(`Ctrl+Z`) and is written out by every export target.
 
 ![the picker, opened by a right click on the top right corner of a quad](docs/screenshots/editor-color.png)
 

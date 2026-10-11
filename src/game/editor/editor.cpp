@@ -152,6 +152,16 @@ namespace game
 		In.NewFrame();
 		EnsureViewStates();
 		ClampSelection();
+		// a popup owns the mouse and the keyboard here for the same reason it
+		// does in the window, and the picker is the one a windowless frame can
+		// still close: clicking away from it
+		if(m_bShowColor || Renaming())
+		{
+			HandleColorPopupInput();
+			HandleRenameInput();
+			In.EndFrame();
+			return;
+		}
 		HandleShortcuts();
 		const base::vec2 Window = WindowSize();
 		const base::rect Canvas = CanvasRect(Window);
@@ -1040,8 +1050,69 @@ namespace game
 			return false;
 		m_PickerColor = Color;
 		m_bShowColor = true;
+		// nothing was clicked, so the popup has no point to sit beside
+		m_PickerAnchor = base::vec2(-1.0f, -1.0f);
 		// the hue is derived from the colour while the picker is drawn
 		return true;
+	}
+
+	base::rect CEditor::ColorPopupRect() const
+	{
+		/*
+			36 header + 130 square + 10 + 14 hue + 8 + 14 alpha + 12 + 22
+			preview + 30 presets + 18 footer, plus the four corner swatches and
+			the button under them when the picker edits a quad. The height is
+			computed from the content rather than written twice: it used to be a
+			fixed box, and the extra rows then drew past its bottom edge.
+		*/
+		const base::vec2 PopupSize(296.0f, 294.0f + (PickerTargetsQuad() ? 44.0f : 0.0f));
+		const base::vec2 Window = WindowSize();
+		if(m_PickerAnchor.x < 0.0f || m_PickerAnchor.y < 0.0f)
+			return base::rect::FromSize(
+				base::vec2(Window.x * 0.5f - PopupSize.x * 0.5f, Window.y * 0.5f - PopupSize.y * 0.5f), PopupSize);
+
+		/*
+			The popup belongs to the map, so it is placed beside the point it was
+			opened from and kept over the canvas: the corner being coloured has
+			to stay visible, or the click that chose it would hide it. A point
+			that is itself in a corner of the window would push the popup past
+			the edge, so it flips to the other side of the point first and is
+			clamped last, for a canvas too small to hold it beside the point.
+		*/
+		const base::rect Canvas = CanvasRect(Window);
+		const float Margin = 6.0f;
+		const float Gap = 14.0f;
+		float X = m_PickerAnchor.x + Gap;
+		float Y = m_PickerAnchor.y + Gap;
+		if(X + PopupSize.x > Canvas.m_BottomRight.x - Margin)
+			X = m_PickerAnchor.x - Gap - PopupSize.x;
+		if(Y + PopupSize.y > Canvas.m_BottomRight.y - Margin)
+			Y = m_PickerAnchor.y - Gap - PopupSize.y;
+		X = base::clamp(X, Canvas.m_TopLeft.x + Margin,
+			std::max(Canvas.m_BottomRight.x - PopupSize.x - Margin, Canvas.m_TopLeft.x + Margin));
+		Y = base::clamp(Y, Canvas.m_TopLeft.y + Margin,
+			std::max(Canvas.m_BottomRight.y - PopupSize.y - Margin, Canvas.m_TopLeft.y + Margin));
+		return base::rect::FromSize(base::vec2(X, Y), PopupSize);
+	}
+
+	void CEditor::HandleColorPopupInput()
+	{
+		if(!m_bShowColor)
+			return;
+		engine::CInput &Input = this->Input();
+		/*
+			Clicking anywhere but the popup is how it goes away, the way a popup
+			behaves everywhere else; Escape stays as the other way out. The
+			press is used up here - the frame skips the canvas - so dismissing
+			the picker cannot also paint a tile or select a quad.
+		*/
+		const bool bPressed = Input.MousePressed(engine::CInput::mouse_button::left) ||
+			Input.MousePressed(engine::CInput::mouse_button::middle) ||
+			Input.MousePressed(engine::CInput::mouse_button::right) ||
+			Input.MousePressed(engine::CInput::mouse_button::x1) ||
+			Input.MousePressed(engine::CInput::mouse_button::x2);
+		if(bPressed && !ColorPopupRect().Contains(Input.MousePosition()))
+			m_bShowColor = false;
 	}
 
 	const char *CEditor::CornerName(int Corner)
@@ -1085,6 +1156,9 @@ namespace game
 		SetQuadColorTarget(Corner);
 		m_PickerColor = pLayer->m_vQuads[static_cast<std::size_t>(Quad)].m_aColors[Corner < 4 ? Corner : 0];
 		m_bShowColor = true;
+		// the point that was clicked is where the popup is placed, so the
+		// corner it colours stays visible next to it
+		m_PickerAnchor = Screen;
 		SetStatus(Corner < 4 ?
 			base::Format("the picker edits the %s corner of quad %d", CornerName(Corner), Quad) :
 			base::Format("the picker edits all four corners of quad %d", Quad));
@@ -2515,6 +2589,7 @@ namespace game
 		if(m_bShowOpen || m_bShowSave || m_bShowExport || m_bShowHelp || m_bShowColor || m_Menu != menu_id::none ||
 			Renaming())
 		{
+			HandleColorPopupInput();
 #if UNITEED_GUI
 			HandlePopupInput();
 #endif

@@ -1719,7 +1719,11 @@ namespace game
 		}
 
 		if(m_bShowColor)
-			return; // the picker handles its own mouse input while it is drawn
+		{
+			// the picker handles its own mouse input while it is drawn, and a
+			// click away from it has already closed it by the time this runs
+			return;
+		}
 
 		if(m_bShowOpen)
 		{
@@ -1886,20 +1890,15 @@ namespace game
 	void CEditor::DrawColorPopup(ui::CPainter *pPainter)
 	{
 		engine::CInput &Input = m_pGraphics->Input();
-		const base::vec2 Size = m_pGraphics->WindowSize();
 
 		/*
-			A quad popup carries the four live corner swatches and the target
-			button on top of the usual picker, so it is taller. The height is
-			computed from the content rather than written twice: it used to be a
-			fixed box, and the extra rows then drew past its bottom edge.
+			Where the popup is and how tall it is belongs to the editor, not to
+			the drawing: the click that dismisses it has to be tested against
+			the same rectangle that was drawn, and a windowless frame has to be
+			able to do the same.
 		*/
+		const base::rect Popup = ColorPopupRect();
 		const bool bCorners = PickerTargetsQuad();
-		const float CornerRows = bCorners ? 44.0f : 0.0f;
-		// 36 header + 130 square + 10 + 14 hue + 8 + 14 alpha + 12 + 22 preview
-		// + 30 presets + 18 footer, plus the corner rows
-		const float PopupHeight = 294.0f + CornerRows;
-		const base::rect Popup = base::rect::FromSize(base::vec2(Size.x * 0.5f - 148.0f, Size.y * 0.5f - PopupHeight * 0.5f), base::vec2(296.0f, PopupHeight));
 		ui::Rect(pPainter, Popup, ui::Theme.m_Panel);
 		ui::RectOutline(pPainter, Popup, ui::Theme.m_Border, 2.0f);
 
@@ -2071,14 +2070,15 @@ namespace game
 		}
 
 		// the presets and the hint share the last row, so the hint sits beside
-		// the swatches rather than behind them
+		// the swatches rather than behind them. It names the click first: that
+		// is the way out a popup is expected to have
 		const float PresetWidth = 8 * 26.0f;
-		if(X + PresetWidth + 150.0f < Popup.m_BottomRight.x - 12.0f)
+		if(X + PresetWidth + 200.0f < Popup.m_BottomRight.x - 12.0f)
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(X + PresetWidth + 6.0f, y + 46.0f), 11.0f, ui::Theme.m_TextDim,
-				"esc closes, live on the map");
+				"clicking away closes it, esc too");
 		else
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Popup.m_TopLeft.x + 16.0f, Popup.m_BottomRight.y - 8.0f), 11.0f, ui::Theme.m_TextDim,
-				"esc closes, live on the map");
+				"clicking away closes it, esc too");
 	}
 
 	// ------------------------------------------------------------- envelopes
