@@ -27,6 +27,7 @@
 #include "base/define.h"
 #include "base/storage.h"
 #include "base/string.h"
+#include "base/i18n.h"
 #include "engine/graphics.h"
 #include "engine/ui.h"
 #include "game/editor/editor.h"
@@ -37,6 +38,8 @@
 namespace game
 {
 	namespace ui = engine::ui;
+	namespace i18n = base::i18n;
+	using base::i18n::Tr;
 
 	namespace
 	{
@@ -73,6 +76,7 @@ namespace game
 			const char *m_pHint;
 		};
 
+		// i18n:table - the name and the hint are drawn through Tr()
 		const CWindowButton g_aWindowButtons[] = {
 			{window_button::minimize, "minimize", "fold the window down to the taskbar"},
 			{window_button::maximize, "maximize",
@@ -181,6 +185,7 @@ namespace game
 			tool_strip,
 			shortcuts,
 			title_bar,
+			language,
 		};
 
 		/*
@@ -194,6 +199,8 @@ namespace game
 			const char *m_pKey = nullptr;
 			menu_action m_Action = menu_action::none;
 			int m_Check = -1;
+			// the language a row switches to, for the rows that switch one
+			const char *m_pId = nullptr;
 		};
 	} // namespace
 
@@ -226,8 +233,8 @@ namespace game
 			const char *m_pHint;
 		};
 		const CMenuTitle aTitles[] = {
-			{menu_id::files, "Files", "everything that reads or writes a file"},
-			{menu_id::settings, "Settings", "what the session shows, and how the window is drawn"},
+			{menu_id::files, Tr("Files"), Tr("everything that reads or writes a file")},
+			{menu_id::settings, Tr("Settings"), Tr("what the session shows, and how the window is drawn")},
 		};
 		for(const CMenuTitle &Title : aTitles)
 		{
@@ -274,7 +281,7 @@ namespace game
 				WindowGlyph(pPainter, Entry.m_Button, Rect,
 					bHover ? (bClose ? ui::Theme.m_Background : ui::Theme.m_Text) : ui::Theme.m_TextDim, bMaximized);
 				if(bHover)
-					Hint(Rect, Entry.m_pName, Entry.m_pHint);
+					Hint(Rect, Tr(Entry.m_pName), Tr(Entry.m_pHint));
 				if(bHover && Input.MousePressed(engine::CInput::mouse_button::left))
 				{
 					switch(Entry.m_Button)
@@ -340,26 +347,35 @@ namespace game
 		std::vector<CMenuRow> Rows;
 		if(m_Menu == menu_id::files)
 		{
-			Rows.push_back({"New map", "Ctrl+N", menu_action::new_map, -1});
-			Rows.push_back({"Open...", "Ctrl+O", menu_action::open, -1});
-			Rows.push_back({"Reopen the last file", nullptr, menu_action::open_last, -1});
+			Rows.push_back({Tr("New map"), "Ctrl+N", menu_action::new_map, -1});
+			Rows.push_back({Tr("Open..."), "Ctrl+O", menu_action::open, -1});
+			Rows.push_back({Tr("Reopen the last file"), nullptr, menu_action::open_last, -1});
 			if(!m_FileDialog.Available())
-				Rows.push_back({"Browse from the editor", nullptr, menu_action::browse, -1});
+				Rows.push_back({Tr("Browse from the editor"), nullptr, menu_action::browse, -1});
 			Rows.push_back({nullptr, nullptr, menu_action::none, -1});
-			Rows.push_back({m_Dirty ? "Save *" : "Save", "Ctrl+S", menu_action::save, -1});
-			Rows.push_back({"Save as...", "Ctrl+Shift+S", menu_action::save_as, -1});
-			Rows.push_back({"Export for the target", "Ctrl+E", menu_action::export_map, -1});
+			Rows.push_back({m_Dirty ? Tr("Save *") : Tr("Save"), "Ctrl+S", menu_action::save, -1});
+			Rows.push_back({Tr("Save as..."), "Ctrl+Shift+S", menu_action::save_as, -1});
+			Rows.push_back({Tr("Export for the target"), "Ctrl+E", menu_action::export_map, -1});
 			Rows.push_back({nullptr, nullptr, menu_action::none, -1});
-			Rows.push_back({"Quit", "Ctrl+Q", menu_action::quit, -1});
+			Rows.push_back({Tr("Quit"), "Ctrl+Q", menu_action::quit, -1});
 		}
 		else
 		{
-			Rows.push_back({"Tile grid", "G", menu_action::grid, m_bGrid ? 1 : 0});
-			Rows.push_back({"Tool strip", nullptr, menu_action::tool_strip, m_bShowToolBox ? 1 : 0});
-			Rows.push_back({"Keyboard shortcuts", "?", menu_action::shortcuts, -1});
+			Rows.push_back({Tr("Tile grid"), "G", menu_action::grid, m_bGrid ? 1 : 0});
+			Rows.push_back({Tr("Tool strip"), nullptr, menu_action::tool_strip, m_bShowToolBox ? 1 : 0});
+			Rows.push_back({Tr("Keyboard shortcuts"), "?", menu_action::shortcuts, -1});
 			Rows.push_back({nullptr, nullptr, menu_action::none, -1});
-			Rows.push_back({"Draw the title bar", nullptr, menu_action::title_bar,
+			Rows.push_back({Tr("Draw the title bar"), nullptr, menu_action::title_bar,
 				m_pGraphics->ClientDecorations() ? 1 : 0});
+			/*
+				One row per language the build ships, each named in its own
+				language: a user looking for theirs cannot recognise a name
+				written in a language they do not read.
+			*/
+			Rows.push_back({nullptr, nullptr, menu_action::none, -1});
+			for(const i18n::CLanguage &Language : i18n::Languages())
+				Rows.push_back({Language.m_Name.c_str(), nullptr, menu_action::language,
+					i18n::CurrentId() == Language.m_Id ? 1 : 0, Language.m_Id.c_str()});
 		}
 
 		// as wide as its longest row, so the shortcuts line up
@@ -457,6 +473,14 @@ namespace game
 					m_pGraphics->SetClientChrome(Chrome);
 				}
 				break;
+			case menu_action::language:
+				if(i18n::SetLanguage(Row.m_pId))
+				{
+					// the status line answers in the language that was just
+					// chosen: it is the check that the switch took
+					SetStatus(base::FormatRuntime(Tr("the interface language is now {}"), Row.m_pLabel));
+				}
+				break;
 			case menu_action::none: break;
 			}
 		}
@@ -491,8 +515,7 @@ namespace game
 			const bool bShown = m_bShowToolBox;
 			PanelX += PanelButton + PanelGap;
 			if(ui::Hovered(Input, Rect))
-				Hint(Rect, bShown ? "Tools - click to hide" : "Tools - click to show",
-					"the tool strip on the left, which is not a docker");
+				Hint(Rect,   bShown ? Tr("Tools - click to hide") : Tr("Tools - click to show")  , Tr("the tool strip on the left, which is not a docker") );
 			if(editor_icons::Button(m_VectorTextures, pPainter, Input, Rect, icon::toolbox, bShown, true, PanelIconInset))
 				ToggleToolBox();
 		}
@@ -503,7 +526,7 @@ namespace game
 			PanelX += PanelButton + PanelGap;
 			const bool bShown = PanelShown(Entry.m_Panel);
 			if(ui::Hovered(Input, Rect))
-				Hint(Rect, base::Format("{} - click to {}", Entry.m_pName, bShown ? "hide" : "show"),
+				Hint(Rect,   base::FormatRuntime(Tr("{} - click to {}"), Entry.m_pName, bShown ? Tr("hide") : Tr("show"))  ,
 					TabHint(Entry.m_Panel));
 			if(editor_icons::Button(m_VectorTextures, pPainter, Input, Rect, Entry.m_Icon, bShown, true, PanelIconInset))
 				TogglePanel(Entry.m_Panel);
@@ -527,8 +550,9 @@ namespace game
 			const base::rect Rect = base::rect::FromSize(base::vec2(x, Y), base::vec2(Width, ButtonHeight));
 			x += Width + 6.0f;
 			if(ui::Hovered(Input, Rect))
-				Hint(Rect, pKey != nullptr ? base::Format("{}  ({})", Label.c_str(), pKey) : Label,
-					Detail.empty() ? (Enabled ? "click for " + Label : "nothing to do here yet") : Detail);
+				Hint(Rect,   pKey != nullptr ? base::FormatRuntime(Tr("{}  ({})"), Label.c_str(), pKey) : Label  ,
+					Detail.empty() ? (Enabled ? base::FormatRuntime(Tr("click for {}"), Label) :
+						std::string(Tr("nothing to do here yet"))) : Detail);
 			return ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, Label, Active, Enabled);
 		};
 		const auto Separator = [&]() {
@@ -546,7 +570,7 @@ namespace game
 			const CMapTargetProfile &Profile = GetTargetProfile(Target);
 			if(Button(Profile.m_pId, m_Target == Target, true, nullptr,
 				base::Format("{}: datafile v{:d}, {}{}", Profile.m_pName, Profile.m_DatafileVersion,
-					Profile.HasExtension(ext_game_entities) ? "DDRace entities" : "vanilla entities",
+					Tr(Profile.HasExtension(ext_game_entities) ? "DDRace entities" : "vanilla entities"),
 					m_Target == Target ? " (already selected)" : "")))
 			{
 				m_Target = Target;
@@ -555,27 +579,27 @@ namespace game
 				// says out loud what it will cost
 				const std::vector<std::string> Warnings = m_Map.CompatibilityWarnings(Target);
 				if(Warnings.empty())
-					SetStatus(base::Format("target {}", Profile.m_pName));
+					SetStatus(  base::FormatRuntime(Tr("target {}"), Profile.m_pName)  );
 				else
-					SetStatus(base::Format("target {}: {}", Profile.m_pName, Warnings.front().c_str()));
+					SetStatus(  base::FormatRuntime(Tr("target {}: {}"), Profile.m_pName, Warnings.front().c_str())  );
 			}
 		}
 		// the DDRace features keep their own switch beside the targets, so a
 		// mapmaker can keep lasers and teleporters in a vanilla map on purpose
 		if(GetTargetProfile(m_Target).HasExtension(ext_game_entities))
 		{
-			if(Button("ddnet ext", m_bAllowExtensions, true, nullptr,
-				"whether this map may use DDRace entities, physics layers and sounds"))
+			if(Button(Tr("ddnet ext"), m_bAllowExtensions, true, nullptr,
+				Tr("whether this map may use DDRace entities, physics layers and sounds")))
 				SetAllowExtensions(!m_bAllowExtensions);
 		}
-		else if(Button("allow ddnet", m_bAllowExtensions, true, nullptr,
-			"keep the DDRace features the map already carries, even though this target is vanilla"))
+		else if(Button(Tr("allow ddnet"), m_bAllowExtensions, true, nullptr,
+			Tr("keep the DDRace features the map already carries, even though this target is vanilla")))
 			SetAllowExtensions(!m_bAllowExtensions);
 
 		Separator();
-		if(Button("Undo", false, !m_vUndo.empty(), "Ctrl+Z", "step back through the edits of this session"))
+		if(Button(Tr("Undo"), false, !m_vUndo.empty(), "Ctrl+Z", Tr("step back through the edits of this session")))
 			Undo();
-		if(Button("Redo", false, !m_vRedo.empty(), "Ctrl+Y", "step forward again"))
+		if(Button(Tr("Redo"), false, !m_vRedo.empty(), "Ctrl+Y", Tr("step forward again")))
 			Redo();
 		if(bTruncated)
 		{
@@ -583,10 +607,9 @@ namespace game
 			// better than an empty stretch of toolbar that looks complete
 			const base::rect Cut = base::rect::FromSize(base::vec2(x, Y), base::vec2(20.0f, ButtonHeight));
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Cut.Center().x, Cut.Center().y + 4.5f), 13.0f,
-				ui::Theme.m_TextDim, "...", ui::text_align::center);
+				ui::Theme.m_TextDim, Tr("...") , ui::text_align::center);
 			if(ui::Hovered(Input, Cut))
-				Hint(Cut, "more buttons",
-					"this window is too narrow for the rest of the toolbar: the keys still work, and a wider window shows them again");
+				Hint(Cut, Tr("more buttons") , Tr("this window is too narrow for the rest of the toolbar: the keys still work, and a wider window shows them again") );
 		}
 	}
 } // namespace game

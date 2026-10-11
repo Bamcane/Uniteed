@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include "base/define.h"
+#include "base/i18n.h"
 #include "base/logger.h"
 #include "base/png.h"
 #include "config/config.h"
@@ -13,9 +14,30 @@
 
 namespace engine
 {
+	namespace i18n = base::i18n;
+
 	namespace
 	{
-		// the renderer hands back a surface, already top down like PNG wants
+		/*
+		The language of the interface, in the order the choice wins: the command
+		line, the settings file, then the locale the session runs in. It is
+		settled before the window exists, because the catalogs are read from the
+		data directory and no frame of the interface should be built in the
+		wrong language - a window that has to redraw itself in another language
+		on its first frame is a window that flickers.
+	*/
+	void SelectLanguage(const config::CConfig &Config, const CScreenshotSetup &Setup)
+	{
+		const std::string LanguageId = !Setup.m_Language.empty() ? Setup.m_Language :
+			(Config.Has(config::Language) ? Config.Get(config::Language) : i18n::SystemLanguageId());
+		if(!i18n::SetLanguage(LanguageId))
+		{
+			LOG_WARN("uniteed", "no catalog for language '{}', the interface stays English", LanguageId);
+			i18n::SetLanguage("en");
+		}
+	}
+
+	// the renderer hands back a surface, already top down like PNG wants
 		bool SaveFramebuffer(SDL_Renderer *pRenderer, const storage::path &FileName, int Width, int Height)
 		{
 			if(pRenderer == nullptr || Width <= 0 || Height <= 0)
@@ -273,6 +295,7 @@ namespace engine
 		config::CConfig Config;
 		const storage::path ConfigPath = config::CConfig::DefaultPath();
 		Config.Load(ConfigPath);
+		SelectLanguage(Config, Setup);
 		{
 			const std::string Level = Config.Get(config::LogLevel);
 			if(Level == "trace")
@@ -428,6 +451,15 @@ namespace engine
 		Config.Set(config::LastMap, Editor.SourcePath());
 		Config.Set(config::AssetVersion, Editor.VersionId());
 		/*
+			The language is the i18n module's state rather than the editor's, so
+			a session that was switched to Chinese through the menu comes back
+			in Chinese. `--language` is a choice for this run, the way
+			`--titlebar` is: what the settings file says is left alone, because
+			a flag a script passes must not become somebody's setting.
+		*/
+		if(Setup.m_Language.empty())
+			Config.Set(config::Language, i18n::CurrentId());
+		/*
 			`--titlebar` is a choice for this run, like `--ui-scale`: what the
 			settings file says is put back before it is written, so the flag
 			does not quietly become the setting. The persistent way to ask for
@@ -449,6 +481,8 @@ namespace engine
 		Config.Load(config::CConfig::DefaultPath());
 		if(Setup.m_ClientDecorations >= 0)
 			Config.Set(config::ClientDecorations, Setup.m_ClientDecorations != 0);
+
+		SelectLanguage(Config, Setup);
 
 		CGraphics Graphics;
 		if(!Graphics.Init(std::string(GAME_DISPLAY_NAME) + " " + GAME_VERSION, 1600, 900, false, &Config))

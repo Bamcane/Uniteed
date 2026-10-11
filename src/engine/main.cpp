@@ -112,6 +112,16 @@ int main(int argc, char **argv)
 			Setup.m_QuitAfter = std::atoi(Arguments[++i].c_str());
 			continue;
 		}
+		if(Argument == "--language" && i + 1 < Arguments.size())
+		{
+			/*
+				The catalog id of the language the interface is built in, so a
+				picture of the interface in another language is one command line
+				away and does not depend on the settings of whoever runs it.
+			*/
+			Setup.m_Language = Arguments[++i];
+			continue;
+		}
 		if(Argument == "--menu" && i + 1 < Arguments.size())
 		{
 			// "files" or "settings": the menu of the title bar row to open
@@ -353,6 +363,7 @@ int main(int argc, char **argv)
 			Argument == "--corner" || Argument == "--dock" || Argument == "--envelope" ||
 			Argument == "--color" || Argument == "--time" || Argument == "--ui-scale" ||
 			Argument == "--ui-scale-change" || Argument == "--titlebar" || Argument == "--menu" ||
+			Argument == "--language" ||
 			Argument == "--reopen" || Argument == "--mods" || Argument == "--press" ||
 			Argument == "--release" || Argument == "--move" || Argument == "--scroll" ||
 			Argument == "--click" || Argument == "--click-point" || Argument == "--key" || Argument == "--quit-after" ||

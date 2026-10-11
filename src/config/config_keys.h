@@ -32,6 +32,13 @@ namespace config
 	inline const key<int> BrushSize{"uniteed_brush_size", 1};
 	inline const key<std::string> LastMap{"uniteed_last_map", ""};
 	inline const key<std::string> AssetVersion{"uniteed_asset_version", ""};
+	/*
+		The language of the interface, named the way its catalog file is: "en"
+		is the source text and needs no file. An empty settings file means the
+		desktop's own locale decides, which is what makes a Chinese session
+		start in Chinese without anybody setting anything.
+	*/
+	inline const key<std::string> Language{"uniteed_language", "en"};
 
 	/*
 		How many pixels per layout pixel the vector drawings of the interface

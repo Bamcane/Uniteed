@@ -91,6 +91,14 @@ namespace engine
 			settings are written.
 		*/
 		int m_QuitAfter = 0;
+		/*
+			The language of the interface, as a catalog id ("en", "zh-Hans").
+			Empty takes the settings file, and the desktop's own locale when
+			that says nothing: it is here as well as in the settings because a
+			picture of the interface in another language has to be reproducible
+			from a command line.
+		*/
+		std::string m_Language;
 	};
 
 	// an empty map path starts with a new map; a non empty screenshot path

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/i18n.h"
 #include "base/string.h"
 #include "base/time.h"
 #include "engine/graphics.h"
@@ -23,6 +24,7 @@
 
 namespace game
 {
+	using base::i18n::Tr;
 	namespace ui = engine::ui;
 
 	/*
@@ -80,13 +82,14 @@ namespace game
 		constexpr int EnvelopeKeyChannel = engine::keys::T;
 		constexpr int EnvelopeKeyGrid = engine::keys::B;
 
+		// i18n:table
 		const char *const g_apCurveName[NUM_CURVETYPES] = {"step", "linear", "slow", "fast", "smooth", "bezier"};
 
 		std::string CurveName(int Type)
 		{
 			if(Type < 0 || Type >= NUM_CURVETYPES)
 				return "?";
-			return g_apCurveName[Type];
+			return Tr(g_apCurveName[Type]);
 		}
 
 		// one sample every two pixels: enough for a smooth trace, and cheap
@@ -151,8 +154,8 @@ namespace game
 		if(m_EnvelopeChannelBase > 0 && m_EnvelopeChannelBase >= ChannelCount)
 			m_EnvelopeChannelBase = 0;
 
-		ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 13.0f), 13.0f, ui::Theme.m_Text,
-			pEnvelope != nullptr ? (pEnvelope->m_Name.empty() ? "unnamed envelope" : pEnvelope->m_Name) : "no envelope",
+		ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 13.0f), 13.0f, ui::Theme.m_Text,  
+			pEnvelope != nullptr ? (pEnvelope->m_Name.empty() ? Tr("unnamed envelope") : pEnvelope->m_Name) : Tr("no envelope")  ,
 			Width - 84.0f);
 
 		// which envelope: a cycling control, because a dock is too narrow for a
@@ -160,8 +163,8 @@ namespace game
 		if(EnvelopeCount > 0)
 		{
 			const base::rect Cycle = base::rect::FromSize(base::vec2(Area.m_BottomRight.x - 76.0f, y), base::vec2(68.0f, 22.0f));
-			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Cycle,
-				base::Format("{:d} / {:d}", EnvelopeIndex + 1, EnvelopeCount)))
+			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Cycle, 
+				base::FormatRuntime(Tr("{:d} / {:d}"), EnvelopeIndex + 1, EnvelopeCount) ))
 			{
 				m_SelectedEnvelope = (EnvelopeIndex + 1) % EnvelopeCount;
 				m_SelectedEnvelopePoint = -1;
@@ -170,16 +173,16 @@ namespace game
 				g_Envelope.m_bZoomSet = false;
 			}
 			if(ui::Hovered(Input, Cycle))
-				Hint(Cycle, "envelope", "click to walk the envelopes of this map, one per press");
+				Hint(Cycle, Tr("envelope") , Tr("click to walk the envelopes of this map, one per press") );
 		}
 		else
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_BottomRight.x - 8.0f, y + 13.0f), 11.0f,
-				ui::Theme.m_TextDim, "none", ui::text_align::right);
+				ui::Theme.m_TextDim, Tr("none") , ui::text_align::right);
 		y += 26.0f;
 
-		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 11.0f, ui::Theme.m_TextDim,
-			pEnvelope != nullptr ? base::Format("{:d} channels, {:d} points, {:.3f}s loop", ChannelCount,
-				pEnvelope->m_vPoints.size(), EnvelopeLength(*pEnvelope)) : "create one to start", Width);
+		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 11.0f, ui::Theme.m_TextDim,  
+			pEnvelope != nullptr ? base::FormatRuntime(Tr("{:d} channels, {:d} points, {:.3f}s loop"), ChannelCount,
+				pEnvelope->m_vPoints.size(), EnvelopeLength(*pEnvelope)) : Tr("create one to start")  , Width);
 		y += 18.0f;
 
 		// the buttons that create an envelope, and its channel count
@@ -191,15 +194,15 @@ namespace game
 			if(ButtonX > Area.m_BottomRight.x)
 				return false; // a header that has run out of dock: no button
 			if(ui::Hovered(Input, Box))
-				Hint(Box, Label, Label == "New" ? "add an envelope and hand it to the selected layer or quad" :
-					"set how many channels the envelope has, which is what its curves drive");
+				Hint(Box, Label,  Label == Tr("New") ? Tr("add an envelope and hand it to the selected layer or quad") :
+					Tr("set how many channels the envelope has, which is what its curves drive") );
 			return ui::Button(pPainter, Input, m_pGraphics->Font(), Box, Label, Active);
 		};
 
 		if(HeaderButton("New", false, 48.0f))
 		{
 			if(EnsureEnvelopeSelected() < 0)
-				SetStatus("select a layer or a quad first: an envelope needs an owner");
+				SetStatus( Tr("select a layer or a quad first: an envelope needs an owner") );
 			else
 			{
 				m_SelectedEnvelopePoint = -1;
@@ -218,14 +221,13 @@ namespace game
 			if(m_EnvelopeChannelBase >= Channels)
 				m_EnvelopeChannelBase = 0;
 			m_Dirty = true;
-			SetStatus(base::Format("the envelope now has {:d} channels", Channels));
+			SetStatus(  base::FormatRuntime(Tr("the envelope now has {:d} channels"), Channels)  );
 		}
 		y += 26.0f;
 
 		if(pEnvelope == nullptr)
 		{
-			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 12.0f, ui::Theme.m_TextDim,
-				"no envelope is selected: pick a layer or quad with one, or press New", Width);
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 12.0f, ui::Theme.m_TextDim, Tr("no envelope is selected: pick a layer or quad with one, or press New") , Width);
 			return;
 		}
 
@@ -244,8 +246,7 @@ namespace game
 		const float PlotHeight = Remaining - ListHeight - 4.0f;
 		if(PlotHeight < 40.0f)
 		{
-			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 12.0f, ui::Theme.m_TextDim,
-				"make this dock taller to see the curve", Width);
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 12.0f, ui::Theme.m_TextDim, Tr("make this dock taller to see the curve") , Width);
 			return;
 		}
 
@@ -380,7 +381,7 @@ namespace game
 				const float GridX = TimeToX(Time);
 				ui::Line(pPainter, base::vec2(GridX, Plot.m_TopLeft.y), base::vec2(GridX, Plot.m_BottomRight.y), ui::Theme.m_CurveGrid);
 				ui::Text(pPainter, m_pGraphics->Font(), base::vec2(GridX + 3.0f, Plot.m_BottomRight.y - 4.0f), 10.0f,
-					ui::Theme.m_TextDim, base::Format("{:.3g}s", Time));
+					ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:.3g}s"), Time)  );
 			}
 		}
 
@@ -422,7 +423,7 @@ namespace game
 			{
 				const int Channel = m_EnvelopeChannelBase + Pair;
 				ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Plot.m_TopLeft.x + 4.0f, Plot.m_TopLeft.y + 12.0f + Pair * 12.0f), 10.5f,
-					aCurveColor[Pair], base::Format("ch {:d}  {:.3f}", Channel, Sample[static_cast<std::size_t>(Channel)]));
+					aCurveColor[Pair],   base::FormatRuntime(Tr("ch {:d}  {:.3f}"), Channel, Sample[static_cast<std::size_t>(Channel)])  );
 			}
 		}
 
@@ -456,8 +457,7 @@ namespace game
 		}
 
 		if(PointCount == 0)
-			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Plot.Center().x, Plot.Center().y), 12.0f, ui::Theme.m_TextDim,
-				"no points yet: click the plot, or control-click a time", ui::text_align::center);
+			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Plot.Center().x, Plot.Center().y), 12.0f, ui::Theme.m_TextDim, Tr("no points yet: click the plot, or control-click a time") , ui::text_align::center);
 
 		pPainter->Restore();
 
@@ -579,7 +579,7 @@ namespace game
 		ui::Rect(pPainter, List, ui::Theme.m_PanelDark);
 		ui::RectOutline(pPainter, List, ui::Theme.m_Border);
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(List.m_TopLeft.x + 6.0f, List.m_TopLeft.y + 12.0f), 11.0f,
-			ui::Theme.m_TextDim, base::Format("{:d} points", PointCount), List.Width() - 12.0f);
+			ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:d} points"), PointCount)  , List.Width() - 12.0f);
 
 		pPainter->Save();
 		pPainter->Scissor(List.m_TopLeft.x, List.m_TopLeft.y + 18.0f, List.Width(), std::max(1.0f, List.Height() - 18.0f));
@@ -596,8 +596,8 @@ namespace game
 			else if(ui::Hovered(Input, Row))
 				ui::Rect(pPainter, Row, ui::Theme.m_Hover);
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Row.m_TopLeft.x + 4.0f, Row.Center().y + 4.0f), 11.0f,
-				ui::Theme.m_Text, base::Format("{:3d}  {:6d}ms  {:<7}  {:5d} {:5d} {:5d} {:5d}", i, Point.m_Time,
-					CurveName(Point.m_Curvetype).c_str(), Point.m_aValues[0], Point.m_aValues[1], Point.m_aValues[2], Point.m_aValues[3]),
+				ui::Theme.m_Text,   base::FormatRuntime(Tr("{:3d}  {:6d}ms  {:<7}  {:5d} {:5d} {:5d} {:5d}"), i, Point.m_Time,
+					CurveName(Point.m_Curvetype).c_str(), Point.m_aValues[0], Point.m_aValues[1], Point.m_aValues[2], Point.m_aValues[3])  ,
 				Row.Width() - 8.0f);
 			if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
 				m_SelectedEnvelopePoint = i;
@@ -621,14 +621,13 @@ namespace game
 			CEnvelopePoint &Point = pEnvelope->m_vPoints[static_cast<std::size_t>(m_SelectedEnvelopePoint)];
 			const base::rect CurveButton = base::rect::FromSize(base::vec2(X, y), base::vec2(76.0f, 18.0f));
 			if(ui::Hovered(Input, CurveButton))
-				Hint(CurveButton, CurveName(Point.m_Curvetype),
-					"the interpolation of this keyframe: click to step through the curve types");
+				Hint(CurveButton, CurveName(Point.m_Curvetype), Tr("the interpolation of this keyframe: click to step through the curve types") );
 			if(ui::Button(pPainter, Input, m_pGraphics->Font(), CurveButton, CurveName(Point.m_Curvetype)))
 			{
 				PushUndo(m_SelectedGroup, m_SelectedLayer, undo_scope::envelope);
 				Point.m_Curvetype = (Point.m_Curvetype + 1) % NUM_CURVETYPES;
 				m_Dirty = true;
-				SetStatus(base::Format("point {:d} is now '{}'", m_SelectedEnvelopePoint, CurveName(Point.m_Curvetype).c_str()));
+				SetStatus(  base::FormatRuntime(Tr("point {:d} is now '{}'"), m_SelectedEnvelopePoint, CurveName(Point.m_Curvetype).c_str())  );
 			}
 			/*
 				The tangents of a bezier point are packed into the point itself,
@@ -638,25 +637,23 @@ namespace game
 			*/
 			const float HintWidth = std::max(Width - 190.0f, 20.0f);
 			if(Point.m_Curvetype == CURVETYPE_BEZIER)
-				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X + 82.0f, y + 12.0f), 10.5f, ui::Theme.m_TextDim,
-					"bezier tangents are not editable here yet", HintWidth);
+				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X + 82.0f, y + 12.0f), 10.5f, ui::Theme.m_TextDim, Tr("bezier tangents are not editable here yet") , HintWidth);
 			else
-				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X + 82.0f, y + 12.0f), 10.5f, ui::Theme.m_TextDim,
-					base::Format("{:.3f}s", static_cast<float>(Point.m_Time) / 1000.0f), HintWidth);
+				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X + 82.0f, y + 12.0f), 10.5f, ui::Theme.m_TextDim,  
+					base::FormatRuntime(Tr("{:.3f}s"), static_cast<float>(Point.m_Time) / 1000.0f)  , HintWidth);
 
 			const base::rect DeleteButton = base::rect::FromSize(base::vec2(Area.m_BottomRight.x - 88.0f, y),
 				base::vec2(80.0f, 18.0f));
 			if(ui::Hovered(Input, DeleteButton))
-				Hint(DeleteButton, "Delete point", "remove the selected keyframe, one step of undo");
-			if(ui::Button(pPainter, Input, m_pGraphics->Font(), DeleteButton, "Delete point"))
+				Hint(DeleteButton, Tr("Delete point") , Tr("remove the selected keyframe, one step of undo") );
+			if(ui::Button(pPainter, Input, m_pGraphics->Font(), DeleteButton, Tr("Delete point") ))
 			{
 				PushUndo(m_SelectedGroup, m_SelectedLayer, undo_scope::envelope);
 				DeleteEnvelopePoint(m_SelectedEnvelopePoint);
 			}
 		}
 		else
-			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 11.0f, ui::Theme.m_TextDim,
-				"click a point of the list, or a handle in the curve, to edit it", Width);
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 11.0f, ui::Theme.m_TextDim, Tr("click a point of the list, or a handle in the curve, to edit it") , Width);
 		y += 22.0f;
 
 		// -------------------------------------------------------- transport bar
@@ -666,9 +663,9 @@ namespace game
 		y += TransportHeight;
 
 		// ------------------------------------------------------------- footnote
-		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 10.5f, ui::Theme.m_TextDim,
-			base::Format("wheel over the curve: zoom   ctrl+click: add   right click: delete   shift+{:c}: channel pair   {:c}: grid",
-				static_cast<char>(EnvelopeKeyChannel), static_cast<char>(EnvelopeKeyGrid)), Width);
+		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 10.5f, ui::Theme.m_TextDim, 
+			base::FormatRuntime(Tr("wheel over the curve: zoom   ctrl+click: add   right click: delete   shift+{:c}: channel pair   {:c}: grid"),
+				static_cast<char>(EnvelopeKeyChannel), static_cast<char>(EnvelopeKeyGrid)) , Width);
 
 		// ------------------------------------------------------------- shortcuts
 		/*
@@ -682,12 +679,12 @@ namespace game
 			m_EnvelopeChannelBase = m_EnvelopeChannelBase == 0 ? 2 : 0;
 			if(m_EnvelopeChannelBase >= ChannelCount)
 				m_EnvelopeChannelBase = 0;
-			SetStatus(base::Format("the curve view now plots channel {:d}", m_EnvelopeChannelBase));
+			SetStatus(  base::FormatRuntime(Tr("the curve view now plots channel {:d}"), m_EnvelopeChannelBase)  );
 		}
 		if(!Shift && Input.KeyPressed(EnvelopeKeyGrid))
 		{
 			g_Envelope.m_bGrid = !g_Envelope.m_bGrid;
-			SetStatus(g_Envelope.m_bGrid ? "envelope grid on" : "envelope grid off");
+			SetStatus(  g_Envelope.m_bGrid ? Tr("envelope grid on") : Tr("envelope grid off")  );
 		}
 	}
 } // namespace game

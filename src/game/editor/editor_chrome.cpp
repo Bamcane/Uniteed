@@ -17,6 +17,7 @@
 
 #include <algorithm>
 
+#include "base/i18n.h"
 #include "base/define.h"
 #include "base/string.h"
 #include "engine/graphics.h"
@@ -29,6 +30,7 @@
 
 namespace game
 {
+	using base::i18n::Tr;
 	namespace ui = engine::ui;
 
 	namespace
@@ -55,6 +57,7 @@ namespace game
 			bool m_bTilesOnly;
 		};
 
+		// i18n:table - the name and the hint are drawn through Tr()
 		const CToolEntry g_aToolEntries[] = {
 			{editor_tool::pan, icon::pan, "Pan", "V", "drag the view around the map without changing it", false},
 			{editor_tool::paint, icon::brush, "Brush", "B", "paint the brush under the cursor", true},
@@ -82,6 +85,7 @@ namespace game
 			toggle m_Toggle;
 		};
 
+		// i18n:table
 		const CToggleEntry g_aToggleEntries[] = {
 			{icon::frame, "Fit", "Ctrl+0", "frame the whole map in the window", toggle::fit},
 			{icon::grid, "Grid", "G", "show the tile grid", toggle::grid},
@@ -146,10 +150,10 @@ namespace game
 				ToolIconInset);
 			if(ui::Hovered(Input, Rect))
 			{
-				SetStatus(bEnabled ? pHint : "this needs a tile layer: pick one in the Layers docker");
+				SetStatus(bEnabled ? Tr(pHint) : Tr("this needs a tile layer: pick one in the Layers docker"));
 				RequestTooltip(base::vec2(Rect.m_BottomRight.x + 8.0f, Rect.m_TopLeft.y - 4.0f),
 					base::Format("{}  ({})", pName, pKey),
-					bEnabled ? pHint : "select a tile layer to use this tool");
+					bEnabled ? Tr(pHint) : Tr("select a tile layer to use this tool"));
 			}
 			return bClicked;
 		};
@@ -192,9 +196,8 @@ namespace game
 
 		const float X = Panel.m_TopLeft.x + 26.0f;
 		float y = Panel.m_TopLeft.y + 34.0f;
-		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y), 22.0f, ui::Theme.m_Text, GAME_DISPLAY_NAME " " GAME_VERSION);
-		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Panel.m_BottomRight.x - 26.0f, y), 12.0f, ui::Theme.m_TextDim,
-			"a map editor for 0.6, 0.7, DDRaceNetwork and 0.8", ui::text_align::right);
+		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y), 22.0f, ui::Theme.m_Text,  GAME_DISPLAY_NAME " " GAME_VERSION );
+		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Panel.m_BottomRight.x - 26.0f, y), 12.0f, ui::Theme.m_TextDim, Tr("a map editor for 0.6, 0.7, DDRaceNetwork and 0.8") , ui::text_align::right);
 		y += 16.0f;
 		ui::Line(pPainter, base::vec2(X, y), base::vec2(Panel.m_BottomRight.x - 26.0f, y), ui::Theme.m_Border);
 		y += 26.0f;
@@ -207,12 +210,12 @@ namespace game
 			int m_Action; // 0 new, 1 open, 2 the last map, 3 the shortcut list
 			bool m_bEnabled;
 		};
-		const std::string Last = m_SourcePath.empty() ? "no map has been opened yet" : m_SourcePath;
+		const std::string Last = m_SourcePath.empty() ? Tr("no map has been opened yet") : m_SourcePath;
 		const CEntry aEntries[] = {
-			{"New map", "start from an empty map of the current target", 0, true},
-			{"Open a project or a map", "the platform's own file dialog", 1, true},
-			{"Open the last map", Last, 2, !m_SourcePath.empty()},
-			{"Keys and mouse", "the whole shortcut list", 3, true},
+			{Tr("New map"), Tr("start from an empty map of the current target"), 0, true},
+			{Tr("Open a project or a map"), Tr("the platform's own file dialog"), 1, true},
+			{Tr("Open the last map"), Last, 2, !m_SourcePath.empty()},
+			{Tr("Keys and mouse"), Tr("the whole shortcut list"), 3, true},
 		};
 		const float RowHeight = 42.0f;
 		for(const CEntry &Entry : aEntries)
@@ -222,11 +225,11 @@ namespace game
 			ui::Rect(pPainter, Row, bHover ? ui::Theme.m_Hover : ui::Theme.m_PanelDark);
 			ui::RectOutline(pPainter, Row, bHover ? ui::Theme.m_Accent : ui::Theme.m_Border);
 			ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(Row.m_TopLeft.x + 12.0f, Row.m_TopLeft.y + 16.0f), 13.0f,
-				Entry.m_bEnabled ? ui::Theme.m_Text : ui::Theme.m_TextDim, Entry.m_pTitle);
+				Entry.m_bEnabled ? ui::Theme.m_Text : ui::Theme.m_TextDim, Tr(Entry.m_pTitle));
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Row.m_TopLeft.x + 12.0f, Row.m_TopLeft.y + 31.0f), 11.0f,
-				ui::Theme.m_TextDim, Entry.m_Detail, Row.Width() - 24.0f);
+				ui::Theme.m_TextDim, Tr(Entry.m_Detail.c_str()), Row.Width() - 24.0f);
 			if(bHover)
-				Hint(Row, Entry.m_pTitle, Entry.m_Detail);
+				Hint(Row, Tr(Entry.m_pTitle), Tr(Entry.m_Detail.c_str()));
 			if(bHover && Input.MousePressed(engine::CInput::mouse_button::left))
 			{
 				switch(Entry.m_Action)
@@ -253,7 +256,7 @@ namespace game
 
 		const base::rect Close = base::rect::FromSize(base::vec2(Panel.m_BottomRight.x - 96.0f, Panel.m_BottomRight.y - 32.0f),
 			base::vec2(70.0f, 22.0f));
-		if(ui::Button(pPainter, Input, m_pGraphics->Font(), Close, "Start"))
+		if(ui::Button(pPainter, Input, m_pGraphics->Font(), Close, Tr("Start") ))
 			m_bShowWelcome = false;
 	}
 
@@ -265,10 +268,17 @@ namespace game
 		ui::RectOutline(pPainter, Panel, ui::Theme.m_Border, 2.0f);
 
 		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(Panel.m_TopLeft.x + 20.0f, Panel.m_TopLeft.y + 28.0f), 16.0f,
-			ui::Theme.m_Text, "Keys and mouse");
+			ui::Theme.m_Text, Tr("Keys and mouse") );
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Panel.m_BottomRight.x - 20.0f, Panel.m_TopLeft.y + 28.0f), 12.0f,
-			ui::Theme.m_TextDim, "the canvas edits whatever the layer tree selects", ui::text_align::right);
+			ui::Theme.m_TextDim, Tr("the canvas edits whatever the layer tree selects") , ui::text_align::right);
 
+		/*
+			The two columns of the shortcut list. They stay English: the heading
+			test below reads the capitals of a line, which a translation does
+			not have. They are drawn through Tr(), and the marker tells
+			tools/lang.py to read them.
+		*/
+		// i18n:table
 		const char *apCommon[] = {
 			"WORKSPACE",
 			"middle / right drag   pan",
@@ -290,6 +300,7 @@ namespace game
 			"double click it       maximize, and back",
 			"right click it        the window's own menu",
 		};
+		// i18n:table
 		const char *apCanvas[] = {
 			"TOOLS",
 			"B  left drag          brush",
@@ -336,7 +347,7 @@ namespace game
 				const bool bHeading = IsHeading(apLines[i]);
 				if(apLines[i][0] != '\0')
 					ui::Text(pPainter, bHeading ? m_pGraphics->FontBold() : m_pGraphics->Font(), base::vec2(ColumnX, y),
-						bHeading ? 12.5f : 11.5f, bHeading ? ui::Theme.m_Text : ui::Theme.m_TextDim, apLines[i]);
+						bHeading ? 12.5f : 11.5f, bHeading ? ui::Theme.m_Text : ui::Theme.m_TextDim, Tr(apLines[i]));
 				y += bHeading ? 22.0f : 17.0f;
 			}
 		};
@@ -345,7 +356,7 @@ namespace game
 
 		const base::rect Close = base::rect::FromSize(base::vec2(Panel.m_BottomRight.x - 96.0f, Panel.m_BottomRight.y - 34.0f),
 			base::vec2(70.0f, 22.0f));
-		if(ui::Button(pPainter, Input, m_pGraphics->Font(), Close, "Close") || Input.KeyPressed(engine::keys::Escape))
+		if(ui::Button(pPainter, Input, m_pGraphics->Font(), Close, Tr("Close") ) || Input.KeyPressed(engine::keys::Escape))
 			m_bShowShortcuts = false;
 
 		// a click anywhere outside closes it, which is what a floating panel

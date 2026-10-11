@@ -86,6 +86,10 @@ namespace config
 		void Set(const key<T> &Key, const T &Value) { m_Values[std::string(Key.m_Name)] = ToText(Value); }
 
 		bool Has(std::string_view Name) const { return m_Values.find(std::string(Name)) != m_Values.end(); }
+		// whether the file said anything about a key, which is not the same as
+		// whether it has a value: a default is not a choice
+		template<typename T>
+		bool Has(const key<T> &Key) const { return Has(Key.m_Name); }
 		void SetRaw(std::string_view Name, const std::string &Value) { m_Values[std::string(Name)] = Value; }
 		std::string GetRaw(std::string_view Name, const std::string &Default = {}) const;
 		void Clear() { m_Values.clear(); }

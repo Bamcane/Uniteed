@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "base/i18n.h"
 #include "base/logger.h"
 #include "base/png.h"
 #include "base/string.h"
@@ -34,6 +35,7 @@
 
 namespace game
 {
+	using base::i18n::Tr;
 	namespace
 	{
 		// the pixels of one image, decoded: what every operation here starts
@@ -161,8 +163,8 @@ namespace game
 		ForgetImageTextures();
 		m_Dirty = true;
 		const int Index = static_cast<int>(m_Map.m_vImages.size()) - 1;
-		SetStatus(base::Format("added the image '{}' ({:d}x{:d}, embedded)", m_Map.m_vImages[static_cast<std::size_t>(Index)].m_Name.c_str(),
-			Width, Height));
+		SetStatus(  base::FormatRuntime(Tr("added the image '{}' ({:d}x{:d}, embedded)"), m_Map.m_vImages[static_cast<std::size_t>(Index)].m_Name.c_str(),
+			Width, Height)  );
 		return Index;
 	}
 
@@ -180,8 +182,8 @@ namespace game
 			// tell apart
 			if(!ReplaceImagePixels(Existing, Pixels->m_Width, Pixels->m_Height, Pixels->m_Pixels, pError))
 				return -1;
-			SetStatus(base::Format("replaced the image '{}' from {}", Name.c_str(),
-				storage::path(Path).filename().string().c_str()));
+			SetStatus(  base::FormatRuntime(Tr("replaced the image '{}' from {}"), Name.c_str(),
+				storage::path(Path).filename().string().c_str())  );
 			return Existing;
 		}
 		return AddImageRGBA(Name, Pixels->m_Width, Pixels->m_Height, Pixels->m_Pixels, pError);
@@ -252,7 +254,7 @@ namespace game
 			return false;
 		if(!ReplaceImagePixels(Index, Pixels->m_Width, Pixels->m_Height, Pixels->m_Pixels, pError))
 			return false;
-		SetStatus(base::Format("embedded the image '{}'", Image.m_Name.c_str()));
+		SetStatus(  base::FormatRuntime(Tr("embedded the image '{}'"), Image.m_Name.c_str())  );
 		return true;
 	}
 
@@ -282,7 +284,7 @@ namespace game
 		Image.m_aTileFlagsValid = false;
 		ForgetImageTextures();
 		m_Dirty = true;
-		SetStatus(base::Format("the image '{}' is external again", Image.m_Name.c_str()));
+		SetStatus(  base::FormatRuntime(Tr("the image '{}' is external again"), Image.m_Name.c_str())  );
 		return true;
 	}
 
@@ -370,7 +372,7 @@ namespace game
 
 		ForgetImageTextures();
 		m_Dirty = true;
-		SetStatus(base::Format("removed image {:d}", Index));
+		SetStatus(  base::FormatRuntime(Tr("removed image {:d}"), Index)  );
 		return true;
 	}
 
@@ -409,7 +411,7 @@ namespace game
 		ForgetImageTextures();
 		m_Dirty = true;
 		const int Index = static_cast<int>(m_Map.m_vImages.size()) - 1;
-		SetStatus(base::Format("added the mapres image '{}'", Clean.c_str()));
+		SetStatus(  base::FormatRuntime(Tr("added the mapres image '{}'"), Clean.c_str())  );
 		return Index;
 	}
 
@@ -431,8 +433,8 @@ namespace game
 		m_Map.m_vSounds.push_back(std::move(Sound));
 		m_Dirty = true;
 		const int Index = static_cast<int>(m_Map.m_vSounds.size()) - 1;
-		SetStatus(base::Format("added the sound '{}' ({})", m_Map.m_vSounds[static_cast<std::size_t>(Index)].m_Name.c_str(),
-			bEmbedded ? "embedded" : "external"));
+		SetStatus(  base::FormatRuntime(Tr("added the sound '{}' ({})"), m_Map.m_vSounds[static_cast<std::size_t>(Index)].m_Name.c_str(),
+			bEmbedded ? Tr("embedded") : Tr("external"))  );
 		return Index;
 	}
 
@@ -456,8 +458,8 @@ namespace game
 			Sound.m_External = 0;
 			Sound.m_Data = *Bytes;
 			m_Dirty = true;
-			SetStatus(base::Format("replaced the sound '{}' from {}", Name.c_str(),
-				storage::path(Path).filename().string().c_str()));
+			SetStatus(  base::FormatRuntime(Tr("replaced the sound '{}' from {}"), Name.c_str(),
+				storage::path(Path).filename().string().c_str())  );
 			return Existing;
 		}
 		return AddSoundData(Name, *Bytes, true, pError);
@@ -517,7 +519,7 @@ namespace game
 		Sound.m_External = 0;
 		Sound.m_Data = *Bytes;
 		m_Dirty = true;
-		SetStatus(base::Format("embedded the sound '{}'", Sound.m_Name.c_str()));
+		SetStatus(  base::FormatRuntime(Tr("embedded the sound '{}'"), Sound.m_Name.c_str())  );
 		return true;
 	}
 
@@ -542,7 +544,7 @@ namespace game
 		Sound.m_External = 1;
 		Sound.m_Data.clear();
 		m_Dirty = true;
-		SetStatus(base::Format("the sound '{}' is external again", Sound.m_Name.c_str()));
+		SetStatus(  base::FormatRuntime(Tr("the sound '{}' is external again"), Sound.m_Name.c_str())  );
 		return true;
 	}
 
@@ -608,7 +610,7 @@ namespace game
 					Layer.m_Sound = -1;
 			}
 		m_Dirty = true;
-		SetStatus(base::Format("removed sound {:d}", Index));
+		SetStatus(  base::FormatRuntime(Tr("removed sound {:d}"), Index)  );
 		return true;
 	}
 

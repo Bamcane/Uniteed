@@ -175,6 +175,8 @@ uniteed --screenshot out.png map --release B      release button B
 uniteed --screenshot out.png map --scroll N       turn the wheel, so the canvas zooms
 uniteed --screenshot out.png map --key K          press key K (a lowercase SDL_Keycode: 98 is "b")
 uniteed --screenshot out.png map --mods M         modifiers for the next --key
+uniteed --screenshot out.png map --language ID  build the interface in that language
+                                                  ("en", "zh-Hans")
 uniteed --screenshot out.png map --dock UPPER:LOWER which workspace each docker shows
 uniteed --screenshot out.png map --menu files|settings  open a menu of the title bar row
 uniteed --screenshot out.png map --envelope N:P   select an envelope and one point of it
@@ -305,6 +307,38 @@ select a tile layer in the layer tree and you paint tiles, select a quad layer
 and you drag its points. The status bar says which of the two is active (`tiles`,
 `quads`, or `read only` for a layer that cannot be edited, like a DDRace
 physics layer), and the docks only ever show the controls that apply.
+
+### Languages
+
+The interface is in English and in **简体中文**, and the language is a data file rather
+than a build: `data/lang/zh-Hans.json` holds the translations, the settings menu lists
+whatever is installed, and the choice is remembered in the settings file
+(`uniteed_language`). A session whose desktop locale asks for Chinese starts in Chinese
+on the first run, and `--language en|zh-Hans` pins one for a single run, which is how the
+reference screenshots stay English on any machine.
+
+A catalog is one JSON document, and its keys are the English sentences the interface is
+written with:
+
+```json
+{
+	"id": "zh-Hans",
+	"name": "简体中文",
+	"strings": {
+		"Files": "文件",
+		"opened {} (v{:d}, {:d} groups, {:d} layers, {:d} images)": "已打开 {}（v{:d}，{:d} 组，{:d} 图层，{:d} 图像）"
+	}
+}
+```
+
+Adding a language is dropping another file in `data/lang`: the `id` (the file name by
+default) is what the settings file and `--language` use, and `name` is the language's own
+name, which is what the menu shows. A string the catalog does not have is drawn in
+English, so a translation can be finished in pieces, and `python3 tools/lang.py check`
+prints what a catalog is still missing - and what it carries that no longer exists in the
+interface.
+
+![the same workspace in Simplified Chinese](docs/screenshots/editor-zh.png)
 
 ### The workspace
 

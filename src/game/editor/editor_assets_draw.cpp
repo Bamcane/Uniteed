@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/i18n.h"
 #include "base/string.h"
 #include "engine/graphics.h"
 #include "engine/ui.h"
@@ -22,6 +23,7 @@
 
 namespace game
 {
+	using base::i18n::Tr;
 	namespace ui = engine::ui;
 
 	namespace
@@ -87,9 +89,9 @@ namespace game
 			m_SelectedSound = SoundCount() - 1;
 
 		// ------------------------------------------------------------- header
-		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 13.0f), 13.0f, ui::Theme.m_Text, "Assets");
+		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 13.0f), 13.0f, ui::Theme.m_Text, Tr("Assets") );
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_BottomRight.x - 8.0f, y + 13.0f), 11.5f,
-			ui::Theme.m_TextDim, base::Format("{:d} img  {:d} snd", ImageCount(), SoundCount()), ui::text_align::right);
+			ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:d} img  {:d} snd"), ImageCount(), SoundCount())  , ui::text_align::right);
 		y += 24.0f;
 
 		const auto Row = [&](const char *pLabel, const std::string &Detail, float RowWidth) {
@@ -103,7 +105,7 @@ namespace game
 		{
 			const float ButtonWidth = std::max(48.0f, (Width - 12.0f) / 4.0f);
 			float bx = X;
-			if(Row("Import", "bring a PNG in as an image of the map, through the system dialog", ButtonWidth))
+			if(Row(Tr("Import"), Tr("bring a PNG in as an image of the map, through the system dialog"), ButtonWidth))
 				ImportImageDialog();
 			bx += ButtonWidth + 4.0f;
 			// the two import kinds share the first row, so the labels say which
@@ -111,8 +113,8 @@ namespace game
 			{
 				const base::rect Rect = base::rect::FromSize(base::vec2(bx, y), base::vec2(ButtonWidth, 22.0f));
 				if(ui::Hovered(Input, Rect))
-					Hint(Rect, "Sound", "bring an .opus in as a sound of the map, through the system dialog");
-				if(ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, "Sound", false))
+					Hint(Rect, Tr("Sound") , Tr("bring an .opus in as a sound of the map, through the system dialog") );
+				if(ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, Tr("Sound") , false))
 					ImportSoundDialog();
 			}
 			bx += ButtonWidth + 4.0f;
@@ -120,9 +122,9 @@ namespace game
 				const base::rect Rect = base::rect::FromSize(base::vec2(bx, y), base::vec2(ButtonWidth, 22.0f));
 				const bool bEnabled = m_SelectedImage >= 0 || m_SelectedSound >= 0;
 				if(ui::Hovered(Input, Rect))
-					Hint(Rect, "Export", bEnabled ? "write the selected asset out as a file" :
-						"select an image or a sound first");
-				if(ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, "Export", false, bEnabled))
+					Hint(Rect, Tr("Export") ,  bEnabled ? Tr("write the selected asset out as a file") :
+						Tr("select an image or a sound first") );
+				if(ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, Tr("Export") , false, bEnabled))
 					ExportAssetDialog(m_SelectedSound >= 0 && m_SelectedImage < 0);
 			}
 			bx += ButtonWidth + 4.0f;
@@ -130,9 +132,9 @@ namespace game
 				const base::rect Rect = base::rect::FromSize(base::vec2(bx, y), base::vec2(ButtonWidth, 22.0f));
 				const bool bEnabled = m_SelectedImage >= 0 || m_SelectedSound >= 0;
 				if(ui::Hovered(Input, Rect))
-					Hint(Rect, "Remove", bEnabled ? "drop the selected asset, which renumbers what used it" :
-						"select an image or a sound first");
-				if(ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, "Remove", false, bEnabled))
+					Hint(Rect, Tr("Remove") ,  bEnabled ? Tr("drop the selected asset, which renumbers what used it") :
+						Tr("select an image or a sound first") );
+				if(ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, Tr("Remove") , false, bEnabled))
 				{
 					std::string Error;
 					if(m_SelectedImage >= 0)
@@ -150,7 +152,7 @@ namespace game
 		}
 
 		// ------------------------------------------------------------- images
-		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 12.0f), 12.5f, ui::Theme.m_Text, "Images");
+		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 12.0f), 12.5f, ui::Theme.m_Text, Tr("Images") );
 		y += 20.0f;
 
 		for(int i = 0; i < ImageCount(); i++)
@@ -162,9 +164,9 @@ namespace game
 			const bool bHover = ui::Hovered(Input, Entry);
 			const bool bActive = i == m_SelectedImage;
 			if(bHover)
-				Hint(Entry, Image.m_Name, base::Format("image {:d}: {:d}x{:d}, {}, used by {:d} layers", i, Image.m_Width,
-					Image.m_Height, Image.m_External ? "a file next to the map" : "embedded in the map",
-					ImageReferenceCount(i)));
+				Hint(Entry, Image.m_Name,   base::FormatRuntime(Tr("image {:d}: {:d}x{:d}, {}, used by {:d} layers"), i, Image.m_Width,
+					Image.m_Height, Image.m_External ? Tr("a file next to the map") : Tr("embedded in the map"),
+					ImageReferenceCount(i))  );
 			if(bActive)
 				ui::Rect(pPainter, Entry, ui::Theme.m_Selection);
 			else if(bHover)
@@ -227,9 +229,9 @@ namespace game
 				return bClicked;
 			};
 			const bool bEmbedded = m_Map.m_vImages[static_cast<std::size_t>(m_SelectedImage)].IsEmbedded();
-			if(AssetButton(bEmbedded ? "Free" : "Embed", bEmbedded ?
-				"let the image live as a file the map names, and drop the copy inside the project" :
-				"copy the image into the map file, so the map travels on its own"))
+			if(AssetButton(bEmbedded ? Tr("Free") : Tr("Embed"), bEmbedded ?
+				Tr("let the image live as a file the map names, and drop the copy inside the project") :
+				Tr("copy the image into the map file, so the map travels on its own")))
 			{
 				if(bEmbedded)
 				{
@@ -239,7 +241,7 @@ namespace game
 				else if(!EmbedImage(m_SelectedImage, &Error))
 					SetStatus(Error);
 			}
-			if(AssetButton("Replace", "read new pixels into this image, keeping its name and the layers that use it"))
+			if(AssetButton(Tr("Replace"), Tr("read new pixels into this image, keeping its name and the layers that use it")))
 			{
 				// the platform dialog, so the new pixels come from the file the
 				// map maker picked rather than from a path typed into a box
@@ -254,17 +256,17 @@ namespace game
 						m_FileDialogPurpose = file_dialog_purpose::import_image;
 				}
 			}
-			if(AssetButton("Export", "write this image out as a PNG"))
+			if(AssetButton(Tr("Export"), Tr("write this image out as a PNG")))
 				ExportAssetDialog(false);
 			y += 26.0f;
-			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 10.0f), 10.5f, ui::Theme.m_TextDim,
-				base::Format("image {:d}: {}", m_SelectedImage, m_Map.m_vImages[static_cast<std::size_t>(m_SelectedImage)].m_Name.c_str()),
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 10.0f), 10.5f, ui::Theme.m_TextDim,  
+				base::FormatRuntime(Tr("image {:d}: {}"), m_SelectedImage, m_Map.m_vImages[static_cast<std::size_t>(m_SelectedImage)].m_Name.c_str())  ,
 				Width);
 			y += 18.0f;
 		}
 
 		// ------------------------------------------------------------- sounds
-		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 12.0f), 12.5f, ui::Theme.m_Text, "Sounds");
+		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 12.0f), 12.5f, ui::Theme.m_Text, Tr("Sounds") );
 		y += 20.0f;
 		for(int i = 0; i < SoundCount(); i++)
 		{
@@ -284,12 +286,12 @@ namespace game
 				Length > 0.0f ? base::Format("{:.2f}s", static_cast<double>(Length)).c_str() : "length ?",
 				SoundReferenceCount(i), SoundReferenceCount(i) == 1 ? "" : "s");
 			if(bHover)
-				Hint(Entry, Sound.m_Name.empty() ? base::Format("sound {:d}", i) : Sound.m_Name,
-					base::Format("sound {:d}: {}, {:d} use{} - click twice to hear it", i,
-						Length > 0.0f ? base::Format("{:.2f}s", static_cast<double>(Length)).c_str() : "length unknown",
-						SoundReferenceCount(i), SoundReferenceCount(i) == 1 ? "" : "s"));
+				Hint(Entry,   Sound.m_Name.empty() ? base::FormatRuntime(Tr("sound {:d}"), i) : Sound.m_Name  ,  
+					base::FormatRuntime(Tr("sound {:d}: {}, {:d} use{} - click twice to hear it"), i,
+						Length > 0.0f ? base::FormatRuntime(Tr("{:.2f}s"), static_cast<double>(Length)).c_str() : Tr("length unknown"),
+						SoundReferenceCount(i), SoundReferenceCount(i) == 1 ? Tr("") : Tr("s"))  );
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + 6.0f, Entry.m_TopLeft.y + 11.0f),
-				11.5f, ui::Theme.m_TextDim, base::Format("{:d}", i));
+				11.5f, ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:d}"), i)  );
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + 28.0f, Entry.m_TopLeft.y + 11.0f),
 				11.5f, ui::Theme.m_Text, TrimmedName(Sound.m_Name), Width - 34.0f);
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + 6.0f, Entry.m_TopLeft.y + 23.0f),
@@ -316,21 +318,21 @@ namespace game
 			const bool bEnabled = m_SelectedSound >= 0;
 			const base::rect Play = base::rect::FromSize(base::vec2(bx, ActionsY), base::vec2(ButtonWidth, 22.0f));
 			if(ui::Hovered(Input, Play))
-				Hint(Play, "Play", bEnabled ? "play the selected sound through the audio device" :
-					"select a sound to play it");
-			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Play, "Play", false, bEnabled) && bEnabled)
+				Hint(Play, Tr("Play") ,  bEnabled ? Tr("play the selected sound through the audio device") :
+					Tr("select a sound to play it") );
+			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Play, Tr("Play") , false, bEnabled) && bEnabled)
 				PreviewSound(m_SelectedSound);
 			bx += ButtonWidth + 4.0f;
 			const base::rect Stop = base::rect::FromSize(base::vec2(bx, ActionsY), base::vec2(ButtonWidth, 22.0f));
 			if(ui::Hovered(Input, Stop))
-				Hint(Stop, "Stop", "stop the preview");
-			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Stop, "Stop", false, SoundPreviewPlaying()))
+				Hint(Stop, Tr("Stop") , Tr("stop the preview") );
+			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Stop, Tr("Stop") , false, SoundPreviewPlaying()))
 				StopSoundPreview();
 			bx += ButtonWidth + 4.0f;
 			const base::rect Import = base::rect::FromSize(base::vec2(bx, ActionsY), base::vec2(ButtonWidth, 22.0f));
 			if(ui::Hovered(Input, Import))
-				Hint(Import, "Import", "bring an .opus in as a sound of the map");
-			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Import, "Import"))
+				Hint(Import, Tr("Import") , Tr("bring an .opus in as a sound of the map") );
+			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Import, Tr("Import") ))
 				ImportSoundDialog();
 
 			const std::string Now = SoundPreviewName();

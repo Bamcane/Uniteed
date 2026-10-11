@@ -79,6 +79,17 @@ mapres files with the active version first.
 `sugar_types.h`) and add only the unaligned peeks and the `StrToInts`/`IntsToStr`
 pair with the +128 bias the map format uses.
 
+`base/i18n` carries the interface in another language. The English source text *is* the
+key: a string is written where it is drawn and wrapped in `Tr()`, and a catalog under
+`<data>/lang` (a JSON document of source to translation) answers for the ones it has.
+Translation is deliberately **not** done inside `ui::Text()`: that function also draws the
+names of the user's layers, groups and files, and a map with a layer called "Tiles" has to
+keep that name. A catalog that is missing a string, and a language that is not installed,
+both leave the interface readable rather than half translated. Tables of strings that live
+at namespace scope cannot call `Tr()` while they are built - the catalogs are read after
+that - so they stay English and are wrapped where they are drawn, and a table that a tool
+has to see is marked `i18n:table` for `tools/lang.py`.
+
 `base::Format` builds the strings the interface and the log show, and it is
 `std::format`: "{}" fields, with every call checked against its arguments **when it is
 compiled**. It used to be a `vsnprintf` wrapper, which is one mistyped `%d` away from a

@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstring>
 
+#include "base/i18n.h"
 #include "base/logger.h"
 #include "base/string.h"
 #include "base/time.h"
@@ -26,6 +27,7 @@
 
 namespace game
 {
+	using base::i18n::Tr;
 	namespace
 	{
 		// what the platform dialog is told to look for, per purpose
@@ -36,13 +38,13 @@ namespace game
 			{
 				// a project is a .unitwp container: the same file the editor
 				// saves, opens and exports from
-				Filters.push_back({"Uniteed project", "*" + std::string(CUnitwpPackage::Extension)});
-				Filters.push_back({"Teeworlds map", "*.map"});
+				Filters.push_back({Tr("Uniteed project"), "*" + std::string(CUnitwpPackage::Extension)});
+				Filters.push_back({Tr("Teeworlds map"), "*.map"});
 			}
 			else
 			{
-				Filters.push_back({"Teeworlds map", "*.map"});
-				Filters.push_back({"Uniteed project", "*" + std::string(CUnitwpPackage::Extension)});
+				Filters.push_back({Tr("Teeworlds map"), "*.map"});
+				Filters.push_back({Tr("Uniteed project"), "*" + std::string(CUnitwpPackage::Extension)});
 			}
 			Filters.push_back({"every file", "*"});
 			return Filters;
@@ -78,7 +80,7 @@ namespace game
 		if(!m_FileDialog.Open(engine::dialog_kind::open_file, m_pGraphics->Window(), "Import an image",
 			AssetStartDirectory(), std::string(), Filters, false))
 		{
-			SetStatus("the file dialog could not be opened: " + m_FileDialog.Error());
+			SetStatus(base::FormatRuntime(Tr("the file dialog could not be opened: {}"), m_FileDialog.Error()));
 			return false;
 		}
 		m_FileDialogPurpose = file_dialog_purpose::import_image;
@@ -95,7 +97,7 @@ namespace game
 		if(!m_FileDialog.Open(engine::dialog_kind::open_file, m_pGraphics->Window(), "Import a sound",
 			AssetStartDirectory(), std::string(), Filters, false))
 		{
-			SetStatus("the file dialog could not be opened: " + m_FileDialog.Error());
+			SetStatus(base::FormatRuntime(Tr("the file dialog could not be opened: {}"), m_FileDialog.Error()));
 			return false;
 		}
 		m_FileDialogPurpose = file_dialog_purpose::import_sound;
@@ -112,13 +114,13 @@ namespace game
 		const std::string Name = bSound ? m_Map.m_vSounds[static_cast<std::size_t>(Index)].m_Name :
 			m_Map.m_vImages[static_cast<std::size_t>(Index)].m_Name;
 		std::vector<engine::CFileFilter> Filters;
-		Filters.push_back(bSound ? engine::CFileFilter{"Opus sound", "*.opus"} : engine::CFileFilter{"PNG image", "*.png"});
+		Filters.push_back(bSound ? engine::CFileFilter{Tr("Opus sound"), "*.opus"} : engine::CFileFilter{Tr("PNG image"), "*.png"});
 		Filters.push_back({"every file", "*"});
 		if(!m_FileDialog.Open(engine::dialog_kind::save_file, m_pGraphics->Window(),
 			bSound ? "Export the sound" : "Export the image", storage::GetExportDirectory().string(),
 			Name + (bSound ? ".opus" : ".png"), Filters, false))
 		{
-			SetStatus("the file dialog could not be opened: " + m_FileDialog.Error());
+			SetStatus(base::FormatRuntime(Tr("the file dialog could not be opened: {}"), m_FileDialog.Error()));
 			return false;
 		}
 		m_FileDialogPurpose = bSound ? file_dialog_purpose::export_sound : file_dialog_purpose::export_image;
@@ -134,7 +136,7 @@ namespace game
 		if(!m_FileDialog.Open(engine::dialog_kind::open_file, m_pGraphics->Window(), "Open a map or a project",
 			StartDirectory(m_FileDialog), std::string(), Filters, false))
 		{
-			SetStatus("the file dialog could not be opened: " + m_FileDialog.Error());
+			SetStatus(base::FormatRuntime(Tr("the file dialog could not be opened: {}"), m_FileDialog.Error()));
 			return false;
 		}
 		m_FileDialogPurpose = file_dialog_purpose::open;
@@ -157,7 +159,7 @@ namespace game
 		if(!m_FileDialog.Open(engine::dialog_kind::save_file, m_pGraphics->Window(), "Save the project",
 			StartDirectory(m_FileDialog), Name + CUnitwpPackage::Extension, Filters, false))
 		{
-			SetStatus("the file dialog could not be opened: " + m_FileDialog.Error());
+			SetStatus(base::FormatRuntime(Tr("the file dialog could not be opened: {}"), m_FileDialog.Error()));
 			return false;
 		}
 		m_FileDialogPurpose = bAs ? file_dialog_purpose::save_as : file_dialog_purpose::save;
@@ -172,7 +174,7 @@ namespace game
 		const CMapTargetProfile &Profile = GetTargetProfile(Target);
 		const std::string Name = ProjectName().empty() ? "untitled" : ProjectName();
 		std::vector<engine::CFileFilter> Filters;
-		Filters.push_back({"Teeworlds map", "*.map"});
+		Filters.push_back({Tr("Teeworlds map"), "*.map"});
 		Filters.push_back({"every file", "*"});
 
 		// the export directory of this target, so the dialog opens where the
@@ -182,7 +184,7 @@ namespace game
 			std::string("Export for ") + Profile.m_pName, Directory.string(),
 			Name + "." + Profile.m_pId + ".map", Filters, false))
 		{
-			SetStatus("the file dialog could not be opened: " + m_FileDialog.Error());
+			SetStatus(base::FormatRuntime(Tr("the file dialog could not be opened: {}"), m_FileDialog.Error()));
 			return false;
 		}
 		m_FileDialogPurpose = file_dialog_purpose::export_map;
@@ -203,7 +205,7 @@ namespace game
 
 		if(m_FileDialog.Cancelled() || m_FileDialog.Selected().empty())
 		{
-			SetStatus("cancelled");
+			SetStatus( Tr("cancelled") );
 			return true;
 		}
 		// only the first selection is used: the mode asks for one file
@@ -238,7 +240,7 @@ namespace game
 			std::string Error;
 			const int Index = AddImageFromFile(Path, &Error);
 			if(Index < 0)
-				SetStatus(Error.empty() ? "the image could not be imported" : Error);
+				SetStatus(  Error.empty() ? Tr("the image could not be imported") : Error  );
 			else
 				m_SelectedImage = Index;
 			break;
@@ -248,7 +250,7 @@ namespace game
 			std::string Error;
 			const int Index = AddSoundFromFile(Path, &Error);
 			if(Index < 0)
-				SetStatus(Error.empty() ? "the sound could not be imported" : Error);
+				SetStatus(  Error.empty() ? Tr("the sound could not be imported") : Error  );
 			else
 				m_SelectedSound = Index;
 			break;
@@ -258,9 +260,9 @@ namespace game
 			std::string Error;
 			const std::string Target = base::EndsWith(Path, ".png") ? Path : Path + ".png";
 			if(!ExportImage(m_FileDialogAsset, Target, &Error))
-				SetStatus(Error.empty() ? "the image could not be exported" : Error);
+				SetStatus(  Error.empty() ? Tr("the image could not be exported") : Error  );
 			else
-				SetStatus("wrote " + Target);
+				SetStatus(base::FormatRuntime(Tr("wrote {}"), Target));
 			break;
 		}
 		case file_dialog_purpose::export_sound:
@@ -268,9 +270,9 @@ namespace game
 			std::string Error;
 			const std::string Target = base::EndsWith(Path, ".opus") ? Path : Path + ".opus";
 			if(!ExportSound(m_FileDialogAsset, Target, &Error))
-				SetStatus(Error.empty() ? "the sound could not be exported" : Error);
+				SetStatus(  Error.empty() ? Tr("the sound could not be exported") : Error  );
 			else
-				SetStatus("wrote " + Target);
+				SetStatus(base::FormatRuntime(Tr("wrote {}"), Target));
 			break;
 		}
 		case file_dialog_purpose::none:

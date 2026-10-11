@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/i18n.h"
 #include "base/logger.h"
 #include "base/string.h"
 #include "game/assets.h"
@@ -27,6 +28,7 @@
 
 namespace game
 {
+	using base::i18n::Tr;
 	CEditor::~CEditor()
 	{
 		// the audio device belongs to this editor, so it is closed here rather
@@ -145,7 +147,7 @@ namespace game
 		return m_Audio.PlayFile(Sound.m_Name, File->string());
 #else
 		(void)Index;
-		SetStatus("this build has no sound preview");
+		SetStatus(Tr("this build has no sound preview"));
 		return false;
 #endif
 	}

@@ -49,7 +49,9 @@ shot() {
 	Out=$1
 	shift
 	echo "  $Out"
-	"$BIN" --screenshot "$Out" "$@" >/dev/null
+	# the reference pictures are English: a settings file cannot change that,
+	# and a session whose locale is Chinese must not rewrite them
+	"$BIN" --screenshot "$Out" --language en "$@" >/dev/null
 }
 
 echo "writing $OUT"
@@ -71,6 +73,10 @@ shot "$OUT/editor-tiles.png" "$MAPS/08/dm1.map" \
 # the quad canvas: a quad layer selected, with no quad picked, so the panel
 # shows the layer level controls
 shot "$OUT/editor-quads.png" "$MAPS/08/dm1.map" --layer 0:0 --quad -2
+
+# the same workspace in the other language the build ships, which is also the
+# picture of what a translated interface looks like
+shot "$OUT/editor-zh.png" "$MAPS/08/dm1.map" --language zh-Hans
 
 # the game layer: the entity palette of a DDRace map
 shot "$OUT/editor-entities.png" "$MAPS/08/dm1.map" --layer 6:2

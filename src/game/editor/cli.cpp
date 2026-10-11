@@ -8,6 +8,7 @@
 
 #include "base/define.h"
 #include "base/json.h"
+#include "base/i18n.h"
 #include "base/logger.h"
 #include "base/math.h"
 #include "base/string.h"
@@ -25,6 +26,7 @@
 
 namespace game
 {
+	namespace i18n = base::i18n;
 	namespace
 	{
 		void PrintUsage()
@@ -465,6 +467,49 @@ namespace game
 			else
 			{
 				std::cout << "\n  FAIL the string builder changed behaviour\n";
+				Failures++;
+			}
+		}
+
+		/*
+			The language catalogs under <data>/lang, and the lookup the interface
+			makes for every string it draws. What the check pins down is what a
+			catalog has to satisfy - an id, a name and strings under it - and
+			that everything else stays readable: a string no catalog carries
+			comes out as the English source rather than as an empty label, and a
+			language that is not installed is refused instead of half applied.
+		*/
+		{
+			Checks++;
+			bool bOk = true;
+			// English is the source text, so it is always installed and needs
+			// no file to be usable
+			i18n::RefreshLanguages();
+			bOk = bOk && i18n::Languages().size() >= 2 && i18n::Languages().front().m_Id == "en";
+			bOk = bOk && i18n::SetLanguage("en") && i18n::CurrentId() == "en" && i18n::EntryCount() == 0;
+			bOk = bOk && std::string(i18n::Tr("Files")) == "Files";
+
+			bOk = bOk && i18n::SetLanguage("zh-Hans") && i18n::CurrentId() == "zh-Hans";
+			bOk = bOk && i18n::EntryCount() > 300;
+			bOk = bOk && std::string(i18n::Tr("Files")) != "Files";
+			/*
+				A string no catalog carries, and a missing literal, stay
+				readable. The string comes from a variable on purpose: a
+				literal would be a key tools/lang.py asks the catalog for.
+			*/
+			const std::string Unknown = "a string no catalog carries";
+			bOk = bOk && i18n::Tr(Unknown.c_str()) == Unknown;
+			bOk = bOk && i18n::Tr(nullptr) == nullptr;
+			// an id that is not installed leaves the language where it is
+			bOk = bOk && !i18n::SetLanguage("xx-YY") && i18n::CurrentId() == "zh-Hans";
+			// and switching back really switches back
+			bOk = bOk && i18n::SetLanguage("en") && std::string(i18n::Tr("Files")) == "Files";
+
+			if(bOk)
+				std::cout << "\n  ok   i18n  the catalog under data/lang loads and falls back to the source\n";
+			else
+			{
+				std::cout << "\n  FAIL the interface language changed behaviour\n";
 				Failures++;
 			}
 		}

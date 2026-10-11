@@ -8,6 +8,7 @@
 
 #include <cmath>
 
+#include "base/i18n.h"
 #include "base/logger.h"
 #include "base/string.h"
 #include "base/time.h"
@@ -19,6 +20,7 @@
 
 namespace game
 {
+	using base::i18n::Tr;
 	namespace ui = engine::ui;
 
 	namespace
@@ -67,11 +69,11 @@ namespace game
 		{
 			switch(Tool)
 			{
-			case editor_tool::paint: return "paint";
-			case editor_tool::fill: return "fill";
-			case editor_tool::erase: return "erase";
-			case editor_tool::pick: return "pick";
-			case editor_tool::pan: return "pan";
+			case editor_tool::paint: return Tr("paint");
+			case editor_tool::fill: return Tr("fill");
+			case editor_tool::erase: return Tr("erase");
+			case editor_tool::pick: return Tr("pick");
+			case editor_tool::pan: return Tr("pan");
 			}
 			return "?";
 		}
@@ -113,7 +115,7 @@ namespace game
 		NewMap(50, 50);
 		// the brush is a stamp from the start, so every path can read it
 		SetBrushUniform(m_BrushSize);
-		SetStatus("ready, use Ctrl+O to open a map");
+		SetStatus( Tr("ready, use Ctrl+O to open a map") );
 		return true;
 	}
 
@@ -336,11 +338,11 @@ namespace game
 	{
 		switch(Panel)
 		{
-		case dock_panel::layers: return "Layers";
-		case dock_panel::tiles: return "Tiles";
-		case dock_panel::assets: return "Assets";
-		case dock_panel::envelopes: return "Envelopes";
-		case dock_panel::rules: return "Rules";
+		case dock_panel::layers: return Tr("Layers");
+		case dock_panel::tiles: return Tr("Tiles");
+		case dock_panel::assets: return Tr("Assets");
+		case dock_panel::envelopes: return Tr("Envelopes");
+		case dock_panel::rules: return Tr("Rules");
 		case dock_panel::count: break;
 		}
 		return "?";
@@ -350,11 +352,11 @@ namespace game
 	{
 		switch(Panel)
 		{
-		case dock_panel::layers: return "the groups and layers of the map, with visibility and locks";
-		case dock_panel::tiles: return "the tile sheet of the selected layer, or the entity sheet of a game layer";
-		case dock_panel::assets: return "the images and sounds the map carries";
-		case dock_panel::envelopes: return "the curve editor: the map's envelopes and their keyframes";
-		case dock_panel::rules: return "the autorules: configurations, runs and index rules";
+		case dock_panel::layers: return Tr("the groups and layers of the map, with visibility and locks");
+		case dock_panel::tiles: return Tr("the tile sheet of the selected layer, or the entity sheet of a game layer");
+		case dock_panel::assets: return Tr("the images and sounds the map carries");
+		case dock_panel::envelopes: return Tr("the curve editor: the map's envelopes and their keyframes");
+		case dock_panel::rules: return Tr("the autorules: configurations, runs and index rules");
 		case dock_panel::count: break;
 		}
 		return "";
@@ -636,7 +638,7 @@ namespace game
 		m_vUndo.clear();
 		m_vRedo.clear();
 		FitToMap();
-		SetStatus("new map");
+		SetStatus( Tr("new map") );
 	}
 
 	bool CEditor::OpenFile(const std::string &Path)
@@ -653,7 +655,7 @@ namespace game
 		const std::optional<storage::byte_vector> Bytes = storage::read(Path);
 		if(!Bytes.has_value())
 		{
-			SetStatus("cannot read " + Path);
+			SetStatus(base::FormatRuntime(Tr("cannot read {}"), Path));
 			return false;
 		}
 
@@ -662,7 +664,7 @@ namespace game
 			CUnitwpPackage Package;
 			if(!Package.Deserialise(*Bytes, &Error))
 			{
-				SetStatus("package error: " + Error);
+				SetStatus(base::FormatRuntime(Tr("package error: {}"), Error));
 				return false;
 			}
 			m_Package = Package;
@@ -674,7 +676,7 @@ namespace game
 			CMap Map;
 			if(!Map.LoadFromBytes(*Bytes, &Error))
 			{
-				SetStatus("map error: " + Error);
+				SetStatus(base::FormatRuntime(Tr("map error: {}"), Error));
 				return false;
 			}
 			m_Map = Map;
@@ -703,9 +705,9 @@ namespace game
 		FitToMap();
 
 		const CMapStatistics Stats = m_Map.Statistics();
-		SetStatus(base::Format("opened {} (v{:d}, {:d} groups, {:d} layers, {:d} images)",
+		SetStatus(  base::FormatRuntime(Tr("opened {} (v{:d}, {:d} groups, {:d} layers, {:d} images)"),
 			storage::path(Path).filename().string().c_str(), m_Map.m_SourceDatafileVersion,
-			Stats.m_Groups, Stats.m_Layers, Stats.m_Images));
+			Stats.m_Groups, Stats.m_Layers, Stats.m_Images)  );
 		return true;
 	}
 
@@ -739,14 +741,14 @@ namespace game
 
 		if(!Package.SaveToFile(Path, &Error))
 		{
-			SetStatus("save failed: " + Error);
+			SetStatus(base::FormatRuntime(Tr("save failed: {}"), Error));
 			return false;
 		}
 		m_Package = Package;
 		m_bPackageLoaded = true;
 		m_SourcePath = Path;
 		m_Dirty = false;
-		SetStatus(base::Format("saved {} ({:d} resources)", storage::path(Path).filename().string().c_str(), Package.m_vResources.size()));
+		SetStatus(  base::FormatRuntime(Tr("saved {} ({:d} resources)"), storage::path(Path).filename().string().c_str(), Package.m_vResources.size())  );
 		return true;
 	}
 
@@ -757,13 +759,13 @@ namespace game
 			LOG_WARN("editor", "{}", Warning.c_str());
 		if(!m_Map.SaveToFile(Path, Target, &Error))
 		{
-			SetStatus("export failed: " + Error);
+			SetStatus(base::FormatRuntime(Tr("export failed: {}"), Error));
 			return false;
 		}
 		m_Target = Target;
 		const CMapTargetProfile &Profile = GetTargetProfile(Target);
-		SetStatus(base::Format("exported {} for {} (datafile v{:d})",
-			storage::path(Path).filename().string().c_str(), Profile.m_pName, Profile.m_DatafileVersion));
+		SetStatus(  base::FormatRuntime(Tr("exported {} for {} (datafile v{:d})"),
+			storage::path(Path).filename().string().c_str(), Profile.m_pName, Profile.m_DatafileVersion)  );
 		return true;
 	}
 
@@ -808,8 +810,8 @@ namespace game
 		m_RenameLayer = Layer;
 		// the name that is there starts selected, so typing replaces it
 		m_bRenameAll = true;
-		SetStatus(base::Format("type a name for {}, Enter to keep it, Escape to leave it",
-			Layer >= 0 ? "the layer" : "the group"));
+		SetStatus(  base::FormatRuntime(Tr("type a name for {}, Enter to keep it, Escape to leave it"),
+			Layer >= 0 ? Tr("the layer") : Tr("the group"))  );
 	}
 
 	void CEditor::CancelRename()
@@ -820,7 +822,7 @@ namespace game
 		m_RenameLayer = -1;
 		m_RenameText.clear();
 		m_bRenameAll = true;
-		SetStatus("the name is unchanged");
+		SetStatus( Tr("the name is unchanged") );
 	}
 
 	void CEditor::CommitRename()
@@ -852,7 +854,7 @@ namespace game
 		Current = std::move(Name);
 		MarkDirty();
 		LOG_TRACE("editor", "renamed group {:d} layer {:d} to '{}'", Group, Layer, Current.c_str());
-		SetStatus(base::Format("renamed to '{}'", Current.empty() ? "(no name)" : Current.c_str()));
+		SetStatus(  base::FormatRuntime(Tr("renamed to '{}'"), Current.empty() ? Tr("(no name)") : Current.c_str())  );
 	}
 
 	void CEditor::HandleRenameInput()
@@ -1117,8 +1119,9 @@ namespace game
 
 	const char *CEditor::CornerName(int Corner)
 	{
+		// i18n:table
 		static const char *const s_apName[4] = {"top left", "top right", "bottom left", "bottom right"};
-		return s_apName[base::clamp(Corner, 0, 3)];
+		return Tr(s_apName[base::clamp(Corner, 0, 3)]);
 	}
 
 	bool CEditor::OpenQuadColorPickerAt(base::vec2 Screen, int QuadUnderCursor)
@@ -1142,7 +1145,7 @@ namespace game
 			Quad = m_vSelectedQuads[static_cast<std::size_t>(Handle / 5)];
 			if(Handle % 5 == 4)
 			{
-				SetStatus("the pivot of a quad has no colour, right click one of its corners");
+				SetStatus( Tr("the pivot of a quad has no colour, right click one of its corners") );
 				return false;
 			}
 			Corner = Handle % 5;
@@ -1159,9 +1162,9 @@ namespace game
 		// the point that was clicked is where the popup is placed, so the
 		// corner it colours stays visible next to it
 		m_PickerAnchor = Screen;
-		SetStatus(Corner < 4 ?
-			base::Format("the picker edits the {} corner of quad {:d}", CornerName(Corner), Quad) :
-			base::Format("the picker edits all four corners of quad {:d}", Quad));
+		SetStatus(  Corner < 4 ?
+			base::FormatRuntime(Tr("the picker edits the {} corner of quad {:d}"), CornerName(Corner), Quad) :
+			base::FormatRuntime(Tr("the picker edits all four corners of quad {:d}"), Quad)  );
 		return true;
 	}
 
@@ -1258,22 +1261,23 @@ namespace game
 	{
 		const CLayer *pLayer = SelectedLayer();
 		if(pLayer == nullptr)
-			return "nothing";
-		const char *pName = pLayer->m_Name.empty() ? "layer" : pLayer->m_Name.c_str();
+			return Tr("nothing");
+		const char *pName = pLayer->m_Name.empty() ? Tr("layer") : pLayer->m_Name.c_str();
 		if(pLayer->IsQuads())
 		{
 			// which corner is being edited has to be visible in the title, or
 			// the picker looks like it colours everything at once
 			const std::string Corner = m_QuadColorTarget < 4 ?
-				base::Format(" ({} corner)", CornerName(m_QuadColorTarget)) : std::string(" (all corners)");
+				base::FormatRuntime(Tr(" ({} corner)"), CornerName(m_QuadColorTarget)) :
+				std::string(Tr(" (all corners)"));
 			if(m_vSelectedQuads.empty())
-				return (pLayer->m_vQuads.size() == 1 ? base::Format("the quad of '{}'", pName) :
-					base::Format("all {:d} quads of '{}'", pLayer->m_vQuads.size(), pName)) + Corner;
-			return base::Format("{:d} of {:d} quads of '{}'", m_vSelectedQuads.size(), pLayer->m_vQuads.size(), pName) + Corner;
+				return (pLayer->m_vQuads.size() == 1 ? base::FormatRuntime(Tr("the quad of '{}'"), pName) :
+					base::FormatRuntime(Tr("all {:d} quads of '{}'"), pLayer->m_vQuads.size(), pName)) + Corner;
+			return base::FormatRuntime(Tr("{:d} of {:d} quads of '{}'"), m_vSelectedQuads.size(), pLayer->m_vQuads.size(), pName) + Corner;
 		}
 		if(pLayer->IsTiles())
-			return base::Format("layer '{}'", pName);
-		return "nothing";
+			return base::FormatRuntime(Tr("layer '{}'"), pName);
+		return Tr("nothing");
 	}
 
 	// ------------------------------------------------------------------ undo
@@ -1327,7 +1331,7 @@ namespace game
 	{
 		if(m_vUndo.empty())
 		{
-			SetStatus("nothing to undo");
+			SetStatus( Tr("nothing to undo") );
 			return;
 		}
 		CUndoState State = std::move(m_vUndo.back());
@@ -1339,14 +1343,14 @@ namespace game
 			return;
 		ApplyUndoState(State, m_vRedo);
 		m_Dirty = true;
-		SetStatus("undo");
+		SetStatus( Tr("undo") );
 	}
 
 	void CEditor::Redo()
 	{
 		if(m_vRedo.empty())
 		{
-			SetStatus("nothing to redo");
+			SetStatus( Tr("nothing to redo") );
 			return;
 		}
 		CUndoState State = std::move(m_vRedo.back());
@@ -1360,7 +1364,7 @@ namespace game
 		// redo stack instead would lose the step that was just restored
 		ApplyUndoState(State, m_vUndo);
 		m_Dirty = true;
-		SetStatus("redo");
+		SetStatus( Tr("redo") );
 	}
 
 	// puts the current state of the layer on the other stack, then restores the
@@ -1507,7 +1511,7 @@ namespace game
 		if(!m_bPainting)
 			return;
 		m_bPainting = false;
-		SetStatus("edited " + std::string(ToolName(m_Tool)));
+		SetStatus(base::FormatRuntime(Tr("edited {}"), ToolName(m_Tool)));
 	}
 
 	void CEditor::PaintAt(base::vec2 World)
@@ -1518,7 +1522,7 @@ namespace game
 		const CLayerView *pView = ViewState(m_SelectedGroup, m_SelectedLayer);
 		if(pView != nullptr && pView->m_Locked)
 		{
-			SetStatus("this layer is locked (DDRace physics layers are read only)");
+			SetStatus( Tr("this layer is locked (DDRace physics layers are read only)") );
 			return;
 		}
 
@@ -1655,13 +1659,13 @@ namespace game
 		{
 			CLayer &Layer = m_Map.NewQuadLayer(*pGroup, -1);
 			Layer.m_Name = "Quad layer";
-			SetStatus("added a quad layer, colour and points are editable");
+			SetStatus( Tr("added a quad layer, colour and points are editable") );
 		}
 		else
 		{
 			CLayer &Layer = m_Map.NewTileLayer(*pGroup, Width, Height, -1);
 			Layer.m_Name = "Tile layer";
-			SetStatus("added a tile layer");
+			SetStatus( Tr("added a tile layer") );
 		}
 
 		m_vViewStates.clear();
@@ -1682,7 +1686,7 @@ namespace game
 		m_SelectedLayer = 0;
 		ClearQuadSelection();
 		m_Dirty = true;
-		SetStatus("added a group");
+		SetStatus( Tr("added a group") );
 	}
 
 	void CEditor::DeleteSelected(bool bWholeGroup)
@@ -1691,7 +1695,7 @@ namespace game
 		{
 			if(m_Map.m_vGroups.size() <= 1)
 			{
-				SetStatus("a map needs at least one group");
+				SetStatus( Tr("a map needs at least one group") );
 				return;
 			}
 			if(m_SelectedGroup < 0 || m_SelectedGroup >= static_cast<int>(m_Map.m_vGroups.size()))
@@ -1704,7 +1708,7 @@ namespace game
 			ClampSelection();
 			ClearQuadSelection();
 			m_Dirty = true;
-			SetStatus("deleted the group");
+			SetStatus( Tr("deleted the group") );
 			return;
 		}
 
@@ -1715,7 +1719,7 @@ namespace game
 		// layer stays and the status bar says why
 		if(pGroup->m_vLayers.size() <= 1)
 		{
-			SetStatus("this is the only layer of the group; Shift+Delete removes the group");
+			SetStatus( Tr("this is the only layer of the group; Shift+Delete removes the group") );
 			return;
 		}
 		if(m_SelectedLayer < 0 || m_SelectedLayer >= static_cast<int>(pGroup->m_vLayers.size()))
@@ -1728,7 +1732,7 @@ namespace game
 		ClampSelection();
 		ClearQuadSelection();
 		m_Dirty = true;
-		SetStatus("deleted the layer");
+		SetStatus( Tr("deleted the layer") );
 	}
 
 	void CEditor::SetTool(editor_tool Tool)
@@ -1751,18 +1755,18 @@ namespace game
 		*/
 		if(Mode() != edit_mode::tiles)
 		{
-			SetStatus("the eraser is for tile layers: select one in the Layers docker");
+			SetStatus( Tr("the eraser is for tile layers: select one in the Layers docker") );
 			return;
 		}
 		if(m_Tool == editor_tool::erase)
 		{
 			SetTool(m_ToolBeforeErase);
-			SetStatus(base::Format("back to the {}", ToolName(m_Tool)));
+			SetStatus(  base::FormatRuntime(Tr("back to the {}"), ToolName(m_Tool))  );
 		}
 		else
 		{
 			SetTool(editor_tool::erase);
-			SetStatus(base::Format("eraser: press E again for the {}", ToolName(m_ToolBeforeErase)));
+			SetStatus(  base::FormatRuntime(Tr("eraser: press E again for the {}"), ToolName(m_ToolBeforeErase))  );
 		}
 	}
 
@@ -1832,24 +1836,24 @@ namespace game
 			else
 			{
 				m_bEnvelopePlaying = !m_bEnvelopePlaying;
-				SetStatus(m_bEnvelopePlaying ? "envelope preview running" : "envelope preview paused");
+				SetStatus(  m_bEnvelopePlaying ? Tr("envelope preview running") : Tr("envelope preview paused")  );
 			}
 		}
 		if(Input.KeyPressed(engine::keys::Minus))
 		{
 			m_EnvelopeSpeed = m_EnvelopeSpeed <= 0.25f ? 0.25f : m_EnvelopeSpeed * 0.5f;
-			SetStatus(base::Format("envelope speed {:.2g}x", m_EnvelopeSpeed));
+			SetStatus(  base::FormatRuntime(Tr("envelope speed {:.2g}x"), m_EnvelopeSpeed)  );
 		}
 		if(Input.KeyPressed(engine::keys::Equals))
 		{
 			m_EnvelopeSpeed = std::min(8.0f, m_EnvelopeSpeed * 2.0f);
-			SetStatus(base::Format("envelope speed {:.2g}x", m_EnvelopeSpeed));
+			SetStatus(  base::FormatRuntime(Tr("envelope speed {:.2g}x"), m_EnvelopeSpeed)  );
 		}
 		// the colour picker for the selected tile layer, quad, or quad corner
 		if(Input.KeyPressed(engine::keys::C))
 		{
 			if(!OpenColorPicker())
-				SetStatus("nothing to colour: select a tile layer or a quad");
+				SetStatus( Tr("nothing to colour: select a tile layer or a quad") );
 		}
 		// the tool, the brush size and the flips only mean anything while a tile
 		// layer is selected; on a quad layer they would silently change state
@@ -1907,7 +1911,7 @@ namespace game
 							}
 						}
 						m_Dirty = true;
-						SetStatus("filled the layer");
+						SetStatus( Tr("filled the layer") );
 					}
 			}
 		}
@@ -2067,7 +2071,7 @@ namespace game
 						if(!Cells.empty())
 						{
 							SetBrushRegion(Width, Height, Cells, Cells.front().m_Index);
-							SetStatus(base::Format("brush {:d}x{:d} taken from {:d},{:d}", Width, Height, X0, Y0));
+							SetStatus(  base::FormatRuntime(Tr("brush {:d}x{:d} taken from {:d},{:d}"), Width, Height, X0, Y0)  );
 						}
 					}
 				}
@@ -2257,8 +2261,8 @@ namespace game
 			if(!bHeld)
 			{
 				if(m_bQuadMoved)
-					SetStatus(m_vQuadMove.size() == 1 ? "moved quad" :
-						base::Format("moved {:d} quads", m_vQuadMove.size()));
+					SetStatus(  m_vQuadMove.size() == 1 ? Tr("moved quad") :
+						base::FormatRuntime(Tr("moved {:d} quads"), m_vQuadMove.size())  );
 				m_bQuadMoving = false;
 				m_bQuadMoved = false;
 				m_bQuadMoveUndoPushed = false;
@@ -2301,7 +2305,7 @@ namespace game
 			if(!bHeld)
 			{
 				if(m_bQuadDragged)
-					SetStatus("moved quad point");
+					SetStatus( Tr("moved quad point") );
 				m_DragQuad = -1;
 				m_DragPoint = -1;
 				m_bQuadDragged = false;
@@ -2407,7 +2411,7 @@ namespace game
 			if(!bAdd && !m_vSelectedQuads.empty())
 			{
 				ClearQuadSelection();
-				SetStatus("no quad selected");
+				SetStatus( Tr("no quad selected") );
 			}
 			return;
 		}
@@ -2418,9 +2422,9 @@ namespace game
 			CColor Color;
 			if(PickerColor(Color))
 				m_PickerColor = Color;
-			SetStatus(m_vSelectedQuads.size() == 1 ?
-				base::Format("quad {:d} selected: drag it to move, Shift drags a point, right click colours a corner", m_vSelectedQuads[0]) :
-				base::Format("{:d} quads selected: drag to move them, right click colours a corner", m_vSelectedQuads.size()));
+			SetStatus(  m_vSelectedQuads.size() == 1 ?
+				base::FormatRuntime(Tr("quad {:d} selected: drag it to move, Shift drags a point, right click colours a corner"), m_vSelectedQuads[0]) :
+				base::FormatRuntime(Tr("{:d} quads selected: drag to move them, right click colours a corner"), m_vSelectedQuads.size())  );
 		}
 
 		if(bStartMove && !bAdd && !m_vSelectedQuads.empty())
@@ -2474,13 +2478,13 @@ namespace game
 		const CLayer *pLayer = SelectedLayer();
 		if(pLayer == nullptr || !pLayer->IsTiles())
 		{
-			SetStatus("only a tile layer has tiles to pick");
+			SetStatus( Tr("only a tile layer has tiles to pick") );
 			return;
 		}
 		const CLayerView *pView = ViewState(m_SelectedGroup, m_SelectedLayer);
 		if(pView != nullptr && pView->m_Locked)
 		{
-			SetStatus("this layer is locked, there is nothing to pick");
+			SetStatus( Tr("this layer is locked, there is nothing to pick") );
 			return;
 		}
 
@@ -2492,7 +2496,7 @@ namespace game
 		const int Y1 = std::min(Origin.y + m_BrushH - 1, pLayer->m_Height - 1);
 		if(X1 < X0 || Y1 < Y0)
 		{
-			SetStatus(base::Format("tile {:d},{:d} is outside the layer", Origin.x, Origin.y));
+			SetStatus(  base::FormatRuntime(Tr("tile {:d},{:d} is outside the layer"), Origin.x, Origin.y)  );
 			return;
 		}
 
@@ -2514,7 +2518,7 @@ namespace game
 			}
 		}
 		SetBrushRegion(Width, Height, Cells, Cells.front().m_Index);
-		SetStatus(base::Format("brush {:d}x{:d} taken from {:d},{:d}", Width, Height, X0, Y0));
+		SetStatus(  base::FormatRuntime(Tr("brush {:d}x{:d} taken from {:d},{:d}"), Width, Height, X0, Y0)  );
 	}
 
 	bool CEditor::PickRect(int &X0, int &Y0, int &X1, int &Y1) const
