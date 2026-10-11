@@ -83,20 +83,24 @@ namespace base
 		most significant byte first, and the last byte of the array is unused.
 		This is exactly the reference StrToInts/IntsToStr pair (gamecore.cpp),
 		which matters because the strings of existing maps were written with it.
+
+		The unused last byte is what *terminates* the name: a name that fills
+		the field is truncated to NumInts*4 - 1 bytes rather than keeping a 0x80
+		the reference would have overwritten with a NUL. Letting it through
+		produced names that were not valid UTF-8, which a strict JSON reader
+		then rejected.
 	*/
 	inline void IntsToStr(const int *pInts, int NumInts, std::string &Out)
 	{
 		Out.clear();
-		for(int i = 0; i < NumInts; i++)
+		const int Usable = NumInts * 4 - 1;
+		for(int Byte = 0; Byte < Usable; Byte++)
 		{
-			const int Value = pInts[i];
-			for(int Byte = 0; Byte < 4; Byte++)
-			{
-				const char c = static_cast<char>(((Value >> (24 - Byte * 8)) & 0xff) - 128);
-				if(c == '\0')
-					return;
-				Out.push_back(c);
-			}
+			const int Value = pInts[Byte / 4];
+			const char c = static_cast<char>(((Value >> (24 - (Byte % 4) * 8)) & 0xff) - 128);
+			if(c == '\0')
+				return;
+			Out.push_back(c);
 		}
 	}
 

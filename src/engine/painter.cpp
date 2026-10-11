@@ -421,10 +421,12 @@ namespace engine::painter
 					const float SourceHeight = Paint.m_TexTextureHeight > 0 ? static_cast<float>(Paint.m_TexTextureHeight) : 1.0f;
 					V.m_U = (Paint.m_TexX + U * Paint.m_TexWidth) / SourceWidth;
 					V.m_V = (Paint.m_TexY + TexV * Paint.m_TexHeight) / SourceHeight;
-					V.m_R = 1.0f;
-					V.m_G = 1.0f;
-					V.m_B = 1.0f;
-					V.m_A = Paint.m_Alpha;
+					// the tint is what colours a white drawing, which is how
+					// one rasterized icon serves every state of a button
+					V.m_R = Paint.m_Tint.r;
+					V.m_G = Paint.m_Tint.g;
+					V.m_B = Paint.m_Tint.b;
+					V.m_A = Paint.m_Alpha * Paint.m_Tint.a;
 					break;
 				}
 				}

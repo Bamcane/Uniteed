@@ -40,7 +40,9 @@ namespace engine
 
 		void OnKey(int Key, int Action, int Mods);
 		void OnText(const char *pText);
-		void OnMouseButton(int Button, int Action);
+		// Clicks is the platform's count for a run of presses, 1 for a single
+		// one and 2 for a double click
+		void OnMouseButton(int Button, int Action, int Clicks = 1);
 		void OnCursorPos(double X, double Y);
 		void OnScroll(double XOffset, double YOffset);
 		void OnFocusLost();
@@ -57,6 +59,20 @@ namespace engine
 		bool MouseDown(mouse_button Button) const;
 		bool MousePressed(mouse_button Button) const;
 		bool MouseReleased(mouse_button Button) const;
+		// a press that the platform counted as the second of a run, which is
+		// what a title bar uses for "maximize"
+		bool MouseDoubleClicked(mouse_button Button) const;
+
+		/*
+			An overlay (the open menu of the title bar) is drawn over the
+			interface, and an immediate mode interface has no z order to stop
+			the widget behind it from answering the same click. The drawing code
+			that owns the overlay blocks the mouse for the frame, and
+			`ui::Hovered` then answers false everywhere, so only the overlay
+			itself - which tests its own rectangles - reacts to it.
+		*/
+		void SetMouseBlocked(bool bBlocked) { m_bMouseBlocked = bBlocked; }
+		bool MouseBlocked() const { return m_bMouseBlocked; }
 
 		base::vec2 MousePosition() const { return m_MousePosition; }
 		base::vec2 MouseDelta() const { return m_MousePosition - m_PreviousMousePosition; }
@@ -84,8 +100,10 @@ namespace engine
 		std::array<bool, 8> m_aMouse{};
 		std::array<bool, 8> m_aMousePressed{};
 		std::array<bool, 8> m_aMouseReleased{};
+		std::array<int, 8> m_aMouseClicks{};
 
 		int m_Modifiers = 0;
+		bool m_bMouseBlocked = false;
 		base::vec2 m_MousePosition;
 		base::vec2 m_PreviousMousePosition;
 		float m_Scroll = 0.0f;

@@ -8,11 +8,8 @@
 #include "base/logger.h"
 #include "base/string.h"
 #include "base/time.h"
-
-#if defined(UNITEED_OPENSSL)
-#define LIBSUGARX_UUID_GENERATION_IMPL
-#include <sugar_uuid.h>
-#endif
+#include "base/uuid.h"
+#include "game/assets.h"
 
 namespace game
 {
@@ -21,11 +18,12 @@ namespace game
 		constexpr char Magic[8] = {'U', 'N', 'I', 'T', 'W', 'P', '\0', '\x01'};
 
 		// chunk ids are four characters, no terminator
-		constexpr char ChunkMeta[4] = {'M', 'E', 'T', 'A'};
-		constexpr char ChunkMap[4] = {'M', 'A', 'P', ' '};
-		constexpr char ChunkEdit[4] = {'E', 'D', 'I', 'T'};
-		constexpr char ChunkResource[4] = {'R', 'S', 'R', 'C'};
-		constexpr char ChunkThumbnail[4] = {'T', 'H', 'U', 'M'};
+		constexpr std::string_view ChunkMeta = "META";
+		constexpr std::string_view ChunkMap = "MAP ";
+		constexpr std::string_view ChunkEdit = "EDIT";
+		constexpr std::string_view ChunkRules = "RULE";
+		constexpr std::string_view ChunkResource = "RSRC";
+		constexpr std::string_view ChunkThumbnail = "THUM";
 
 		void WriteU32(byte_vector &Out, std::uint32_t Value)
 		{
@@ -34,30 +32,20 @@ namespace game
 			Out.insert(Out.end(), Buffer, Buffer + 4);
 		}
 
-		void WriteChunk(byte_vector &Out, const char Id[4], const byte_vector &Data)
+		void WriteChunk(byte_vector &Out, std::string_view Id, std::string_view Data)
 		{
-			const std::byte *pId = reinterpret_cast<const std::byte *>(Id);
-			Out.insert(Out.end(), pId, pId + 4);
+			const std::byte *pId = reinterpret_cast<const std::byte *>(Id.data());
+			Out.insert(Out.end(), pId, pId + Id.size());
 			WriteU32(Out, static_cast<std::uint32_t>(Data.size()));
-			Out.insert(Out.end(), Data.begin(), Data.end());
-		}
-
-		void WriteTextChunk(byte_vector &Out, const char Id[4], const std::string &Text)
-		{
-			const std::byte *pData = reinterpret_cast<const std::byte *>(Text.data());
-			WriteChunk(Out, Id, byte_vector(pData, pData + Text.size()));
+			const std::byte *pData = reinterpret_cast<const std::byte *>(Data.data());
+			Out.insert(Out.end(), pData, pData + Data.size());
 		}
 
 		std::uint32_t ReadU32(const std::byte *pData) { return base::ReadUInt32(pData); }
 
 		std::string MakePackageId()
 		{
-#if defined(UNITEED_OPENSSL)
-			const libsugarx::uuid Id = libsugarx::uuid::generate_v4_nullable();
-			return std::string(Id.to_string().view());
-#else
-			return base::Format("local-%lld", static_cast<long long>(base::UnixTime()));
-#endif
+			return base::NewUuid();
 		}
 	} // namespace
 
@@ -71,7 +59,9 @@ namespace game
 		Line("id", m_PackageId);
 		Line("name", m_Name);
 		Line("author", m_Author);
+		Line("description", m_Description);
 		Line("target", m_ExportTarget);
+		Line("assets", m_Assets);
 		Line("created", m_Created);
 		Line("updated", m_Updated);
 		Line("editor", m_EditorVersion);
@@ -95,7 +85,9 @@ namespace game
 			if(Key == "id") Meta.m_PackageId = Value;
 			else if(Key == "name") Meta.m_Name = Value;
 			else if(Key == "author") Meta.m_Author = Value;
+			else if(Key == "description") Meta.m_Description = Value;
 			else if(Key == "target") Meta.m_ExportTarget = Value;
+			else if(Key == "assets") Meta.m_Assets = Value;
 			else if(Key == "created") Meta.m_Created = Value;
 			else if(Key == "updated") Meta.m_Updated = Value;
 			else if(Key == "editor") Meta.m_EditorVersion = Value;
@@ -109,6 +101,7 @@ namespace game
 		m_Map.Clear();
 		m_Meta = CUnitwpMeta{};
 		m_EditorState.clear();
+		m_Rules.clear();
 		m_vResources.clear();
 	}
 
@@ -133,9 +126,87 @@ namespace game
 		return nullptr;
 	}
 
+	void CUnitwpPackage::AttachMapResources()
+	{
+		m_vResources.clear();
+		for(const CImage &Image : m_Map.m_vImages)
+		{
+			if(Image.IsEmbedded())
+				continue;
+			const std::optional<storage::path> File = FindImageFile(Image.m_Name);
+			if(!File.has_value())
+				continue;
+			const std::optional<byte_vector> Data = storage::read(*File);
+			if(!Data.has_value())
+				continue;
+			CUnitwpResource Resource;
+			Resource.m_Name = "mapres/" + File->filename().string();
+			Resource.m_Data = *Data;
+			m_vResources.push_back(std::move(Resource));
+		}
+	}
+
 	bool CUnitwpPackage::IsPackage(const byte_vector &Bytes)
 	{
 		return Bytes.size() >= 8 && std::memcmp(Bytes.data(), Magic, 8) == 0;
+	}
+
+	bool CUnitwpPackage::FindChunk(const byte_vector &Bytes, std::string_view Id, std::string *pOut)
+	{
+		if(!IsPackage(Bytes) || Bytes.size() < 16 || Id.size() != 4)
+			return false;
+		std::size_t Offset = 16;
+		while(Offset + 8 <= Bytes.size())
+		{
+			const char *pId = reinterpret_cast<const char *>(Bytes.data() + Offset);
+			const std::uint32_t Size = ReadU32(Bytes.data() + Offset + 4);
+			Offset += 8;
+			if(Offset + Size > Bytes.size())
+				return false;
+			if(std::memcmp(pId, Id.data(), 4) == 0)
+			{
+				if(pOut != nullptr)
+					pOut->assign(reinterpret_cast<const char *>(Bytes.data() + Offset), Size);
+				return true;
+			}
+			Offset += Size;
+		}
+		return false;
+	}
+
+	bool CUnitwpPackage::SetChunk(byte_vector &Bytes, std::string_view Id, std::string_view Data)
+	{
+		if(!IsPackage(Bytes) || Bytes.size() < 16 || Id.size() != 4)
+			return false;
+		byte_vector Out(Bytes.begin(), Bytes.begin() + 16);
+		std::size_t Offset = 16;
+		bool bReplaced = false;
+		while(Offset + 8 <= Bytes.size())
+		{
+			const char *pId = reinterpret_cast<const char *>(Bytes.data() + Offset);
+			const std::uint32_t Size = ReadU32(Bytes.data() + Offset + 4);
+			const std::size_t Header = Offset;
+			Offset += 8;
+			if(Offset + Size > Bytes.size())
+				return false;
+			if(std::memcmp(pId, Id.data(), 4) == 0)
+			{
+				// the first occurrence wins, exactly like Deserialise
+				if(!bReplaced)
+				{
+					WriteChunk(Out, Id, Data);
+					bReplaced = true;
+				}
+			}
+			else
+				Out.insert(Out.end(), Bytes.begin() + static_cast<std::ptrdiff_t>(Header),
+					Bytes.begin() + static_cast<std::ptrdiff_t>(Offset + Size));
+			Offset += Size;
+		}
+		if(!bReplaced)
+			WriteChunk(Out, Id, Data);
+		Bytes = std::move(Out);
+		return true;
 	}
 
 	bool CUnitwpPackage::Serialise(byte_vector &Out, std::string *pError) const
@@ -152,9 +223,11 @@ namespace game
 		WriteU32(Out, ContainerVersion);
 		WriteU32(Out, 0);
 
-		WriteTextChunk(Out, ChunkMeta, m_Meta.ToText());
-		WriteChunk(Out, ChunkMap, MapBytes);
-		WriteTextChunk(Out, ChunkEdit, m_EditorState);
+		WriteChunk(Out, ChunkMeta, m_Meta.ToText());
+		WriteChunk(Out, ChunkMap, std::string_view(reinterpret_cast<const char *>(MapBytes.data()), MapBytes.size()));
+		WriteChunk(Out, ChunkEdit, m_EditorState);
+		if(!m_Rules.empty())
+			WriteChunk(Out, ChunkRules, m_Rules);
 
 		if(!m_vResources.empty())
 		{
@@ -168,7 +241,7 @@ namespace game
 				WriteU32(Table, static_cast<std::uint32_t>(Resource.m_Data.size()));
 				Table.insert(Table.end(), Resource.m_Data.begin(), Resource.m_Data.end());
 			}
-			WriteChunk(Out, ChunkResource, Table);
+			WriteChunk(Out, ChunkResource, std::string_view(reinterpret_cast<const char *>(Table.data()), Table.size()));
 		}
 
 		LOG_INFO("unitwp", "serialised package: %zu bytes (map %zu bytes, %zu resources)",
@@ -207,22 +280,26 @@ namespace game
 				return Fail("a package chunk is truncated");
 
 			const std::byte *pChunk = Bytes.data() + Offset;
-			if(std::memcmp(pId, ChunkMeta, 4) == 0)
+			if(std::memcmp(pId, ChunkMeta.data(), 4) == 0)
 			{
 				m_Meta = CUnitwpMeta::FromText(std::string(reinterpret_cast<const char *>(pChunk), Size));
 			}
-			else if(std::memcmp(pId, ChunkMap, 4) == 0)
+			else if(std::memcmp(pId, ChunkMap.data(), 4) == 0)
 			{
 				byte_vector MapBytes(pChunk, pChunk + Size);
 				if(!m_Map.LoadFromBytes(MapBytes, pError))
 					return false;
 				HaveMap = true;
 			}
-			else if(std::memcmp(pId, ChunkEdit, 4) == 0)
+			else if(std::memcmp(pId, ChunkEdit.data(), 4) == 0)
 			{
 				m_EditorState.assign(reinterpret_cast<const char *>(pChunk), Size);
 			}
-			else if(std::memcmp(pId, ChunkResource, 4) == 0)
+			else if(std::memcmp(pId, ChunkRules.data(), 4) == 0)
+			{
+				m_Rules.assign(reinterpret_cast<const char *>(pChunk), Size);
+			}
+			else if(std::memcmp(pId, ChunkResource.data(), 4) == 0)
 			{
 				std::size_t ResourceOffset = 0;
 				if(Size < 4)

@@ -24,7 +24,8 @@ namespace game
 		case map_target::tee06: return "06";
 		case map_target::tee07: return "07";
 		case map_target::tee08: return "07"; // 0.8 ships the same bytes as 0.7
-		case map_target::ddnet: return "ddnet";
+		case map_target::ddnet06: return "ddnet";
+		case map_target::ddnet07: return "ddnet";
 		case map_target::unitwp: return "07";
 		}
 		return "07";
@@ -61,6 +62,11 @@ namespace game
 		// ddnet_tiles.png and friends from a 0.6 or 0.7 map), then shared assets,
 		// then the other vanilla version as a last resort
 		Add(Base / "versions" / s_ActiveVersion / "mapres");
+		// the editor's own art: entity sheets and the physics layer sheets live
+		// under editor/, the way the reference data directory lays them out
+		Add(Base / "versions" / s_ActiveVersion / "editor");
+		Add(Base / "shared" / "editor");
+		Add(Base / "versions" / "ddnet" / "editor");
 		Add(Base / "versions" / "ddnet" / "mapres");
 		Add(Base / "shared" / "mapres");
 		Add(Base / "versions" / "07" / "mapres");

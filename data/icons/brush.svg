@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>brush</title>
+  <g fill="#fff" transform="rotate(45 12 12)">
+    <rect x="10.44" y="0.72" width="3.12" height="11.76" rx="1.44"/>
+    <polygon points="7.20,14.16 16.80,14.16 15.12,22.08 8.88,22.08"/>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>envelope</title>
+  <g fill="none" stroke="#fff" stroke-width="2.00" stroke-linecap="round">
+    <path d="M2.64 20.16h18.72" stroke-width="1.60"/>
+    <path d="M2.64 16.80c4.32 0 5.28-9.60 9.36-9.60s4.80 6.24 9.36 6.24"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="2.64" cy="16.80" r="2.16"/>
+    <circle cx="12.00" cy="7.20" r="2.16"/>
+    <circle cx="21.36" cy="13.44" r="2.16"/>
+  </g>
+</svg>

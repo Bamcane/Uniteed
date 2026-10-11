@@ -334,7 +334,12 @@ namespace game
 
 	int CDataFileWriter::AddItem(int Type, int ID, const void *pData, int Size)
 	{
-		if(Type < 0 || Type >= 0xffff || Size < 0)
+		/*
+			0xffff is a valid type rather than a sentinel: DDRaceNetwork uses it
+			for its ITEMTYPE_EX extension table, and refusing it silently dropped
+			those items out of a map that had been loaded with them.
+		*/
+		if(Type < 0 || Type > 0xffff || Size < 0)
 			return -1;
 
 		CItem Item;
@@ -387,8 +392,15 @@ namespace game
 
 	int CDataFileWriter::AddDataString(std::string_view String)
 	{
+		/*
+			An empty string still gets its terminator, so the copy is guarded
+			rather than handed a length the optimiser cannot bound: a memcpy of
+			an empty span from a possibly null pointer is what the warning was
+			about, and the loop is exactly the same codegen without it.
+		*/
 		byte_vector Buffer(String.size() + 1, std::byte(0));
-		std::memcpy(Buffer.data(), String.data(), String.size());
+		for(std::size_t i = 0; i < String.size(); i++)
+			Buffer[i] = static_cast<std::byte>(String[i]);
 		return AddData(Buffer.data(), static_cast<int>(Buffer.size()));
 	}
 

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>eraser</title>
+  <g transform="rotate(-32 12 12)">
+    <rect x="3.20" y="6.60" width="17.60" height="10.80" rx="1.60" fill="none" stroke="#fff" stroke-width="2.20"/>
+    <rect x="3.20" y="6.60" width="17.60" height="5.40" rx="1.60" fill="#fff"/>
+  </g>
+  <g fill="#fff">
+    <circle cx="2.20" cy="21.20" r="1.00"/>
+    <circle cx="5.40" cy="22.60" r="0.90"/>
+  </g>
+</svg>

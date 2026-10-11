@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>pan</title>
+  <g fill="#fff">
+    <rect x="5.88" y="5.76" width="3.84" height="10.08" rx="1.92"/>
+    <rect x="11.16" y="2.40" width="3.84" height="13.44" rx="1.92"/>
+    <rect x="16.44" y="4.80" width="3.84" height="11.04" rx="1.92"/>
+    <rect x="5.88" y="12.48" width="14.40" height="9.60" rx="2.64"/>
+    <rect x="2.88" y="12.96" width="4.32" height="4.32" rx="2.16"/>
+  </g>
+</svg>

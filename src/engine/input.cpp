@@ -56,7 +56,7 @@ namespace engine
 		m_TypedText += pText;
 	}
 
-	void CInput::OnMouseButton(int Button, int Action)
+	void CInput::OnMouseButton(int Button, int Action, int Clicks)
 	{
 		if(Button < 0 || Button >= 8)
 			return;
@@ -65,6 +65,9 @@ namespace engine
 			if(!m_aMouse[static_cast<std::size_t>(Button)])
 				m_aMousePressed[static_cast<std::size_t>(Button)] = true;
 			m_aMouse[static_cast<std::size_t>(Button)] = true;
+			// the platform counts the clicks of a run, which is the only way
+			// to tell a double click from two separate ones
+			m_aMouseClicks[static_cast<std::size_t>(Button)] = Clicks > 0 ? Clicks : 1;
 		}
 		else if(Action == action_release)
 		{
@@ -111,6 +114,7 @@ namespace engine
 		}
 		m_aMousePressed.fill(false);
 		m_aMouseReleased.fill(false);
+		m_aMouseClicks.fill(1);
 		m_PreviousMousePosition = m_MousePosition;
 	}
 
@@ -150,6 +154,13 @@ namespace engine
 	{
 		const int Index = static_cast<int>(Button);
 		return Index >= 0 && Index < 8 && m_aMouseReleased[static_cast<std::size_t>(Index)];
+	}
+
+	bool CInput::MouseDoubleClicked(mouse_button Button) const
+	{
+		const int Index = static_cast<int>(Button);
+		return Index >= 0 && Index < 8 && m_aMousePressed[static_cast<std::size_t>(Index)] &&
+			m_aMouseClicks[static_cast<std::size_t>(Index)] >= 2;
 	}
 
 	bool CInput::BackspacePressed() const { return KeyPressed(SDLK_BACKSPACE); }

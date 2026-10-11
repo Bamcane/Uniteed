@@ -44,12 +44,24 @@ namespace engine
 			SDL_Quit();
 			return false;
 		}
+		m_Title = Title;
 
 		// below this the two side panels would eat the canvas; it is the same
 		// lower bound the stored window size is clamped to
 		SDL_SetWindowMinimumSize(m_pWindow, 640, 480);
 		// the name fields read what the user types
 		SDL_StartTextInput(m_pWindow);
+
+		/*
+			A window without a system title bar draws its own, which is what lets
+			the file operations and the panel shortcuts share one row at the top.
+			This happens before the renderer exists: on a platform that has to
+			recreate the window to change its decorations there is nothing to
+			invalidate yet, and a window that ends up decorated again is one the
+			editor simply does not draw furniture for.
+		*/
+		if(pConfig != nullptr && pConfig->Get(config::ClientDecorations))
+			ApplyClientDecorations(true);
 
 		// the driver list is handed to SDL as a comma separated preference, so
 		// a machine without one of them still gets a window
@@ -93,7 +105,9 @@ namespace engine
 		m_Painter.Init(m_pRenderer, &m_Text);
 		m_Painter.SetTextureLookup(&CGraphics::LookupTextureCallback, this);
 
-		LOG_INFO("graphics", "window created, font '%s'", m_FontPath.empty() ? "(none)" : m_FontPath.c_str());
+		LOG_INFO("graphics", "window %dx%d created, %s, font '%s'", Width, Height,
+			m_bClientDecorations ? "drawn title bar (the editor draws it)" : "system title bar",
+			m_FontPath.empty() ? "(none)" : m_FontPath.c_str());
 		return true;
 	}
 
@@ -102,6 +116,9 @@ namespace engine
 		ForgetTextures();
 		m_Painter.Close();
 		m_Text.Close();
+		m_Chrome = CClientChrome{};
+		m_bClientDecorations = false;
+		m_Title.clear();
 		if(m_pRenderer != nullptr)
 		{
 			SDL_DestroyRenderer(m_pRenderer);
@@ -136,7 +153,7 @@ namespace engine
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		case SDL_EVENT_MOUSE_BUTTON_UP:
 			m_Input.OnMouseButton(Event.button.button,
-				Event.button.down ? CInput::action_press : CInput::action_release);
+				Event.button.down ? CInput::action_press : CInput::action_release, Event.button.clicks);
 			break;
 		case SDL_EVENT_MOUSE_MOTION:
 			m_Input.OnCursorPos(Event.motion.x, Event.motion.y);
@@ -175,6 +192,14 @@ namespace engine
 
 		const base::vec2 WindowSize(static_cast<float>(WindowWidth), static_cast<float>(WindowHeight));
 		const base::vec2 FramebufferSize(static_cast<float>(FramebufferWidth), static_cast<float>(FramebufferHeight));
+		/*
+			What the settings remember is the *resting* size. A maximized window
+			reports the size the window manager gave it, and a minimized one can
+			report anything at all, so only a window that is neither is taken as
+			the size to come back to.
+		*/
+		if(!Maximized() && !Minimized())
+			m_RestingSize = WindowSize;
 		if(WindowSize.x != m_WindowSize.x || WindowSize.y != m_WindowSize.y ||
 			FramebufferSize.x != m_FramebufferSize.x || FramebufferSize.y != m_FramebufferSize.y)
 		{
@@ -182,6 +207,16 @@ namespace engine
 				WindowSize.x, WindowSize.y, FramebufferSize.x, FramebufferSize.y, m_PixelRatio);
 			m_WindowSize = WindowSize;
 			m_FramebufferSize = FramebufferSize;
+			/*
+				The interface lays itself out in window coordinates, so the
+				renderer is told that is the logical size and does the scaling
+				to the drawable itself. On an ordinary display the two are the
+				same and this changes nothing; on a denser one it is what keeps
+				the layout the size the user asked for instead of drawing into
+				a quarter of the window.
+			*/
+			SDL_SetRenderLogicalPresentation(m_pRenderer, WindowWidth, WindowHeight,
+				SDL_LOGICAL_PRESENTATION_LETTERBOX);
 		}
 
 		SDL_SetRenderDrawColor(m_pRenderer, static_cast<Uint8>(m_ClearColor[0] * 255.0f),
@@ -201,8 +236,13 @@ namespace engine
 
 	void CGraphics::SetWindowTitle(const std::string &Title)
 	{
-		if(m_pWindow != nullptr)
-			SDL_SetWindowTitle(m_pWindow, Title.c_str());
+		// the editor calls this every frame with the name of the map it has
+		// open, which is what the taskbar and the window list show on a system
+		// that still draws them one
+		if(m_pWindow == nullptr || Title == m_Title)
+			return;
+		m_Title = Title;
+		SDL_SetWindowTitle(m_pWindow, Title.c_str());
 	}
 
 	void CGraphics::SetWindowSize(int Width, int Height)
@@ -211,11 +251,138 @@ namespace engine
 			SDL_SetWindowSize(m_pWindow, Width, Height);
 	}
 
+	SDL_HitTestResult SDLCALL CGraphics::HitTestCallback(SDL_Window *pWindow, const SDL_Point *pArea, void *pUser)
+	{
+		auto *pGraphics = static_cast<CGraphics *>(pUser);
+		if(pGraphics == nullptr || pArea == nullptr)
+			return SDL_HITTEST_NORMAL;
+
+		int Width = 0, Height = 0;
+		SDL_GetWindowSize(pWindow, &Width, &Height);
+		CClientChrome Chrome = pGraphics->m_Chrome;
+		/*
+			A maximized window has no edges to drag - the platform would refuse
+			anyway, and its window manager draws no frame to grab - but the bar
+			still has to move it off the maximized state.
+		*/
+		if((SDL_GetWindowFlags(pWindow) & SDL_WINDOW_MAXIMIZED) != 0)
+			Chrome.m_Edge = 0.0f;
+
+		const window_region Region = HitTestChrome(Chrome,
+			base::vec2(static_cast<float>(Width), static_cast<float>(Height)),
+			base::vec2(static_cast<float>(pArea->x), static_cast<float>(pArea->y)));
+		switch(Region)
+		{
+		case window_region::drag: return SDL_HITTEST_DRAGGABLE;
+		case window_region::resize_top: return SDL_HITTEST_RESIZE_TOP;
+		case window_region::resize_bottom: return SDL_HITTEST_RESIZE_BOTTOM;
+		case window_region::resize_left: return SDL_HITTEST_RESIZE_LEFT;
+		case window_region::resize_right: return SDL_HITTEST_RESIZE_RIGHT;
+		case window_region::resize_top_left: return SDL_HITTEST_RESIZE_TOPLEFT;
+		case window_region::resize_top_right: return SDL_HITTEST_RESIZE_TOPRIGHT;
+		case window_region::resize_bottom_left: return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+		case window_region::resize_bottom_right: return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+		case window_region::normal: break;
+		}
+		return SDL_HITTEST_NORMAL;
+	}
+
+	bool CGraphics::ApplyClientDecorations(bool bEnabled)
+	{
+		if(m_pWindow == nullptr)
+			return false;
+
+		if(!bEnabled)
+		{
+			SDL_SetWindowHitTest(m_pWindow, nullptr, nullptr);
+			if(SDL_SetWindowBordered(m_pWindow, true))
+				m_bClientDecorations = false;
+			return !m_bClientDecorations;
+		}
+
+		if(!SDL_SetWindowBordered(m_pWindow, false))
+		{
+			LOG_WARN("graphics", "this platform refused a window without decorations (%s), keeping the system title bar",
+				SDL_GetError());
+			m_bClientDecorations = false;
+			return false;
+		}
+		if(!SDL_SetWindowHitTest(m_pWindow, &CGraphics::HitTestCallback, this))
+		{
+			/*
+				Without hit testing nothing would move or resize the window,
+				which is worse than the title bar the user asked to be rid of:
+				the decorations come back and the editor draws no window
+				buttons of its own.
+			*/
+			LOG_WARN("graphics", "this platform cannot hit test a window (%s), keeping the system title bar",
+				SDL_GetError());
+			SDL_SetWindowBordered(m_pWindow, true);
+			m_bClientDecorations = false;
+			return false;
+		}
+		m_bClientDecorations = true;
+		return true;
+	}
+
+	void CGraphics::SetClientChrome(const CClientChrome &Chrome)
+	{
+		// only a change costs anything: the hit test reads the stored copy,
+		// and the editor publishes a new one every frame
+		if(Chrome.m_bEnabled != m_bClientDecorations)
+			ApplyClientDecorations(Chrome.m_bEnabled);
+		m_Chrome = Chrome;
+		m_Chrome.m_bEnabled = m_bClientDecorations;
+	}
+
+	void CGraphics::MinimizeWindow()
+	{
+		if(m_pWindow != nullptr)
+			SDL_MinimizeWindow(m_pWindow);
+	}
+
+	void CGraphics::ToggleMaximizeWindow() { SetMaximized(!Maximized()); }
+
+	void CGraphics::SetMaximized(bool bMaximized)
+	{
+		if(m_pWindow == nullptr || bMaximized == Maximized())
+			return;
+		if(bMaximized)
+			SDL_MaximizeWindow(m_pWindow);
+		else
+			SDL_RestoreWindow(m_pWindow);
+	}
+
+	bool CGraphics::Maximized() const
+	{
+		return m_pWindow != nullptr && (SDL_GetWindowFlags(m_pWindow) & SDL_WINDOW_MAXIMIZED) != 0;
+	}
+
+	bool CGraphics::Minimized() const
+	{
+		return m_pWindow != nullptr && (SDL_GetWindowFlags(m_pWindow) & SDL_WINDOW_MINIMIZED) != 0;
+	}
+
+	void CGraphics::ShowWindowSystemMenu(const base::vec2 &Position)
+	{
+		if(m_pWindow == nullptr)
+			return;
+		if(!SDL_ShowWindowSystemMenu(m_pWindow, static_cast<int>(Position.x), static_cast<int>(Position.y)))
+			LOG_TRACE("graphics", "no system menu for this window: %s", SDL_GetError());
+	}
+
 	void CGraphics::SetClearColor(float Red, float Green, float Blue)
 	{
 		m_ClearColor[0] = Red;
 		m_ClearColor[1] = Green;
 		m_ClearColor[2] = Blue;
+	}
+
+	void CGraphics::SetUiScale(float Scale)
+	{
+		// a scale of zero or less would divide the layout by nothing, and a
+		// huge one would ask for textures no driver will make
+		m_UiScale = base::clamp(Scale, 0.5f, 4.0f);
 	}
 
 	SDL_Texture *CGraphics::LookupTextureCallback(void *pUser, int Texture)
@@ -273,7 +440,8 @@ namespace engine
 		return Handle;
 	}
 
-	int CGraphics::CreateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels)
+	int CGraphics::CreateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels,
+		bool bSmooth)
 	{
 		if(m_Textures.contains(Key))
 			return Texture(Key);
@@ -288,13 +456,63 @@ namespace engine
 			m_Textures.emplace(Key, -1);
 			return -1;
 		}
-		SDL_SetTextureScaleMode(pTexture, SDL_SCALEMODE_NEAREST);
+		SDL_SetTextureScaleMode(pTexture, bSmooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
 		SDL_SetTextureBlendMode(pTexture, SDL_BLENDMODE_BLEND);
 		// the decoded resources are tightly packed RGBA, which is what the
 		// renderer wants for ABGR8888 on a little endian machine
 		SDL_UpdateTexture(pTexture, nullptr, Pixels.data(), Width * 4);
 
 		return RegisterTexture(Key, pTexture, base::vec2(static_cast<float>(Width), static_cast<float>(Height)));
+	}
+
+	int CGraphics::ReplaceTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels,
+		bool bSmooth)
+	{
+		if(Width <= 0 || Height <= 0 || Pixels.size() < static_cast<std::size_t>(Width) * Height * 4)
+			return -1;
+		if(!m_Textures.contains(Key))
+			return CreateTextureRGBA(Key, Width, Height, Pixels, bSmooth);
+
+		const int Handle = m_Textures.at(Key).value();
+		if(Handle < 1 || Handle > static_cast<int>(m_vTextureHandles.size()))
+			return CreateTextureRGBA(Key, Width, Height, Pixels, bSmooth);
+
+		SDL_Texture *pOld = m_vTextureHandles[static_cast<std::size_t>(Handle) - 1];
+		float OldWidth = 0.0f, OldHeight = 0.0f;
+		const bool bExisting = pOld != nullptr && SDL_GetTextureSize(pOld, &OldWidth, &OldHeight);
+		// the common case: still the same size, so the pixels are just updated
+		if(bExisting && static_cast<int>(OldWidth) == Width && static_cast<int>(OldHeight) == Height &&
+			SDL_UpdateTexture(pOld, nullptr, Pixels.data(), Width * 4))
+		{
+			if(bSmooth)
+				SDL_SetTextureScaleMode(pOld, SDL_SCALEMODE_LINEAR);
+			return Handle;
+		}
+
+		/*
+			The size changed, which is the reason this call exists: the texture
+			is replaced but the handle is not, because the interface is holding
+			it. The old texture is destroyed, so a display scale that keeps
+			changing cannot grow the texture table.
+		*/
+		SDL_Texture *pTexture = SDL_CreateTexture(m_pRenderer, SDL_PIXELFORMAT_ABGR8888,
+			SDL_TEXTUREACCESS_STATIC, Width, Height);
+		if(pTexture == nullptr)
+		{
+			LOG_WARN("graphics", "failed to re-create the texture '%s': %s", Key.c_str(), SDL_GetError());
+			return Handle;
+		}
+		SDL_SetTextureScaleMode(pTexture, bSmooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+		SDL_SetTextureBlendMode(pTexture, SDL_BLENDMODE_BLEND);
+		SDL_UpdateTexture(pTexture, nullptr, Pixels.data(), Width * 4);
+
+		if(pOld != nullptr)
+			SDL_DestroyTexture(pOld);
+		m_vTextureHandles[static_cast<std::size_t>(Handle) - 1] = pTexture;
+		// the size table is what the tile math reads, so it has to follow
+		if(m_TextureSizes.contains(Key))
+			m_TextureSizes.at(Key).value() = base::vec2(static_cast<float>(Width), static_cast<float>(Height));
+		return Handle;
 	}
 
 	bool CGraphics::UpdateTextureRGBA(const std::string &Key, int Width, int Height, const storage::byte_vector &Pixels)

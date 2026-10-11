@@ -38,6 +38,32 @@ namespace storage
 	path GetAppDataDirectory();
 
 	/*
+		The two directories the editor keeps its own work in, both under the
+		application data directory so a project never has to be saved by hand:
+
+			projects/   the .unitwp projects, created on first use
+			export/     every map this editor exports, one directory per target
+
+		Both can be pointed elsewhere with UNITEED_PROJECTS_DIR and
+		UNITEED_EXPORT_DIR, which is what a test or a portable install wants.
+		The default paths are also the ones the command line and the agent mode
+		report, so an agent never has to guess where a file landed.
+	*/
+	path GetProjectsDirectory();
+	path GetExportDirectory();
+	// the directory an export of this target goes into, created on demand
+	path GetExportDirectoryForTarget(const std::string &TargetId);
+	// <export>/<target>/<name>.<target>.map, the name the editor hands to the
+	// OS save dialog as its default
+	path ExportPath(const std::string &TargetId, std::string_view ProjectName);
+	// the same, for a .unitwp package: <export>/<target>/<name>.<target>.unitwp
+	path PackageExportPath(const std::string &TargetId, std::string_view ProjectName);
+
+	// a filesystem safe version of a project name: no separators, no control
+	// characters, never empty. "My Map!" stays "My Map!".
+	std::string SanitiseName(std::string_view Name);
+
+	/*
 	The resource root of the installation. It is normally the data directory
 	next to the executable or the one baked in at build time, and can be
 	overridden with the UNITEED_DATA_DIR environment variable.

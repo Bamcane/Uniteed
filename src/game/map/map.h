@@ -37,16 +37,40 @@ namespace game
 	// ------------------------------------------------------------ target matrix
 	enum class map_target
 	{
-		tee06, // Teeworlds 0.6.1 and 0.6.5, datafile 4
-		tee07, // Teeworlds 0.7.x, datafile 4, run length tiles, bezier envelopes
-		ddnet, // DDRaceNetwork 0.6 protocol, datafile 4, physics layers, UUID items
-		tee08, // Teeworlds Archive 0.8, datafile 5 with zstd
-		unitwp, // the .unitwp package profile: superset that keeps everything
+		tee06,   // Teeworlds 0.6.1 and 0.6.5, datafile 4
+		tee07,   // Teeworlds 0.7.x, datafile 4, run length tiles, bezier envelopes
+		ddnet06, // DDRaceNetwork, 0.6 protocol: datafile 4, physics layers, UUID items
+		ddnet07, // DDRaceNetwork, 0.7 protocol: datafile 4, physics layers, run length tiles
+		tee08,   // Teeworlds Archive 0.8, datafile 5 with zstd
+		unitwp,  // the .unitwp package profile: superset that keeps everything
+	};
+
+	/*
+		A map feature that only some targets can express. The editor gates the
+		controls behind these rather than behind a target comparison, so a new
+		target only has to declare its bit set and every panel follows.
+	*/
+	enum map_extension
+	{
+		ext_none = 0,
+		// the DDRace physics layers (tele, speedup, front, switch, tune) and the
+		// 92 byte tilemap item that carries their data indices
+		ext_physics = 1 << 0,
+		// the DDRace game layer entities: the lasers, plasma, draggers, doors and
+		// the extra armour and weapon tiles the vanilla clients do not know
+		ext_game_entities = 1 << 1,
+		// MAPITEMTYPE_SOUND, which only 0.7 and later have
+		ext_sounds = 1 << 2,
+		// the 88 byte envelope points that carry bezier tangents
+		ext_bezier_envelopes = 1 << 3,
+		// items this editor does not model, preserved through a load and save
+		ext_extras = 1 << 4,
+		ext_all = ext_physics | ext_game_entities | ext_sounds | ext_bezier_envelopes | ext_extras,
 	};
 
 	struct CMapTargetProfile
 	{
-		const char *m_pId;    // "06", "07", "ddnet", "08"
+		const char *m_pId;    // "06", "07", "ddnet06", "ddnet07", "08"
 		const char *m_pName;  // human readable
 		const char *m_pDescription;
 		int m_DatafileVersion = 4;
@@ -56,18 +80,24 @@ namespace game
 		int m_QuadsVersion = 2;
 		int m_EnvelopeVersion = 2;
 		int m_InfoSize = 20;
-		bool m_DdnetTilemap = false;  // 92 byte tilemaps with the physics data indices
+		int m_Extensions = ext_none; // which map_extension bits this target can write
 		bool m_RunLengthTiles = false; // tilemap version >= 4
-		bool m_HasSounds = false;      // MAPITEMTYPE_SOUND exists
-		bool m_BezierEnvelopes = false; // 88 byte points with tangents
-		bool m_KeepExtras = false;      // UUID items may be written
+
+		// the same question the editor asks when it decides whether to show a
+		// control: can this target carry that feature at all
+		bool HasExtension(map_extension Extension) const { return (m_Extensions & Extension) != 0; }
+		// the 92 byte tilemap item that carries the DDRace physics data indices
+		bool IsDdnetTilemap() const { return HasExtension(ext_physics); }
 	};
 
 	const CMapTargetProfile &GetTargetProfile(map_target Target);
-	// accepts "06", "0.6", "07", "0.7", "08", "0.8", "ddnet" and "unitwp"
+	// accepts "06", "0.6", "07", "0.7", "08", "0.8", "ddnet", "ddnet06",
+	// "ddnet07", "ddnet 0.6", "ddnet 0.7" and "unitwp"
 	std::optional<map_target> TargetFromId(std::string_view Id);
-	// the four export targets, without the package profile
-	const std::array<map_target, 4> &AllTargets();
+	// "ddnet" resolves to the 0.6 flavour, the one every existing DDRace map uses
+	bool IsDdnetTarget(map_target Target);
+	// the export targets, without the package profile
+	const std::array<map_target, 5> &AllTargets();
 	// the profile a .unitwp package stores its map with, a superset of every
 	// target so that a package never loses data
 	map_target GetPackageTarget();
@@ -235,6 +265,15 @@ namespace game
 		int m_SourceDatafileVersion = 0;
 		bool m_SourceHasDdnetItems = false;
 		std::string m_SourcePath;
+
+		/*
+			Whether DDRace extensions may be written into a map whose target does
+			not normally carry them. The editor's `allow DDRace extensions`
+			switch sets this, so a mapmaker who wants lasers and teleporters can
+			have them even while the export target is plain Teeworlds; the export
+			then warns instead of silently dropping the layers.
+		*/
+		bool m_bAllowExtensions = false;
 
 		void Clear();
 

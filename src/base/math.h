@@ -61,6 +61,16 @@ namespace base
 	inline float FixedToFloat(int Value) { return Value * FixedPointScale; }
 	inline int FloatToFixed(float Value) { return static_cast<int>(std::round(Value * 1024.0f)); }
 
+	// rounds a fixed point value to a step, symmetric around zero, which is what
+	// snapping a quad point to the 32 unit grid the reference editor uses needs
+	inline int SnapToStep(int Value, int Step)
+	{
+		if(Step <= 0)
+			return Value;
+		const int Half = Step / 2;
+		return Value >= 0 ? ((Value + Half) / Step) * Step : -((-Value + Half) / Step) * Step;
+	}
+
 	struct rect
 	{
 		vec2 m_TopLeft;

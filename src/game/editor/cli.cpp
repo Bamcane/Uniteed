@@ -7,14 +7,20 @@
 #include <map>
 
 #include "base/define.h"
+#include "base/json.h"
 #include "base/logger.h"
 #include "base/math.h"
 #include "base/string.h"
 #include "base/time.h"
+#include "engine/chrome.h"
+#include "engine/svg.h"
 #include "game/assets.h"
+#include "game/editor/editor.h"
 #include "game/map/envelope.h"
 #include "game/map/map.h"
 #include "game/map/unitwp.h"
+#include "game/project.h"
+#include "game/rules/rules.h"
 
 namespace game
 {
@@ -40,9 +46,20 @@ namespace game
 				"                                  export a package as a plain map\n"
 				"  --targets                       print the version matrix\n"
 				"  --selftest [map ...]            round trip every bundled map\n"
+				"  --agent                         a resident JSON session on stdin and stdout\n"
+				"  --agent-describe                the agent method catalogue\n"
 				"  --help\n"
 				"\n"
-				"target ids: 06 (Teeworlds 0.6), 07 (0.7), ddnet (DDRaceNetwork), 08 (0.8, datafile v5)\n";
+				"Every administrative method is also a subcommand, with --key value parameters:\n"
+				"  uniteed project.create --name demo --target ddnet07\n"
+				"  uniteed tiles.set --group 1 --layer 0 --x 4 --y 4 --index 3\n"
+				"  uniteed export.map --target ddnet07\n"
+				"\n"
+				"target ids: 06 (Teeworlds 0.6), 07 (0.7), ddnet (DDRaceNetwork, the 0.6\n"
+				"flavour), ddnet06, ddnet07, 08 (0.8, datafile v5)\n"
+				"\n"
+				"projects live in <data home>/uniteed/projects, exports in <data home>/uniteed/export;\n"
+				"set UNITEED_PROJECTS_DIR or UNITEED_EXPORT_DIR to move either of them\n";
 		}
 
 		void PrintTargets()
@@ -54,7 +71,7 @@ namespace game
 				std::cout << base::Format("%-7s %-9d %-8d %-6d %-6d %-10s %s\n",
 					Profile.m_pId, Profile.m_DatafileVersion, Profile.m_TilemapVersion,
 					Profile.m_ImageVersion, Profile.m_GroupVersion,
-					Profile.m_BezierEnvelopes ? "v2/v3" : "v2",
+					Profile.HasExtension(ext_bezier_envelopes) ? "v2/v3" : "v2",
 					Profile.m_pDescription);
 			}
 		}
@@ -163,7 +180,19 @@ namespace game
 									break;
 								}
 						}
-						Extra = base::Format(" quads=%zu graded=%d image=%d", Layer.m_vQuads.size(), Graded, Layer.m_Image);
+						// a quad that carries a position envelope is drawn
+						// somewhere other than where it is stored, which is
+						// worth seeing without opening the editor
+						int PositionAnimated = 0, ColorAnimated = 0;
+						for(const CQuad &Quad : Layer.m_vQuads)
+						{
+							if(Quad.m_PosEnv >= 0)
+								PositionAnimated++;
+							if(Quad.m_ColorEnv >= 0)
+								ColorAnimated++;
+						}
+						Extra = base::Format(" quads=%zu graded=%d image=%d pos-env=%d color-env=%d",
+							Layer.m_vQuads.size(), Graded, Layer.m_Image, PositionAnimated, ColorAnimated);
 					}
 					else if(Layer.IsSounds())
 						Extra = base::Format(" sources=%zu sound=%d", Layer.m_vSources.size(), Layer.m_Sound);
@@ -199,7 +228,13 @@ namespace game
 		}
 
 		// structural comparison of two models, used by the selftest
-		bool CompareMaps(const CMap &A, const CMap &B, std::string &Error)
+		/*
+			bExpectExtras says whether this target is supposed to keep the items
+			the editor does not model. A vanilla target may legitimately leave
+			them out - the export warns about that - so the comparison is told
+			what to expect instead of guessing from the maps themselves.
+		*/
+		bool CompareMaps(const CMap &A, const CMap &B, std::string &Error, bool bExpectExtras = true)
 		{
 			const CMapStatistics StatsA = A.Statistics();
 			const CMapStatistics StatsB = B.Statistics();
@@ -223,6 +258,34 @@ namespace game
 				if(A.m_vImages[i].m_Data != B.m_vImages[i].m_Data)
 				{
 					Error = base::Format("image %zu pixel data changed", i);
+					return false;
+				}
+			}
+			/*
+				The preserved items are part of the map even though the editor
+				does not model them: losing one silently is exactly the bug this
+				comparison exists to catch, so compare them by type, id and body.
+			*/
+			if(!bExpectExtras)
+			{
+				// nothing to compare: the target does not carry them at all
+			}
+			else if(A.m_vExtras.size() != B.m_vExtras.size())
+			{
+				Error = base::Format("preserved item count %zu -> %zu", A.m_vExtras.size(), B.m_vExtras.size());
+				return false;
+			}
+			for(std::size_t i = 0; bExpectExtras && i < A.m_vExtras.size() && i < B.m_vExtras.size(); i++)
+			{
+				if(A.m_vExtras[i].m_Type != B.m_vExtras[i].m_Type || A.m_vExtras[i].m_ID != B.m_vExtras[i].m_ID)
+				{
+					Error = base::Format("preserved item %zu changed type/id (%d/%d -> %d/%d)", i,
+						A.m_vExtras[i].m_Type, A.m_vExtras[i].m_ID, B.m_vExtras[i].m_Type, B.m_vExtras[i].m_ID);
+					return false;
+				}
+				if(A.m_vExtras[i].m_Data != B.m_vExtras[i].m_Data)
+				{
+					Error = base::Format("preserved item %zu (type %d) changed body", i, A.m_vExtras[i].m_Type);
 					return false;
 				}
 			}
@@ -414,7 +477,7 @@ namespace game
 					continue;
 				}
 
-				if(!CompareMaps(Source, Reloaded, Error))
+				if(!CompareMaps(Source, Reloaded, Error, Profile.HasExtension(ext_extras)))
 				{
 					std::cout << "  FAIL " << Profile.m_pId << " structure: " << Error << "\n";
 					Failures++;
@@ -446,7 +509,7 @@ namespace game
 					continue;
 				}
 				CMap Twice;
-				if(!Twice.LoadFromBytes(Again, &Error) || !CompareMaps(Source, Twice, Error))
+				if(!Twice.LoadFromBytes(Again, &Error) || !CompareMaps(Source, Twice, Error, Profile.HasExtension(ext_extras)))
 				{
 					std::cout << "  FAIL " << Profile.m_pId << " second reload: " << Error << "\n";
 					Failures++;
@@ -497,6 +560,88 @@ namespace game
 					{
 						std::cout << base::Format("  ok   %-6s %6zu bytes -> package round trip ok\n", "unitwp", Packed.size());
 					}
+				}
+			}
+
+			/*
+				A Uniteed project is the same container, and the point of it is
+				that the editor state and the autorules come back exactly as they
+				went in - a project that loses its camera or its rules is not a
+				project. The check is in memory, so it does not depend on where
+				the application data directory happens to be.
+			*/
+			{
+				Checks++;
+				bool bOk = true;
+				CProject Project;
+				Project.InitNew("selftest-project", "ddnet07");
+				Project.m_Map = Source;
+				Project.m_Meta.m_Author = "unit test";
+				Project.m_Meta.m_Description = "round trip";
+				Project.m_Meta.m_Target = "ddnet06";
+				Project.m_Meta.m_Assets = "ddnet";
+				// a distinctive editor state, so a dropped or defaulted key shows
+				base::json Editor = base::json::object();
+				Editor["zoom"] = 3.5;
+				Editor["center_x"] = 1234.5;
+				Editor["grid"] = true;
+				Editor["allow_extensions"] = true;
+				Editor["brush_size"] = 4;
+				Editor["a_key_from_a_newer_build"] = "carried over";
+				Project.m_Editor = std::move(Editor);
+
+				rules::CRuleSet Rules;
+				Rules.m_Name = "selftest rules";
+				rules::CConfiguration Config;
+				Config.m_Name = "config";
+				rules::CRun Run;
+				Run.m_ReadSlot = 6;
+				rules::CIndexRule Rule;
+				Rule.m_Tile = 3;
+				Run.m_vIndexRules.push_back(Rule);
+				Config.m_vRuns.push_back(Run);
+				Rules.m_vConfigs.push_back(Config);
+				Project.m_Rules = rules::ToJson(Rules);
+
+				byte_vector Bytes;
+				std::string Error;
+				CProject Back;
+				if(!Project.SaveToBytes(Bytes, &Error))
+				{
+					std::cout << "  FAIL unitwp project: " << Error << "\n";
+					bOk = false;
+				}
+				else if(!CUnitwpPackage::IsPackage(Bytes) || std::memcmp(Bytes.data(), "UNITWP", 6) != 0)
+					bOk = false;
+				else if(!Back.LoadFromBytes(Bytes, &Error))
+					bOk = false;
+				else
+				{
+					const base::json &BackEditor = Back.m_Editor;
+					bOk = bOk && Back.m_Meta.m_Name == "selftest-project" &&
+						Back.m_Meta.m_Author == "unit test" &&
+						Back.m_Meta.m_Description == "round trip" &&
+						Back.m_Meta.m_Target == "ddnet06" &&
+						Back.m_Meta.m_Assets == "ddnet" &&
+						Back.m_Editor["zoom"].as_double(0.0) == 3.5 &&
+						Back.m_Editor["center_x"].as_double(0.0) == 1234.5 &&
+						Back.m_Editor["grid"].as_bool(false) &&
+						Back.m_Editor["allow_extensions"].as_bool(false) &&
+						Back.m_Editor["brush_size"].as_int(0) == 4 &&
+						BackEditor["a_key_from_a_newer_build"].as_string() == "carried over" &&
+						Back.m_Rules["autorules"].as_int(0) > 0 &&
+						Back.m_Rules["name"].as_string() == "selftest rules" &&
+						Back.m_Map.m_vGroups.size() == Source.m_vGroups.size();
+					// the unknown key is folded back in when the project is saved
+					base::json Merged = Back.MergeEditorState(base::json::object());
+					bOk = bOk && Merged["a_key_from_a_newer_build"].as_string() == "carried over";
+				}
+				if(bOk)
+					std::cout << "  ok   unitwp a project keeps its meta, its session and its rules\n";
+				else
+				{
+					std::cout << "  FAIL unitwp a project did not round trip\n";
+					Failures++;
 				}
 			}
 
@@ -713,6 +858,352 @@ namespace game
 			}
 		}
 
+		// --------------------------------------------------- quad at frame time
+		/*
+			A quad is picked where the position envelope has moved it, not where
+			it is stored. The editor draws the animated points, so testing the
+			stored ones would select a quad that is not under the cursor - the
+			exact complaint that a quad could be clicked but was "not there".
+
+			The check builds a quad whose position envelope translates it by a
+			whole quad width, then confirms that the animated point of the
+			first frame is inside the animated outline and the stored point is
+			not: the two disagree, which is what makes the test meaningful.
+		*/
+		{
+			Checks++;
+			CMap Map;
+			Map.InitNew("quad-env");
+			CGroup &Group = Map.m_vGroups.back();
+			CLayer &Layer = Map.NewQuadLayer(Group, -1);
+			Layer.m_vQuads.emplace_back();
+			CQuad &Quad = Layer.m_vQuads.back();
+			// a 100 by 100 quad at the origin, top left / top right / bottom
+			// left / bottom right in the stored order
+			const int aCorners[4][2] = {{0, 0}, {100, 0}, {0, 100}, {100, 100}};
+			for(int i = 0; i < 4; i++)
+			{
+				Quad.m_aPoints[i].x = aCorners[i][0] * 1024;
+				Quad.m_aPoints[i].y = aCorners[i][1] * 1024;
+			}
+
+			// a position envelope that moves the quad by 1000 units in x over
+			// one second, so the animated and the stored quad do not overlap
+			CEnvelope Envelope;
+			Envelope.m_Channels = 3;
+			CEnvelopePoint A;
+			A.m_Time = 0;
+			A.m_Curvetype = CURVETYPE_LINEAR;
+			A.m_aValues[0] = 0;
+			A.m_aValues[1] = 0;
+			A.m_aValues[2] = 0;
+			CEnvelopePoint B;
+			B.m_Time = 1000;
+			B.m_Curvetype = CURVETYPE_LINEAR;
+			B.m_aValues[0] = 1000 * 1024;
+			B.m_aValues[1] = 0;
+			B.m_aValues[2] = 0;
+			Envelope.m_vPoints.push_back(A);
+			Envelope.m_vPoints.push_back(B);
+			Map.m_vEnvelopes.push_back(Envelope);
+			Quad.m_PosEnv = static_cast<int>(Map.m_vEnvelopes.size()) - 1;
+
+			// the animated points at 0.5s: the envelope has moved the quad half
+			// way, so its outline is [500, 600] x [0, 100] and the stored point
+			// (50, 50) is outside it
+			CEnvelopeSample Sample;
+			EvaluateEnvelope(Map.m_vEnvelopes[static_cast<std::size_t>(Quad.m_PosEnv)], 0.5f, Sample, 3);
+			const base::vec2 Offset(Sample[0], Sample[1]);
+			base::vec2 aAnimated[4];
+			for(int i = 0; i < 4; i++)
+			{
+				aAnimated[i] = base::vec2(static_cast<float>(aCorners[i][0]), static_cast<float>(aCorners[i][1])) + Offset;
+			}
+
+			// the test the editor uses for the hover, on both point sets: the
+			// corners go in in perimeter order, the stored order traces a
+			// bowtie and would report the wrong half
+			base::vec2 aAnimatedOutline[4];
+			base::vec2 aStoredOutline[4];
+			for(int i = 0; i < 4; i++)
+			{
+				aAnimatedOutline[i] = aAnimated[CQuad::s_aPerimeter[i]];
+				aStoredOutline[i] = base::vec2(static_cast<float>(aCorners[CQuad::s_aPerimeter[i]][0]),
+					static_cast<float>(aCorners[CQuad::s_aPerimeter[i]][1]));
+			}
+			const bool bHitsAnimated = base::PointInQuad(aAnimatedOutline, base::vec2(550.0f, 50.0f));
+			const bool bHitsStored = base::PointInQuad(aStoredOutline, base::vec2(550.0f, 50.0f));
+
+			bool bOk = bHitsAnimated && !bHitsStored;
+			// and the offset is really the envelope's, not a constant
+			bOk = bOk && std::abs(Offset.x - 500.0f) < 1.0f && std::abs(Offset.y) < 0.001f;
+			// the stored point of the same quad is inside the stored outline,
+			// so the two sets really do disagree about this point
+			bOk = bOk && base::PointInQuad(aStoredOutline, base::vec2(50.0f, 50.0f));
+
+			if(bOk)
+				std::cout << "  ok   quad   a quad is picked where its envelope has moved it\n";
+			else
+			{
+				std::cout << "  FAIL quad   a quad is picked where it is stored, not where it is drawn\n";
+				Failures++;
+			}
+		}
+
+		// --------------------------------------------------------- rule engine
+		/*
+			The autorules engine is the one part of the editor that turns user
+			authored data into tiles without anybody clicking, so it is pinned
+			down with a rule whose outcome is unambiguous: a hookable tile is
+			written wherever the game layer has a death tile to its left.
+
+			It also pins the two things that are easy to get wrong: the modular
+			and positional conditions are ANDed rather than ORed, and the same
+			seed on the same input produces the same output, which is what the
+			command line and any scripted run rely on.
+		*/
+		{
+			Checks++;
+			rules::CRuleSet Rules;
+			Rules.m_Name = "selftest";
+			rules::CConfiguration Config;
+			Config.m_Name = "config";
+			rules::CRun Run;
+			Run.m_ReadSlot = 6;
+			Run.m_bCopy = true;
+			{
+				rules::CIndexRule Rule;
+				Rule.m_Tile = 1;
+				Rule.m_Name = "hookable";
+				rules::CPosRule When;
+				When.m_X = 1;
+				When.m_Mode = rules::pos_rule_mode::index;
+				rules::CIndexInfo Info;
+				Info.m_Tile = 2; // death
+				When.m_vIndices.push_back(Info);
+				Rule.m_vRules.push_back(When);
+				// only on even columns, and never on an empty read cell
+				rules::CModuloRule Modulo;
+				Modulo.m_ModX = 2;
+				Modulo.m_ModY = 1;
+				Rule.m_vModuloRules.push_back(Modulo);
+				// Nothing is skipped: an empty read tile still has to be
+				// written at (2,0), and the conditions above decide where the
+				// rule fires, not the emptiness of the cell it writes into.
+				Rule.m_bSkipEmpty = false;
+				Run.m_vIndexRules.push_back(Rule);
+			}
+			Config.m_vRuns.push_back(Run);
+			Rules.m_vConfigs.push_back(Config);
+
+			constexpr int Width = 8, Height = 1;
+			std::vector<std::uint8_t> ReadTiles(Width * Height, 0), ReadFlags(Width * Height, 0);
+			std::vector<std::uint8_t> TargetTiles(Width * Height, 0), TargetFlags(Width * Height, 0);
+			/*
+				Death at (3,0) and (5,0). The rule fires at (2,0) and (4,0),
+				because in both cases the cell to the right is death and the
+				column is even; it does not fire at (0,0) or (6,0), which are
+				even but have no death to the right, nor at (3,0), which is odd.
+			*/
+			ReadTiles[3] = 2;
+			ReadTiles[5] = 2;
+
+			const rules::CRuleLayer Target{TargetTiles.data(), TargetFlags.data(), Width, Height};
+			std::vector<rules::CRuleLayer> Read;
+			Read.resize(7);
+			Read[6] = rules::CRuleLayer{ReadTiles.data(), ReadFlags.data(), Width, Height};
+
+			const rules::CApplyResult First = rules::Apply(Rules, 0, Target, Read, 12345);
+			bool bOk = First.m_bOk && TargetTiles[2] == 1 && TargetTiles[4] == 1 &&
+				TargetTiles[0] == 0 && TargetTiles[1] == 0 && TargetTiles[3] == 0 &&
+				TargetTiles[5] == 0 && TargetTiles[6] == 0 && TargetTiles[7] == 0;
+
+			// the same seed and the same input are the same output
+			std::vector<std::uint8_t> AgainTiles(Width * Height, 0), AgainFlags(Width * Height, 0);
+			const rules::CRuleLayer Again{AgainTiles.data(), AgainFlags.data(), Width, Height};
+			const rules::CApplyResult Second = rules::Apply(Rules, 0, Again, Read, 12345);
+			bOk = bOk && Second.m_bOk && AgainTiles == TargetTiles;
+
+			// a rule set with no read layer fails closed rather than writing
+			std::vector<rules::CRuleLayer> Empty;
+			std::vector<std::uint8_t> NoReadTiles(Width * Height, 0), NoReadFlags(Width * Height, 0);
+			const rules::CRuleLayer NoRead{NoReadTiles.data(), NoReadFlags.data(), Width, Height};
+			const rules::CApplyResult Missing = rules::Apply(Rules, 0, NoRead, Empty, 7);
+			bOk = bOk && Missing.m_bOk && NoReadTiles[2] == 0;
+
+			// the JSON round trip, which is what a project stores
+			std::string JsonError;
+			const rules::CRuleSet Back = rules::FromJson(rules::ToJson(Rules), &JsonError);
+			bOk = bOk && JsonError.empty() && Back.m_vConfigs.size() == 1 && Back.RuleCount() == 1 &&
+				Back.m_vConfigs[0].m_vRuns[0].m_vIndexRules[0].m_vRules.size() == 1 &&
+				Back.m_vConfigs[0].m_vRuns[0].m_vIndexRules[0].m_vModuloRules.size() == 1;
+
+			if(bOk)
+				std::cout << "  ok   rules  a rule set writes where its conditions hold, and repeats\n";
+			else
+			{
+				std::cout << "  FAIL rules  the rule engine or its JSON round trip is off\n";
+				Failures++;
+			}
+		}
+
+		// ------------------------------------------------- bezier envelope export
+		/*
+			The requirement this pins: a custom curve is written the Teeworlds
+			way - version 3 envelope points with the tangents packed into the 88
+			byte point - for *every* target, including DDRaceNetwork, which has a
+			separate UUID item for them. Anything else would make a curve depend
+			on which client the map was exported for.
+		*/
+		{
+			Checks++;
+			CMap Map;
+			Map.InitNew("bezier");
+			CEnvelope Envelope;
+			Envelope.m_Channels = 4;
+			Envelope.m_Name = "curve";
+			CEnvelopePoint A;
+			A.m_Time = 0;
+			A.m_Curvetype = CURVETYPE_LINEAR;
+			for(int c = 0; c < 4; c++)
+				A.m_aValues[c] = c * 100;
+			CEnvelopePoint B;
+			B.m_Time = 1500;
+			B.m_Curvetype = CURVETYPE_BEZIER;
+			for(int c = 0; c < 4; c++)
+				B.m_aValues[c] = 1024 - c * 100;
+			// distinctive tangents, so a dropped or reordered tangent is visible
+			for(int c = 0; c < 4; c++)
+			{
+				B.m_Bezier.m_aInTangentdx[c] = -100 * (c + 1);
+				B.m_Bezier.m_aInTangentdy[c] = -200 * (c + 1);
+				B.m_Bezier.m_aOutTangentdx[c] = 300 * (c + 1);
+				B.m_Bezier.m_aOutTangentdy[c] = 400 * (c + 1);
+			}
+			Envelope.m_vPoints.push_back(A);
+			Envelope.m_vPoints.push_back(B);
+			Map.m_vEnvelopes.push_back(Envelope);
+
+			bool bOk = true;
+			std::string Why;
+			for(const map_target Target : AllTargets())
+			{
+				byte_vector Bytes;
+				CMap Back;
+				std::string Error;
+				if(!Map.SaveToBytes(Bytes, Target, &Error) || !Back.LoadFromBytes(Bytes, &Error))
+				{
+					bOk = false;
+					Why = base::Format("%s: %s", GetTargetProfile(Target).m_pId, Error.c_str());
+					break;
+				}
+				if(Back.m_vEnvelopes.size() != 1 || Back.m_vEnvelopes[0].m_vPoints.size() != 2)
+				{
+					bOk = false;
+					Why = base::Format("%s: the envelope did not come back", GetTargetProfile(Target).m_pId);
+					break;
+				}
+				const CEnvelopePoint &Point = Back.m_vEnvelopes[0].m_vPoints[1];
+				if(Point.m_Curvetype != CURVETYPE_BEZIER)
+				{
+					bOk = false;
+					Why = base::Format("%s: the curve type is %d, not bezier", GetTargetProfile(Target).m_pId, Point.m_Curvetype);
+					break;
+				}
+				for(int c = 0; c < 4; c++)
+					if(Point.m_Bezier.m_aInTangentdx[c] != B.m_Bezier.m_aInTangentdx[c] ||
+						Point.m_Bezier.m_aInTangentdy[c] != B.m_Bezier.m_aInTangentdy[c] ||
+						Point.m_Bezier.m_aOutTangentdx[c] != B.m_Bezier.m_aOutTangentdx[c] ||
+						Point.m_Bezier.m_aOutTangentdy[c] != B.m_Bezier.m_aOutTangentdy[c])
+					{
+						bOk = false;
+						Why = base::Format("%s: channel %d lost its tangents", GetTargetProfile(Target).m_pId, c);
+						break;
+					}
+				if(!bOk)
+					break;
+			}
+
+			if(bOk)
+				std::cout << "  ok   curve  a custom bezier curve survives every target, Teeworlds style\n";
+			else
+			{
+				std::cout << "  FAIL curve  " << Why << "\n";
+				Failures++;
+			}
+		}
+
+		// ------------------------------------------------- quad corner colours
+		/*
+			A quad has four corner colours, and the picker aims at one of them.
+			Colouring "the quad" used to write all four at once, which made a
+			gradient impossible to build; this pins the two behaviours the
+			editor offers: one corner, or all four together.
+		*/
+		{
+			Checks++;
+			CMap Map;
+			Map.InitNew("corner-colour");
+			CGroup &Group = Map.m_vGroups.back();
+			CLayer &Layer = Map.NewQuadLayer(Group, -1);
+			Layer.m_vQuads.emplace_back();
+			CQuad &Quad = Layer.m_vQuads.back();
+			for(int i = 0; i < 4; i++)
+			{
+				Quad.m_aColors[i].r = 10;
+				Quad.m_aColors[i].g = 20;
+				Quad.m_aColors[i].b = 30;
+				Quad.m_aColors[i].a = 40;
+			}
+
+			// one corner: only that one changes
+			const CColor One{200, 100, 50, 255};
+			Quad.m_aColors[1] = One;
+			bool bOk = Quad.m_aColors[1].r == One.r && Quad.m_aColors[0].r == 10 && Quad.m_aColors[2].r == 10 && Quad.m_aColors[3].r == 10;
+
+			// all four: every corner takes the colour, which is what the
+			// "all corners" target and the layer panel swatch do
+			const CColor All{7, 8, 9, 10};
+			for(int i = 0; i < 4; i++)
+				Quad.m_aColors[i] = All;
+			for(int i = 0; i < 4; i++)
+				bOk = bOk && Quad.m_aColors[i].r == All.r && Quad.m_aColors[i].g == All.g &&
+					Quad.m_aColors[i].b == All.b && Quad.m_aColors[i].a == All.a;
+
+			// and both survive an export, which is what makes them real edits
+			for(const map_target Target : AllTargets())
+			{
+				byte_vector Bytes;
+				CMap Back;
+				std::string Error;
+				if(!Map.SaveToBytes(Bytes, Target, &Error) || !Back.LoadFromBytes(Bytes, &Error))
+				{
+					bOk = false;
+					break;
+				}
+				bool bFound = false;
+				for(const CGroup &BackGroup : Back.m_vGroups)
+					for(const CLayer &BackLayer : BackGroup.m_vLayers)
+						for(const CQuad &BackQuad : BackLayer.m_vQuads)
+							for(const CColor &Corner : BackQuad.m_aColors)
+								if(Corner.r == All.r && Corner.g == All.g && Corner.b == All.b && Corner.a == All.a)
+									bFound = true;
+				if(!bFound)
+				{
+					bOk = false;
+					break;
+				}
+			}
+
+			if(bOk)
+				std::cout << "  ok   quad   a corner colour is set on its own and survives an export\n";
+			else
+			{
+				std::cout << "  FAIL quad   a corner colour is not independent of the other corners\n";
+				Failures++;
+			}
+		}
+
 		// ----------------------------------------------------------- envelopes
 		/*
 			The preview colours depend on the evaluator, and the reference
@@ -803,10 +1294,233 @@ namespace game
 			}
 		}
 
+		/*
+			The idle engine of the windowed editor: the model layer, the agents
+			and the screenshot mode all drive this same object. The checks here
+			are the ones that do not need a map file, so a regression in a tool
+			is caught by `--selftest` rather than by looking at a screenshot.
+		*/
+		{
+			Checks++;
+			CEditor Editor;
+			Editor.InitHeadless();
+			bool bOk = true;
+
+			// the toolbox has to know which tools the canvas can use
+			bOk = bOk && Editor.Mode() == edit_mode::tiles;
+
+			// the drag order of a dock is state, so reordering it must stick
+			std::vector<CEditor::dock_panel> Order = Editor.Tabs(dock_slot::right_upper);
+			bOk = bOk && Order.size() >= 2 && Order[0] == CEditor::dock_panel::tiles;
+			std::swap(Order[0], Order[1]);
+			Editor.Tabs(dock_slot::right_upper) = Order;
+			bOk = bOk && Editor.Tabs(dock_slot::right_upper)[1] == CEditor::dock_panel::tiles;
+			// the layer tree is the lower docker, which is where Krita keeps its
+			// layer stack, and nothing else lives there by default
+			const std::vector<CEditor::dock_panel> &Lower = Editor.Tabs(dock_slot::right_lower);
+			bOk = bOk && Lower.size() == 1 && Lower[0] == CEditor::dock_panel::layers;
+			bOk = bOk && Editor.DockPanel(dock_slot::right_lower) == CEditor::dock_panel::layers;
+
+			/*
+				The panel buttons of the top row work the same state the tabs
+				do: a workspace that is showing folds its docker away, one that
+				is hidden comes back to the docker it belongs to. It is checked
+				here because it is state, not drawing.
+			*/
+			bOk = bOk && Editor.PanelShown(CEditor::dock_panel::layers) &&
+				Editor.PanelShown(CEditor::dock_panel::tiles) && !Editor.PanelShown(CEditor::dock_panel::rules);
+			Editor.TogglePanel(CEditor::dock_panel::layers);
+			bOk = bOk && !Editor.PanelShown(CEditor::dock_panel::layers) &&
+				Editor.DockPanel(dock_slot::right_lower) == CEditor::dock_panel::layers;
+			Editor.TogglePanel(CEditor::dock_panel::layers);
+			bOk = bOk && Editor.PanelShown(CEditor::dock_panel::layers);
+			Editor.TogglePanel(CEditor::dock_panel::rules);
+			bOk = bOk && Editor.PanelShown(CEditor::dock_panel::rules) &&
+				Editor.DockPanel(dock_slot::right_upper) == CEditor::dock_panel::rules &&
+				!Editor.PanelShown(CEditor::dock_panel::tiles);
+			// the one that is showing folds away where it is, rather than
+			// being moved back to the docker it started in
+			Editor.TogglePanel(CEditor::dock_panel::rules);
+			bOk = bOk && !Editor.PanelShown(CEditor::dock_panel::rules) &&
+				Editor.DockPanel(dock_slot::right_upper) == CEditor::dock_panel::rules;
+			bOk = bOk && CEditor::HomeSlot(CEditor::dock_panel::layers) == dock_slot::right_lower &&
+				CEditor::HomeSlot(CEditor::dock_panel::rules) == dock_slot::right_upper;
+			// and the tool strip can be folded away with them
+			bOk = bOk && Editor.ToolBoxShown();
+			Editor.ToggleToolBox();
+			bOk = bOk && !Editor.ToolBoxShown();
+			Editor.ToggleToolBox();
+
+			/*
+				The menu of the title bar row. Opening one is what stops the
+				canvas from answering the mouse, so what matters here is that
+				the state is the editor's and not the drawing code's: the
+				offscreen mode opens a menu through exactly this.
+			*/
+			bOk = bOk && Editor.Menu() == CEditor::menu_id::none;
+			Editor.OpenMenu(CEditor::menu_id::files);
+			bOk = bOk && Editor.Menu() == CEditor::menu_id::files;
+			Editor.OpenMenu(CEditor::menu_id::none);
+
+			// the image and sound operations are part of the model, so they run
+			// without a renderer: an image that is added is listed, embedding a
+			// mapres one is refused when the name does not exist, and removing
+			// an image renumbers the layers that referenced it
+			std::string Error;
+			const int Added = Editor.AddImageRGBA("probe", 2, 2, byte_vector(16, std::byte{0xff}), &Error);
+			bOk = bOk && Added == 1 && Editor.ImageCount() == 2 && Error.empty();
+			bOk = bOk && Editor.FindImage("probe") == 1;
+			const int Bad = Editor.AddImageFromMapres("there_is_no_such_tileset", &Error);
+			bOk = bOk && Bad == -1 && !Error.empty();
+			bOk = bOk && Editor.RemoveImage(0, &Error) && Editor.ImageCount() == 1 &&
+				Editor.FindImage("probe") == 0;
+			// a layer that used the removed image has no image rather than a
+			// stale index into the list that shifted
+			for(const CGroup &Group : Editor.Map().m_vGroups)
+				for(const CLayer &Layer : Group.m_vLayers)
+					bOk = bOk && Layer.m_Image <= 0;
+
+			// a sound is embedded by definition, and its layer names it
+			const int Sound = Editor.AddSoundData("probe", byte_vector(64, std::byte{0}), true, &Error);
+			bOk = bOk && Sound == 0 && Editor.SoundCount() == 1 && Editor.SoundReferenceCount(0) == 0;
+			Editor.AddSoundLayerOp(0);
+			bOk = bOk && Editor.SoundLayerIndex() == 0 && Editor.SoundSourceCount() == 0;
+			bOk = bOk && Editor.AddSoundSource(100.0f, 200.0f) == 0 && Editor.SoundSourceCount() == 1;
+			bOk = bOk && Editor.SoundReferenceCount(0) == 1;
+			bOk = bOk && Editor.RemoveSound(0, &Error) && Editor.SoundCount() == 0;
+
+			if(bOk)
+				std::cout << "  ok   editor  the toolbox, the dock order and the asset model work without a window\n";
+			else
+			{
+				std::cout << "  FAIL editor  a model operation did not behave\n";
+				Failures++;
+			}
+		}
+
+		/*
+			The window furniture of a window with a drawn title bar. Nothing
+			here needs a display: the policy is a plain function of the chrome
+			the editor publishes, which is the point of keeping it out of the
+			window code.
+		*/
+		{
+			Checks++;
+			bool bOk = true;
+			const base::vec2 Size(1600.0f, 900.0f);
+
+			engine::CClientChrome Chrome;
+			Chrome.m_bEnabled = true;
+			Chrome.m_HeaderHeight = 40.0f;
+			Chrome.m_Edge = 4.0f;
+			// a "Save as" button in the bar, and the close button in the corner
+			Chrome.m_vControls.push_back(
+				base::rect(base::vec2(100.0f, 8.0f), base::vec2(160.0f, 32.0f)));
+			Chrome.m_vControls.push_back(
+				base::rect(base::vec2(1562.0f, 4.0f), base::vec2(1596.0f, 36.0f)));
+
+			const auto Region = [&](float x, float y) {
+				return engine::HitTestChrome(Chrome, Size, base::vec2(x, y));
+			};
+			// the empty part of the bar is what the window is grabbed by
+			bOk = bOk && Region(800.0f, 20.0f) == engine::window_region::drag;
+			// the canvas below it is not furniture
+			bOk = bOk && Region(800.0f, 300.0f) == engine::window_region::normal;
+			// a button stays a button, wherever it is in the bar
+			bOk = bOk && Region(120.0f, 20.0f) == engine::window_region::normal;
+			// the four edges, the four corners, and the close button that sits
+			// in the top right one: it wins over the corner it is inside
+			bOk = bOk && Region(700.0f, 1.0f) == engine::window_region::resize_top;
+			bOk = bOk && Region(700.0f, 899.0f) == engine::window_region::resize_bottom;
+			bOk = bOk && Region(0.0f, 400.0f) == engine::window_region::resize_left;
+			bOk = bOk && Region(1599.0f, 400.0f) == engine::window_region::resize_right;
+			bOk = bOk && Region(1.0f, 1.0f) == engine::window_region::resize_top_left;
+			bOk = bOk && Region(1599.0f, 1.0f) == engine::window_region::resize_top_right;
+			bOk = bOk && Region(1.0f, 899.0f) == engine::window_region::resize_bottom_left;
+			bOk = bOk && Region(1599.0f, 899.0f) == engine::window_region::resize_bottom_right;
+			// a window that kept its system title bar has no furniture of its
+			// own at all
+			Chrome.m_bEnabled = false;
+			bOk = bOk && Region(800.0f, 20.0f) == engine::window_region::normal;
+			bOk = bOk && Region(0.0f, 400.0f) == engine::window_region::normal;
+
+			if(bOk)
+				std::cout << "  ok   chrome  the drawn title bar drags, resizes and keeps its buttons\n";
+			else
+			{
+				std::cout << "  FAIL chrome  the window hit test is wrong\n";
+				Failures++;
+			}
+		}
+
+		/*
+			The vector icons. The tool strip gets its pictures from SVG
+			documents, so the parser and the rasterizer have to work on a
+			machine with no window: the same drawing is rasterized at two sizes
+			and the covered area has to grow with the square of the size, which
+			is what "the texture follows the display" means in practice.
+		*/
+		{
+			Checks++;
+			bool bOk = true;
+			const storage::path Icons = storage::GetDataDirectory() / "icons";
+
+			// the size policy: the layout's size times the display scale
+			bOk = bOk && engine::svg::RasterSize(18.0f, 1.0f) == 18;
+			bOk = bOk && engine::svg::RasterSize(18.0f, 2.0f) == 36;
+			bOk = bOk && engine::svg::RasterSize(18.0f, 0.0f) == 4;
+			bOk = bOk && engine::svg::RasterSize(600.0f, 4.0f) == 512;
+
+			engine::svg::CDocument Hand;
+			bOk = bOk && Hand.LoadFromFile(Icons / "pan.svg");
+			bOk = bOk && Hand.Loaded() && Hand.Size().x == 24.0f && Hand.Size().y == 24.0f;
+
+			const auto Coverage = [](const byte_vector &Pixels) {
+				double Sum = 0.0;
+				for(std::size_t i = 3; i < Pixels.size(); i += 4)
+					Sum += static_cast<double>(std::to_integer<unsigned char>(Pixels[i]));
+				return Sum / 255.0;
+			};
+
+			byte_vector Small;
+			byte_vector Large;
+			bOk = bOk && Hand.Rasterize(24, 24, Small) && Small.size() == 24u * 24u * 4u;
+			bOk = bOk && Hand.Rasterize(48, 48, Large) && Large.size() == 48u * 48u * 4u;
+			const double SmallCoverage = Coverage(Small);
+			const double LargeCoverage = Coverage(Large);
+			// four times the pixels, so about four times the covered area
+			bOk = bOk && SmallCoverage > 20.0 && LargeCoverage > 3.6 * SmallCoverage &&
+				LargeCoverage < 4.4 * SmallCoverage;
+
+			// every icon of the chrome has to parse and to cover something
+			for(const char *pName : {"pan", "brush", "bucket", "eraser", "marquee", "frame", "grid", "keyboard",
+					"toolbox", "layers", "tiles", "assets", "envelope", "rules"})
+			{
+				engine::svg::CDocument Icon;
+				if(!Icon.LoadFromFile(Icons / (std::string(pName) + ".svg")))
+				{
+					bOk = false;
+					continue;
+				}
+				byte_vector Pixels;
+				if(!Icon.Rasterize(16, 16, Pixels) || Coverage(Pixels) < 1.5)
+					bOk = false;
+			}
+
+			if(bOk)
+				std::cout << base::Format("  ok   svg     the icons parse and rasterize at %dx%d and %dx%d"
+					" (%.0f and %.0f covered pixels)\n", 24, 24, 48, 48, SmallCoverage, LargeCoverage);
+			else
+			{
+				std::cout << base::Format("  FAIL svg     an icon did not rasterize (%.0f and %.0f covered pixels)\n",
+					SmallCoverage, LargeCoverage);
+				Failures++;
+			}
+		}
+
 		std::cout << base::Format("\n%d checks, %d failures\n", Checks, Failures);
 		return Failures == 0 ? 0 : 1;
 	}
-
 	int RunCommandLine(const std::vector<std::string> &Arguments)
 	{
 		CArguments Args;
@@ -818,11 +1532,26 @@ namespace game
 
 		if(Args.m_Command.empty() || Args.m_Command == "--help" || Args.m_Command == "-h")
 		{
-			if(Args.m_Command.empty() && Args.m_vPositional.empty())
-				return -1; // start the editor
+			// --help and -h print the usage, whatever follows them
+			if(Args.m_Command == "--help" || Args.m_Command == "-h")
+			{
+				PrintUsage();
+				return 0;
+			}
+			/*
+				No command at all: nothing to do is the editor with no map, and
+				a single file is the editor opened on it, which is what the
+				usage line promises (`uniteed map.map`). Anything more is a
+				command line that was mistyped.
+			*/
+			if(Args.m_vPositional.size() <= 1)
+				return -1;
 			PrintUsage();
 			return 0;
 		}
+
+		if(Args.m_Command == "--gui")
+			return -1; // the window, which main() starts
 
 		if(Args.m_Command == "--targets")
 		{
@@ -959,24 +1688,12 @@ namespace game
 			if(Args.m_Embed)
 			{
 				SetupResourcePaths(VersionIdForTarget(*TargetFromId(Args.m_TargetId)));
+				Package.AttachMapResources();
+				// the helper skips a mapres it cannot find, which for a person
+				// looking at the output is worth saying out loud
 				for(const CImage &Image : Map.m_vImages)
-				{
-					if(Image.IsEmbedded())
-						continue;
-					const std::optional<storage::path> File = FindImageFile(Image.m_Name);
-					if(!File.has_value())
-					{
+					if(!Image.IsEmbedded() && Package.FindResource("mapres/" + Image.m_Name + ".png") == nullptr)
 						std::cout << "warning: no mapres file for image '" << Image.m_Name << "'\n";
-						continue;
-					}
-					const std::optional<byte_vector> Data = storage::read(*File);
-					if(!Data.has_value())
-						continue;
-					CUnitwpResource Resource;
-					Resource.m_Name = "mapres/" + File->filename().string();
-					Resource.m_Data = *Data;
-					Package.m_vResources.push_back(std::move(Resource));
-				}
 				std::cout << "embedded " << Package.m_vResources.size() << " resources\n";
 			}
 

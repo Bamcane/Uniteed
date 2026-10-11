@@ -39,6 +39,77 @@ namespace storage
 		return libsugarx::get_data_home_directory() / GAME_NAME;
 	}
 
+	namespace
+	{
+		// an environment override, an absolute path the caller has already
+		// resolved, or the application data directory plus the leaf name
+		path SubDirectory(const char *pEnv, const char *pLeaf)
+		{
+			if(const char *pValue = std::getenv(pEnv))
+				if(*pValue != '\0')
+					return path(pValue);
+			return GetAppDataDirectory() / pLeaf;
+		}
+	} // namespace
+
+	path GetProjectsDirectory() { return SubDirectory("UNITEED_PROJECTS_DIR", "projects"); }
+	path GetExportDirectory() { return SubDirectory("UNITEED_EXPORT_DIR", "export"); }
+
+	path GetExportDirectoryForTarget(const std::string &TargetId)
+	{
+		const path Directory = GetExportDirectory() / TargetId;
+		std::error_code Error;
+		std::filesystem::create_directories(Directory, Error);
+		return Directory;
+	}
+
+	path ExportPath(const std::string &TargetId, std::string_view ProjectName)
+	{
+		std::string Name = SanitiseName(ProjectName);
+		// a caller that hands in "demo.unitwp" means the project demo, not a
+		// file named "demo.unitwp.ddnet06.map"
+		const std::size_t Dot = Name.find_last_of('.');
+		if(Dot != std::string::npos && Dot > 0)
+			Name = Name.substr(0, Dot);
+		return GetExportDirectoryForTarget(TargetId) / (Name + "." + TargetId + ".map");
+	}
+
+	path PackageExportPath(const std::string &TargetId, std::string_view ProjectName)
+	{
+		std::string Name = SanitiseName(ProjectName);
+		const std::size_t Dot = Name.find_last_of('.');
+		if(Dot != std::string::npos && Dot > 0)
+			Name = Name.substr(0, Dot);
+		return GetExportDirectoryForTarget(TargetId) / (Name + "." + TargetId + ".unitwp");
+	}
+
+	std::string SanitiseName(std::string_view Name)
+	{
+		std::string Out;
+		Out.reserve(Name.size());
+		for(const char Character : Name)
+		{
+			const unsigned char Byte = static_cast<unsigned char>(Character);
+			// keep it readable: only the bytes a filesystem may refuse go
+			if(Byte < 0x20 || Byte == 0x7f || Character == '/' || Character == '\\' ||
+				Character == ':' || Character == '*' || Character == '?' || Character == '"' ||
+				Character == '<' || Character == '>' || Character == '|')
+				Out.push_back('_');
+			else
+				Out.push_back(Character);
+		}
+		// a name that was nothing but separators, or a dot only name, is not a
+		// useful file name on any platform
+		const auto Begin = Out.find_first_not_of(" \t\r\n");
+		if(Begin == std::string::npos)
+			return "untitled";
+		const auto End = Out.find_last_not_of(" \t\r\n");
+		const std::string Trimmed = Out.substr(Begin, End - Begin + 1);
+		if(Trimmed == "." || Trimmed == "..")
+			return "untitled";
+		return Trimmed;
+	}
+
 	const path &GetDataDirectory()
 	{
 		if(!g_DataDirectory.empty())

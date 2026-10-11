@@ -1,10 +1,14 @@
 All content under 'data' is released under CC-BY-SA 3.0
 (https://creativecommons.org/licenses/by-sa/3.0/).
 
-Nothing here was drawn for Uniteed. These are the original assets of the
-Teeworlds and DDRaceNetwork projects, committed so that a build needs no
-checkout of them and the editor has the right art for every map format it
-supports.
+Nothing here was drawn for Uniteed, with one exception: the interface icons in
+data/icons are ours. They are the drawings of the tool strip, written for this
+project and covered by its MIT license, not by the art license below - see the
+License section of README.md.
+
+Everything else is the original assets of the Teeworlds and DDRaceNetwork
+projects, committed so that a build needs no checkout of them and the editor
+has the right art for every map format it supports.
 
 Both the mapres file names and the sample map names repeat across the three
 sets with different contents, so every set lives in its own directory and is
@@ -74,7 +78,11 @@ Which file came from where:
     data/versions/06/mapres/  teeworlds tag '0.6-endofline', data/mapres
     data/versions/07/mapres/  teeworlds tag '0.7.6', datasrc/mapres
     data/versions/ddnet/      ddnet, data/mapres
-    data/shared/editor/       teeworlds, data/editor and datasrc/editor
+    data/shared/editor/       teeworlds, data/editor and datasrc/editor,
+                              plus the DDRace entity and physics layer sheets
+                              from ddnet, data/editor (entities/Vanilla.png,
+                              entities/DDNet.png, front.png, tele.png,
+                              speedup.png, switch.png, tune.png)
     data/maps/06/             ddnet, data/maps
     data/maps/07/             ddnet, data/maps7
     data/maps/08/             teeworlds, data/maps

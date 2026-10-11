@@ -31,6 +31,9 @@ pkg_check_modules(FREETYPE freetype2)
 pkg_check_modules(HARFBUZZ harfbuzz)
 pkg_check_modules(ZLIB REQUIRED zlib)
 pkg_check_modules(ZSTD libzstd)
+# opusfile is only needed for the sound preview in the windowed editor, so it
+# is optional and the headless build never sees it
+pkg_check_modules(OPUSFILE opusfile)
 find_package(OpenSSL)
 
 # the window is SDL3, the text is FreeType with HarfBuzz shaping; without them
@@ -73,11 +76,23 @@ if(UNITEED_GUI)
   list(REMOVE_ITEM ENGINE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/main.cpp")
   list(APPEND SOURCES ${ENGINE_SOURCES} "src/game/editor/editor.cpp" "src/game/editor/editor_draw.cpp")
 else()
-  # the painter is the only engine file the command line still needs: it keeps
-  # the shared colour type, but it drags SDL3 in, so it stays out of this build
+  # The editor *model* is part of the command line too: the agent interface and
+  # the project commands drive the same CEditor the window does, only with
+  # m_pGraphics left null. What is left out is everything that needs a renderer:
+  # editor_draw.cpp draws the interface, editor_window.cpp draws the toolbar
+  # and the title bar, editor_envelope.cpp draws the curve workspace, and
+  # editor_textures.cpp uploads tile sheets.
   list(REMOVE_ITEM SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor_draw.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor_draw.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor_window.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor_envelope.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/game/editor/editor_textures.cpp")
+  # ...but the editor model still needs the input queue, and CInput has no SDL
+  # dependency of its own. The SVG rasterizer is pure C and has no renderer
+  # either, and the client chrome is a plain hit test, so the selftest can
+  # rasterize the icons and check the window furniture without a window.
+  list(APPEND SOURCES "src/game/editor/editor.cpp" "src/engine/input.cpp" "src/engine/svg.cpp"
+    "src/engine/chrome.cpp")
 endif()
 
 ##################### executable
@@ -87,13 +102,37 @@ target_include_directories(${GAME_NAME} PRIVATE src)
 target_include_directories(${GAME_NAME} PRIVATE external)
 target_include_directories(${GAME_NAME} PRIVATE external/libsugarx)
 target_include_directories(${GAME_NAME} PRIVATE external/stb)
+# nanosvg (the SVG parser and rasterizer behind the interface icons) is header
+# only: one translation unit defines the implementations, the rest only names it
+target_include_directories(${GAME_NAME} PRIVATE external/nanosvg/src)
+
+# The engine headers are included by the editor model, which the headless
+# build compiles too: engine/text.h needs ft2build.h and engine/painter.h needs
+# SDL_Texture. Only the *include* directories are needed there, not the
+# libraries, because the headless build links none of the drawing code.
+if(FREETYPE_FOUND)
+  target_include_directories(${GAME_NAME} PRIVATE ${FREETYPE_INCLUDE_DIRS})
+endif()
+if(HARFBUZZ_FOUND)
+  target_include_directories(${GAME_NAME} PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
+endif()
+if(SDL3_FOUND)
+  target_include_directories(${GAME_NAME} PRIVATE ${SDL3_INCLUDE_DIRS})
+endif()
 
 if(UNITEED_GUI)
-  target_include_directories(${GAME_NAME} PRIVATE ${SDL3_INCLUDE_DIRS})
-  target_include_directories(${GAME_NAME} PRIVATE ${FREETYPE_INCLUDE_DIRS})
-  target_include_directories(${GAME_NAME} PRIVATE ${HARFBUZZ_INCLUDE_DIRS})
   target_link_libraries(${GAME_NAME} PRIVATE ${SDL3_LIBRARIES} ${FREETYPE_LIBRARIES} ${HARFBUZZ_LIBRARIES})
   target_compile_definitions(${GAME_NAME} PRIVATE UNITEED_GUI=1)
+
+  # sound preview: opusfile decodes the map's .opus resources into the SDL3
+  # audio stream. The headless build must not get this, it does not link SDL3
+  if(OPUSFILE_FOUND)
+    target_compile_definitions(${GAME_NAME} PRIVATE UNITEED_AUDIO=1)
+    target_link_libraries(${GAME_NAME} PRIVATE ${OPUSFILE_LIBRARIES})
+    target_include_directories(${GAME_NAME} PRIVATE ${OPUSFILE_INCLUDE_DIRS})
+  else()
+    message(STATUS "opusfile not found, sound preview disabled")
+  endif()
 else()
   # the headless build still compiles glad, it is only used for the GL types
   target_compile_definitions(${GAME_NAME} PRIVATE UNITEED_GUI=0)

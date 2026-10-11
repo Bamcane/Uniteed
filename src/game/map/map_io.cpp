@@ -627,9 +627,20 @@ namespace game
 		if(!Writer.Open(Profile.m_DatafileVersion, pError))
 			return false;
 
+		/*
+			The extensions switch widens what is written. A target states what
+			it can carry on its own; the switch says the mapmaker knows what they
+			are doing and wants a DDRace feature in a target that does not define
+			it. Without the switch the target's own capability is the answer, and
+			the export warns about what that costs.
+		*/
+		const auto Allows = [&](map_extension Extension) {
+			return Profile.HasExtension(Extension) || (m_bAllowExtensions && (Extension == ext_physics));
+		};
+
 		// the preserved items reference the data table by index, so every
 		// original block goes in first and keeps its index
-		const bool WriteExtras = Profile.m_KeepExtras && !m_vExtras.empty();
+		const bool WriteExtras = Profile.HasExtension(ext_extras) && !m_vExtras.empty();
 		if(WriteExtras)
 		{
 			for(const byte_vector &Block : m_vRawData)
@@ -686,7 +697,7 @@ namespace game
 		}
 
 		// --------------------------------------------------------------- sounds
-		if(Profile.m_HasSounds)
+		if(Profile.HasExtension(ext_sounds))
 		{
 			for(std::size_t i = 0; i < m_vSounds.size(); i++)
 			{
@@ -724,11 +735,18 @@ namespace game
 			int InGroup = 0;
 			for(const CLayer &Layer : Group.m_vLayers)
 			{
-				// physics layers only exist in the DDRace format
-				if(Layer.IsPhysicsLayer() && !Profile.m_DdnetTilemap)
+				/*
+					A physics layer needs the DDRace tilemap item, so it stays
+					behind the target's ext_physics bit. A map that was loaded
+					from a DDRace file keeps its layers in the model even when
+					the editor is aimed at a vanilla target, and the export then
+					drops them with the warning CompatibilityWarnings() already
+					produced.
+				*/
+				if(Layer.IsPhysicsLayer() && !Allows(ext_physics))
 					continue;
 				// sound layers need the sound item type
-				if(Layer.IsSounds() && !Profile.m_HasSounds)
+				if(Layer.IsSounds() && !Profile.HasExtension(ext_sounds))
 					continue;
 
 				if(Layer.IsTiles())
@@ -779,7 +797,15 @@ namespace game
 						Item.m_Tune = -1;
 					}
 
-					const int Size = Profile.m_DdnetTilemap ? sizeof(CMapItemLayerTilemap) : sizeof(CMapItemLayerTilemap_v3);
+					/*
+						A physics layer needs the DDRace sized item, whose body
+						carries the five payload indices; writing it as the
+						shorter item would cut them off. A vanilla tile layer in
+						the same map still has to be the short one, which is why
+						this is decided per layer and not per profile.
+					*/
+					const bool bDdnetItem = Profile.IsDdnetTilemap() || Layer.IsPhysicsLayer();
+					const int Size = bDdnetItem ? sizeof(CMapItemLayerTilemap) : sizeof(CMapItemLayerTilemap_v3);
 					Writer.AddItem(MAPITEMTYPE_LAYER, LayerCount, &Item, Size);
 				}
 				else if(Layer.IsQuads())
@@ -842,7 +868,7 @@ namespace game
 
 		// ------------------------------------------------------------ envelopes
 		bool Bezier = false;
-		if(Profile.m_BezierEnvelopes)
+		if(Profile.HasExtension(ext_bezier_envelopes))
 			for(const CEnvelope &Envelope : m_vEnvelopes)
 				if(Envelope.UsesBezier())
 					Bezier = true;
@@ -852,8 +878,12 @@ namespace game
 		{
 			const CEnvelope &Envelope = m_vEnvelopes[e];
 			CMapItemEnvelope Item;
-			Item.m_Version = Bezier ? CMapItemEnvelope::CURRENT_VERSION : CMapItemEnvelope_v2::CURRENT_VERSION;
-			if(!Profile.m_BezierEnvelopes)
+			// The point size follows the item version, so only a target that can
+			// carry the tangents gets the version 3 item; the two constants are
+			// the same value, which is why the cast keeps the comparison quiet.
+			Item.m_Version = Bezier ? static_cast<int>(CMapItemEnvelope::CURRENT_VERSION) :
+				static_cast<int>(CMapItemEnvelope_v2::CURRENT_VERSION);
+			if(!Profile.HasExtension(ext_bezier_envelopes))
 				Item.m_Version = CMapItemEnvelope_v2::CURRENT_VERSION;
 			Item.m_Channels = Envelope.m_Channels;
 			Item.m_StartPoint = PointCount;

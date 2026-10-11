@@ -90,6 +90,14 @@ namespace engine::painter
 		kind m_Kind = kind::solid;
 		CColor m_Color;
 
+		/*
+			What an image fill is multiplied by. White - the default - changes
+			nothing, and the theme's colour turns a white drawing into a themed
+			one, which is how one rasterized icon serves the normal, the hover
+			and the disabled state of a button.
+		*/
+		CColor m_Tint = RGB(255, 255, 255);
+
 		// linear gradient, in the space the path was built in
 		base::vec2 m_Start;
 		base::vec2 m_End;

@@ -14,6 +14,7 @@
 #include "base/math.h"
 #include "engine/input.h"
 #include "engine/painter.h"
+#include "engine/ui_theme.h"
 
 namespace engine::ui
 {
@@ -27,24 +28,6 @@ namespace engine::ui
 	using painter::RGBf;
 	using painter::WithAlpha;
 
-	struct CTheme
-	{
-		CColor m_Background = RGB(24, 26, 30);
-		CColor m_Panel = RGB(34, 37, 43);
-		CColor m_PanelDark = RGB(28, 30, 35);
-		CColor m_Border = RGB(58, 63, 72);
-		CColor m_Text = RGB(226, 229, 234);
-		CColor m_TextDim = RGB(140, 146, 158);
-		CColor m_Accent = RGB(94, 165, 255);
-		CColor m_AccentDim = RGB(58, 96, 150);
-		CColor m_Warning = RGB(240, 180, 90);
-		CColor m_Error = RGB(235, 96, 96);
-		CColor m_Success = RGB(120, 205, 130);
-		CColor m_Hover = RGB(48, 53, 62);
-		CColor m_Selection = RGB(56, 92, 148);
-	};
-
-	extern const CTheme Theme;
 
 	void Rect(CPainter *pPainter, const base::rect &Rect, CColor Color);
 	void RectOutline(CPainter *pPainter, const base::rect &Rect, CColor Color, float Width = 1.0f);
@@ -63,6 +46,15 @@ namespace engine::ui
 	float Measure(CPainter *pPainter, int Font, float Size, const std::string &String);
 
 	bool Button(CPainter *pPainter, const CInput &Input, int Font, const base::rect &Area, const std::string &Label, bool Active = false, bool Enabled = true);
+
+	/*
+		A hint that names the widget under the cursor. It is drawn by the caller
+		after everything else, because a tooltip that a panel can cover is worse
+		than no tooltip: Position is where it would like to be, and it is moved
+		back inside Area when it would leave the window.
+	*/
+	void Tooltip(CPainter *pPainter, int FontBold, int Font, base::vec2 Position, const std::string &Title,
+		const std::string &Detail, const base::rect &Window);
 	bool Checkbox(CPainter *pPainter, const CInput &Input, const base::rect &Area, bool &Value);
 	bool Slider(CPainter *pPainter, const CInput &Input, const base::rect &Area, float &Value, float Min, float Max);
 
