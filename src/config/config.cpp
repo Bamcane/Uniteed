@@ -19,7 +19,7 @@ namespace config
 		const std::optional<std::string> Text = storage::read_text(FileName);
 		if(!Text.has_value())
 		{
-			LOG_INFO("config", "no config at '%s', using the defaults", FileName.string().c_str());
+			LOG_INFO("config", "no config at '{}', using the defaults", FileName.string().c_str());
 			return;
 		}
 
@@ -39,7 +39,7 @@ namespace config
 			m_Values[Name] = Value;
 			Loaded++;
 		}
-		LOG_INFO("config", "loaded %d settings from '%s'", Loaded, FileName.string().c_str());
+		LOG_INFO("config", "loaded {:d} settings from '{}'", Loaded, FileName.string().c_str());
 	}
 
 	bool CConfig::Save(const storage::path &FileName) const
@@ -49,7 +49,7 @@ namespace config
 			Text += Name + " " + Value + "\n";
 		if(!storage::write_text(FileName, Text))
 		{
-			LOG_WARN("config", "could not write '%s'", FileName.string().c_str());
+			LOG_WARN("config", "could not write '{}'", FileName.string().c_str());
 			return false;
 		}
 		return true;

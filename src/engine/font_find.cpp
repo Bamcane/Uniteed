@@ -310,13 +310,13 @@ namespace engine::fonts
 		// the setting being ignored
 		const auto Pick = [](face Face, const std::string &Override, const char *pLabel) {
 			if(!Override.empty() && !Exists(ExpandPath(Override)))
-				LOG_WARN("fonts", "the configured %s font '%s' does not exist, looking for a system one", pLabel,
+				LOG_WARN("fonts", "the configured {} font '{}' does not exist, looking for a system one", pLabel,
 					Override.c_str());
 			const std::string Path = FirstExisting(Candidates(Face, Override));
 			if(Path.empty())
-				LOG_WARN("fonts", "no %s font found", pLabel);
+				LOG_WARN("fonts", "no {} font found", pLabel);
 			else
-				LOG_INFO("fonts", "%s font: %s", pLabel, Path.c_str());
+				LOG_INFO("fonts", "{} font: {}", pLabel, Path.c_str());
 			return Path;
 		};
 

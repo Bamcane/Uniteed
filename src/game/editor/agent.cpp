@@ -129,10 +129,10 @@ namespace game::admin
 		Out += "Or send them to a resident session: uniteed --agent\n\n";
 		for(const ops::CDescriptor &Descriptor : ops::Table())
 		{
-			Out += base::Format("%s\n", Descriptor.m_pName);
+			Out += base::Format("{}\n", Descriptor.m_pName);
 			if(Descriptor.m_pParams[0] != '\0')
-				Out += base::Format("    %s\n", Descriptor.m_pParams);
-			Out += base::Format("    %s\n\n", Descriptor.m_pDescription);
+				Out += base::Format("    {}\n", Descriptor.m_pParams);
+			Out += base::Format("    {}\n\n", Descriptor.m_pDescription);
 		}
 		return Out;
 	}
@@ -152,7 +152,7 @@ namespace game::admin
 		std::cout << Answer.dump(1) << "\n";
 		if(Answer["ok"].as_bool(false))
 			return 0;
-		std::cerr << base::Format("%s: %s\n", Name.c_str(), Answer["error"].as_string().c_str());
+		std::cerr << base::Format("{}: {}\n", Name.c_str(), Answer["error"].as_string().c_str());
 		const std::string Hint = MemberHint(Name);
 		if(!Hint.empty())
 			std::cerr << Hint << "\n";
@@ -185,14 +185,14 @@ namespace game::admin
 			const base::json Answer = Session.Handle(Request);
 			if(!Answer["ok"].as_bool(false))
 			{
-				std::cerr << base::Format("the initial %s failed: %s\n", InitialMethod.c_str(),
+				std::cerr << base::Format("the initial {} failed: {}\n", InitialMethod.c_str(),
 					Answer["error"].as_string().c_str());
 				return 1;
 			}
 		}
 
 		// a banner goes to stderr, so stdout stays one JSON document per line
-		std::cerr << base::Format("%s %s agent: %zu methods, one JSON request per line\n",
+		std::cerr << base::Format("{} {} agent: {:d} methods, one JSON request per line\n",
 			GAME_DISPLAY_NAME, GAME_VERSION, ops::Table().size());
 		std::cerr << "send {\"method\":\"agent.describe\"} for the list, or {\"method\":\"quit\"} to stop\n";
 		std::cout.flush();

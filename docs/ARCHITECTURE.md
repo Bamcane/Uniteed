@@ -79,6 +79,15 @@ mapres files with the active version first.
 `sugar_types.h`) and add only the unaligned peeks and the `StrToInts`/`IntsToStr`
 pair with the +128 bias the map format uses.
 
+`base::Format` builds the strings the interface and the log show, and it is
+`std::format`: "{}" fields, with every call checked against its arguments **when it is
+compiled**. It used to be a `vsnprintf` wrapper, which is one mistyped `%d` away from a
+wrong line and cannot be checked at all - and a translated format string, which is a
+string no compiler ever sees, is exactly that hazard. `base::FormatRuntime` is the same
+builder for a format string that only exists while the program runs; it validates the
+fields as it formats and leaves the format string on screen instead of throwing in the
+middle of a frame. Both are covered by `--selftest`.
+
 **engine** owns the window. `CGraphics` wraps the SDL3 window, the SDL3 renderer and
 the texture cache (a `libsugarx::lazy_flat_table` keyed by texture name, holding an
 index into a table of `SDL_Texture`). It refers to a texture by a small positive int,

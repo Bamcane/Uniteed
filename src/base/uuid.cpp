@@ -25,7 +25,7 @@ namespace base
 		// no cryptographic random source at build time: the identity is still
 		// unique enough to recognise a file on one machine
 		static std::atomic<unsigned> Counter{0};
-		return Format("local-%lld-%08x", static_cast<long long>(UnixTime()), Counter.fetch_add(1));
+		return Format("local-{}-{:08x}", static_cast<long long>(UnixTime()), Counter.fetch_add(1));
 #endif
 	}
 

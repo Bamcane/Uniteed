@@ -22,7 +22,7 @@ namespace engine
 
 		if(!Entry.m_Document.LoadFromFile(File))
 		{
-			LOG_WARN("vector", "the document '%s' could not be loaded", File.string().c_str());
+			LOG_WARN("vector", "the document '{}' could not be loaded", File.string().c_str());
 			return false;
 		}
 		if(bWhite)
@@ -48,7 +48,7 @@ namespace engine
 			Forgotten++;
 		}
 		if(Forgotten > 0)
-			LOG_TRACE("vector", "%d icons will be rasterized again", Forgotten);
+			LOG_TRACE("vector", "{:d} icons will be rasterized again", Forgotten);
 	}
 
 	void CVectorTextures::Close()
@@ -98,7 +98,7 @@ namespace engine
 			is wanted at, and re-rasterizes then. An icon that is not on screen
 			therefore costs nothing.
 		*/
-		LOG_INFO("vector", "display scale %.2f: the %d vector textures follow it (an 18 pixel icon becomes %d)",
+		LOG_INFO("vector", "display scale {:.2f}: the {:d} vector textures follow it (an 18 pixel icon becomes {:d})",
 			static_cast<double>(m_Scale), Count(), After);
 	}
 
@@ -134,11 +134,11 @@ namespace engine
 		{
 			// the display changed under a drawing that was already made: this
 			// is the line that says the icons followed it
-			LOG_INFO("vector", "'%s' re-rasterized at %dx%d (was %dx%d)", Name.c_str(), Size, Size,
+			LOG_INFO("vector", "'{}' re-rasterized at {:d}x{:d} (was {:d}x{:d})", Name.c_str(), Size, Size,
 				pEntry->m_Width, pEntry->m_Height);
 		}
 		else
-			LOG_TRACE("vector", "'%s' rasterized at %dx%d (scale %.2f)", Name.c_str(), Size, Size,
+			LOG_TRACE("vector", "'{}' rasterized at {:d}x{:d} (scale {:.2f})", Name.c_str(), Size, Size,
 				static_cast<double>(m_Scale));
 		pEntry->m_Width = Size;
 		pEntry->m_Height = Size;

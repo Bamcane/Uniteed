@@ -89,7 +89,7 @@ namespace game
 		// ------------------------------------------------------------- header
 		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(X, y + 13.0f), 13.0f, ui::Theme.m_Text, "Assets");
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_BottomRight.x - 8.0f, y + 13.0f), 11.5f,
-			ui::Theme.m_TextDim, base::Format("%d img  %d snd", ImageCount(), SoundCount()), ui::text_align::right);
+			ui::Theme.m_TextDim, base::Format("{:d} img  {:d} snd", ImageCount(), SoundCount()), ui::text_align::right);
 		y += 24.0f;
 
 		const auto Row = [&](const char *pLabel, const std::string &Detail, float RowWidth) {
@@ -162,7 +162,7 @@ namespace game
 			const bool bHover = ui::Hovered(Input, Entry);
 			const bool bActive = i == m_SelectedImage;
 			if(bHover)
-				Hint(Entry, Image.m_Name, base::Format("image %d: %dx%d, %s, used by %d layers", i, Image.m_Width,
+				Hint(Entry, Image.m_Name, base::Format("image {:d}: {:d}x{:d}, {}, used by {:d} layers", i, Image.m_Width,
 					Image.m_Height, Image.m_External ? "a file next to the map" : "embedded in the map",
 					ImageReferenceCount(i)));
 			if(bActive)
@@ -189,7 +189,7 @@ namespace game
 
 			// the index is a badge of its own, so a two digit one cannot run
 			// into the name
-			const std::string Label = base::Format("%d", i);
+			const std::string Label = base::Format("{:d}", i);
 			const float Badge = 22.0f;
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + IconSize + 8.0f, Entry.m_TopLeft.y + 11.0f),
 				11.5f, ui::Theme.m_TextDim, Label);
@@ -197,7 +197,7 @@ namespace game
 			ui::TextClipped(pPainter, m_pGraphics->Font(),
 				base::vec2(Entry.m_TopLeft.x + IconSize + 8.0f + Badge, Entry.m_TopLeft.y + 11.0f),
 				11.5f, ui::Theme.m_Text, NameText, Width - IconSize - 12.0f - Badge);
-			const std::string Detail = base::Format("%dx%d %s  %d use%s", Image.m_Width, Image.m_Height,
+			const std::string Detail = base::Format("{:d}x{:d} {}  {:d} use{}", Image.m_Width, Image.m_Height,
 				Image.IsEmbedded() ? "embedded" : "external", ImageReferenceCount(i),
 				ImageReferenceCount(i) == 1 ? "" : "s");
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + IconSize + 22.0f, Entry.m_TopLeft.y + 23.0f),
@@ -258,7 +258,7 @@ namespace game
 				ExportAssetDialog(false);
 			y += 26.0f;
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 10.0f), 10.5f, ui::Theme.m_TextDim,
-				base::Format("image %d: %s", m_SelectedImage, m_Map.m_vImages[static_cast<std::size_t>(m_SelectedImage)].m_Name.c_str()),
+				base::Format("image {:d}: {}", m_SelectedImage, m_Map.m_vImages[static_cast<std::size_t>(m_SelectedImage)].m_Name.c_str()),
 				Width);
 			y += 18.0f;
 		}
@@ -280,16 +280,16 @@ namespace game
 				ui::Rect(pPainter, Entry, ui::Theme.m_Hover);
 
 			const float Length = SoundLength(i);
-			const std::string Detail = base::Format("%s  %s  %d use%s", Sound.m_External != 0 ? "external" : "embedded",
-				Length > 0.0f ? base::Format("%.2fs", static_cast<double>(Length)).c_str() : "length ?",
+			const std::string Detail = base::Format("{}  {}  {:d} use{}", Sound.m_External != 0 ? "external" : "embedded",
+				Length > 0.0f ? base::Format("{:.2f}s", static_cast<double>(Length)).c_str() : "length ?",
 				SoundReferenceCount(i), SoundReferenceCount(i) == 1 ? "" : "s");
 			if(bHover)
-				Hint(Entry, Sound.m_Name.empty() ? base::Format("sound %d", i) : Sound.m_Name,
-					base::Format("sound %d: %s, %d use%s - click twice to hear it", i,
-						Length > 0.0f ? base::Format("%.2fs", static_cast<double>(Length)).c_str() : "length unknown",
+				Hint(Entry, Sound.m_Name.empty() ? base::Format("sound {:d}", i) : Sound.m_Name,
+					base::Format("sound {:d}: {}, {:d} use{} - click twice to hear it", i,
+						Length > 0.0f ? base::Format("{:.2f}s", static_cast<double>(Length)).c_str() : "length unknown",
 						SoundReferenceCount(i), SoundReferenceCount(i) == 1 ? "" : "s"));
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + 6.0f, Entry.m_TopLeft.y + 11.0f),
-				11.5f, ui::Theme.m_TextDim, base::Format("%d", i));
+				11.5f, ui::Theme.m_TextDim, base::Format("{:d}", i));
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + 28.0f, Entry.m_TopLeft.y + 11.0f),
 				11.5f, ui::Theme.m_Text, TrimmedName(Sound.m_Name), Width - 34.0f);
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Entry.m_TopLeft.x + 6.0f, Entry.m_TopLeft.y + 23.0f),

@@ -111,7 +111,7 @@ namespace engine
 			pDialog->m_Error = SDL_GetError();
 			if(pDialog->m_Error.empty())
 				pDialog->m_Error = "the file dialog failed";
-			LOG_WARN("dialog", "%s", pDialog->m_Error.c_str());
+			LOG_WARN("dialog", "{}", pDialog->m_Error.c_str());
 		}
 		else
 		{
@@ -127,7 +127,7 @@ namespace engine
 			if(pDialog->m_bCancelled)
 				LOG_INFO("dialog", "the dialog was cancelled");
 			else
-				LOG_INFO("dialog", "the dialog returned %zu path(s), the last in '%s'",
+				LOG_INFO("dialog", "the dialog returned {:d} path(s), the last in '{}'",
 					pDialog->m_vSelected.size(), pDialog->m_LastDirectory.c_str());
 		}
 
@@ -154,7 +154,7 @@ namespace engine
 		m_bCompleted.store(false, std::memory_order_release);
 		// the title cannot travel with the three entry points SDL offers, so it
 		// only reaches the log
-		LOG_TRACE("dialog", "opening '%s'", Title.c_str());
+		LOG_TRACE("dialog", "opening '{}'", Title.c_str());
 
 		/*
 			The filter array and its strings are borrowed by SDL until the
@@ -207,7 +207,7 @@ namespace engine
 		{
 			m_bOpen.store(false, std::memory_order_release);
 			m_Error = pError;
-			LOG_ERROR("dialog", "SDL refused the file dialog: %s", pError);
+			LOG_ERROR("dialog", "SDL refused the file dialog: {}", pError);
 			return false;
 		}
 		return true;

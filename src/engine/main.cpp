@@ -310,7 +310,7 @@ int main(int argc, char **argv)
 			base::logger::SetLevel(base::log_level::error);
 	}
 
-	LOG_INFO("uniteed", "%s %s, data directory '%s'", GAME_DISPLAY_NAME, GAME_VERSION, storage::GetDataDirectory().string().c_str());
+	LOG_INFO("uniteed", "{} {}, data directory '{}'", GAME_DISPLAY_NAME, GAME_VERSION, storage::GetDataDirectory().string().c_str());
 
 	/*
 		The agent interface comes first: a method name is a valid command, and

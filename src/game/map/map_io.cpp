@@ -181,7 +181,7 @@ namespace game
 		const auto Fail = [&](const std::string &Message) {
 			if(pError != nullptr)
 				*pError = Message;
-			LOG_ERROR("map", "%s", Message.c_str());
+			LOG_ERROR("map", "{}", Message.c_str());
 			return false;
 		};
 
@@ -248,7 +248,7 @@ namespace game
 					Image.m_Data = CopyBlock(File, DataIndex);
 					const std::size_t Expected = static_cast<std::size_t>(std::max(Image.m_Width, 0)) * std::max(Image.m_Height, 0) * 4;
 					if(Expected != 0 && Image.m_Data.size() != Expected)
-						LOG_WARN("map", "image '%s' has %zu bytes, expected %zu", Image.m_Name.c_str(), Image.m_Data.size(), Expected);
+						LOG_WARN("map", "image '{}' has {:d} bytes, expected {:d}", Image.m_Name.c_str(), Image.m_Data.size(), Expected);
 				}
 				if(Image.m_Name.empty())
 					Image.m_Name = "image " + std::to_string(i);
@@ -436,7 +436,7 @@ namespace game
 
 						if(Layer.m_Width <= 0 || Layer.m_Height <= 0 || Layer.TileCount() > (1u << 26))
 						{
-							LOG_WARN("map", "skipping a tile layer with invalid dimensions %dx%d", Layer.m_Width, Layer.m_Height);
+							LOG_WARN("map", "skipping a tile layer with invalid dimensions {:d}x{:d}", Layer.m_Width, Layer.m_Height);
 							continue;
 						}
 
@@ -465,7 +465,7 @@ namespace game
 							if(Layer.m_SourceTilemapVersion >= 4)
 							{
 								if(!ExpandTiles(Stored, static_cast<int>(Layer.TileCount()), Layer.m_vTiles))
-									LOG_WARN("map", "tile layer %d has a malformed run length blob", LayerIndex);
+									LOG_WARN("map", "tile layer {:d} has a malformed run length blob", LayerIndex);
 							}
 							else
 							{
@@ -511,7 +511,7 @@ namespace game
 					}
 					else
 					{
-						LOG_WARN("map", "skipping a layer of unknown type %d", LayerType);
+						LOG_WARN("map", "skipping a layer of unknown type {:d}", LayerType);
 						continue;
 					}
 
@@ -585,13 +585,13 @@ namespace game
 					KeptBytes += m_vRawData[static_cast<std::size_t>(i)].size();
 					Kept++;
 				}
-				LOG_INFO("map", "preserving %d data blocks (%zu bytes) out of %d for %zu items this editor does not model",
+				LOG_INFO("map", "preserving {:d} data blocks ({:d} bytes) out of {:d} for {:d} items this editor does not model",
 					Kept, KeptBytes, File.NumRawData(), m_vExtras.size());
 			}
 		}
 
 		const CMapStatistics Stats = Statistics();
-		LOG_INFO("map", "loaded datafile v%d: %d groups, %d layers, %d images, %d envelopes, %d preserved items",
+		LOG_INFO("map", "loaded datafile v{:d}: {:d} groups, {:d} layers, {:d} images, {:d} envelopes, {:d} preserved items",
 			m_SourceDatafileVersion, Stats.m_Groups, Stats.m_Layers, Stats.m_Images, Stats.m_Envelopes, Stats.m_Extras);
 		return true;
 	}
@@ -931,7 +931,7 @@ namespace game
 		if(!Writer.Finish(Out, pError))
 			return false;
 
-		LOG_INFO("map", "serialised for %s: datafile v%d, %zu bytes", Profile.m_pName, Profile.m_DatafileVersion, Out.size());
+		LOG_INFO("map", "serialised for {}: datafile v{:d}, {:d} bytes", Profile.m_pName, Profile.m_DatafileVersion, Out.size());
 		return true;
 	}
 

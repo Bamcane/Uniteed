@@ -86,7 +86,7 @@ namespace engine
 		const std::optional<storage::byte_vector> Bytes = storage::read(Path);
 		if(!Bytes.has_value() || Bytes->empty())
 		{
-			LOG_WARN("text", "failed to read the font '%s'", Path.c_str());
+			LOG_WARN("text", "failed to read the font '{}'", Path.c_str());
 			return false;
 		}
 		Face.m_FontData = *Bytes;
@@ -94,7 +94,7 @@ namespace engine
 		if(FT_New_Memory_Face(m_pLibrary, reinterpret_cast<const FT_Byte *>(Face.m_FontData.data()),
 			   static_cast<FT_Long>(Face.m_FontData.size()), 0, &Face.m_Face) != 0)
 		{
-			LOG_WARN("text", "failed to open the font '%s'", Path.c_str());
+			LOG_WARN("text", "failed to open the font '{}'", Path.c_str());
 			Face.m_FontData.clear();
 			Face.m_Face = nullptr;
 			return false;
@@ -274,7 +274,7 @@ namespace engine
 		if(m_AtlasWidth >= MaxAtlasSize)
 			return false;
 		const int NewSize = std::min(m_AtlasWidth * 2, MaxAtlasSize);
-		LOG_TRACE("text", "glyph atlas grows to %d", NewSize);
+		LOG_TRACE("text", "glyph atlas grows to {:d}", NewSize);
 		m_AtlasWidth = NewSize;
 		m_AtlasHeight = NewSize;
 		// every cached glyph has to be rasterized again

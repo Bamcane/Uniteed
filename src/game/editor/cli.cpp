@@ -69,7 +69,7 @@ namespace game
 			for(const map_target Target : AllTargets())
 			{
 				const CMapTargetProfile &Profile = GetTargetProfile(Target);
-				std::cout << base::Format("%-7s %-9d %-8d %-6d %-6d %-10s %s\n",
+				std::cout << base::Format("{:<7} {:<9d} {:<8d} {:<6d} {:<6d} {:<10} {}\n",
 					Profile.m_pId, Profile.m_DatafileVersion, Profile.m_TilemapVersion,
 					Profile.m_ImageVersion, Profile.m_GroupVersion,
 					Profile.HasExtension(ext_bezier_envelopes) ? "v2/v3" : "v2",
@@ -133,19 +133,19 @@ namespace game
 		void PrintMap(const CMap &Map)
 		{
 			const CMapStatistics Stats = Map.Statistics();
-			std::cout << base::Format("datafile v%d  groups=%d layers=%d images=%d(%d embedded) envelopes=%d quads=%d preserved items=%d\n",
+			std::cout << base::Format("datafile v{:d}  groups={:d} layers={:d} images={:d}({:d} embedded) envelopes={:d} quads={:d} preserved items={:d}\n",
 				Map.m_SourceDatafileVersion, Stats.m_Groups, Stats.m_Layers, Stats.m_Images,
 				Stats.m_EmbeddedImages, Stats.m_Envelopes, Stats.m_Quads, Stats.m_Extras);
-			std::cout << base::Format("info: author='%s' version='%s' credits='%s' license='%s'\n",
+			std::cout << base::Format("info: author='{}' version='{}' credits='{}' license='{}'\n",
 				Map.m_aAuthor.c_str(), Map.m_aVersion.c_str(), Map.m_aCredits.c_str(), Map.m_aLicense.c_str());
-			std::cout << base::Format("tiles=%d non-empty=%d\n", Stats.m_Tiles, Stats.m_TilesWithContent);
+			std::cout << base::Format("tiles={:d} non-empty={:d}\n", Stats.m_Tiles, Stats.m_TilesWithContent);
 
 			for(std::size_t g = 0; g < Map.m_vGroups.size(); g++)
 			{
 				const CGroup &Group = Map.m_vGroups[g];
 				const std::string Clip = Group.m_UseClipping ?
-					base::Format("%d,%d %dx%d", Group.m_ClipX, Group.m_ClipY, Group.m_ClipW, Group.m_ClipH) : "off";
-				std::cout << base::Format("  group %zu '%s' parallax=%d,%d offset=%d,%d clip=%s version=%d layers=%zu\n",
+					base::Format("{:d},{:d} {:d}x{:d}", Group.m_ClipX, Group.m_ClipY, Group.m_ClipW, Group.m_ClipH) : "off";
+				std::cout << base::Format("  group {:d} '{}' parallax={:d},{:d} offset={:d},{:d} clip={} version={:d} layers={:d}\n",
 					g, Group.m_Name.c_str(), Group.m_ParallaxX, Group.m_ParallaxY, Group.m_OffsetX, Group.m_OffsetY,
 					Clip.c_str(), Group.m_SourceVersion, Group.m_vLayers.size());
 				for(std::size_t l = 0; l < Group.m_vLayers.size(); l++)
@@ -159,7 +159,7 @@ namespace game
 						for(const CTile &Tile : Layer.m_vTiles)
 							if(Tile.m_Index != 0)
 								NonEmpty++;
-						Extra = base::Format(" %dx%d flags=%d color=%d,%d,%d,%d image=%d non-empty=%d tilemap-version=%d%s",
+						Extra = base::Format(" {:d}x{:d} flags={:d} color={:d},{:d},{:d},{:d} image={:d} non-empty={:d} tilemap-version={:d}{}",
 							Layer.m_Width, Layer.m_Height, Layer.m_Flags,
 							Layer.m_Color.r, Layer.m_Color.g, Layer.m_Color.b, Layer.m_Color.a,
 							Layer.m_Image, NonEmpty,
@@ -192,32 +192,32 @@ namespace game
 							if(Quad.m_ColorEnv >= 0)
 								ColorAnimated++;
 						}
-						Extra = base::Format(" quads=%zu graded=%d image=%d pos-env=%d color-env=%d",
+						Extra = base::Format(" quads={:d} graded={:d} image={:d} pos-env={:d} color-env={:d}",
 							Layer.m_vQuads.size(), Graded, Layer.m_Image, PositionAnimated, ColorAnimated);
 					}
 					else if(Layer.IsSounds())
-						Extra = base::Format(" sources=%zu sound=%d", Layer.m_vSources.size(), Layer.m_Sound);
+						Extra = base::Format(" sources={:d} sound={:d}", Layer.m_vSources.size(), Layer.m_Sound);
 					if(Layer.m_ColorEnv >= 0)
-						Extra += base::Format(" color-env=%d+%d", Layer.m_ColorEnv, Layer.m_ColorEnvOffset);
-					std::cout << base::Format("    layer %zu '%s' type=%s%s\n", l, Layer.m_Name.c_str(), pKind, Extra.c_str());
+						Extra += base::Format(" color-env={:d}+{:d}", Layer.m_ColorEnv, Layer.m_ColorEnvOffset);
+					std::cout << base::Format("    layer {:d} '{}' type={}{}\n", l, Layer.m_Name.c_str(), pKind, Extra.c_str());
 				}
 			}
 
 			for(std::size_t i = 0; i < Map.m_vImages.size(); i++)
 			{
 				const CImage &Image = Map.m_vImages[i];
-				std::cout << base::Format("  image %zu '%s' %dx%d %s\n", i, Image.m_Name.c_str(), Image.m_Width, Image.m_Height,
+				std::cout << base::Format("  image {:d} '{}' {:d}x{:d} {}\n", i, Image.m_Name.c_str(), Image.m_Width, Image.m_Height,
 					Image.IsEmbedded() ? "embedded" : "external");
 			}
 			for(std::size_t i = 0; i < Map.m_vEnvelopes.size(); i++)
 			{
 				const CEnvelope &Envelope = Map.m_vEnvelopes[i];
-				std::cout << base::Format("  envelope %zu '%s' channels=%d points=%zu synchronized=%d\n",
+				std::cout << base::Format("  envelope {:d} '{}' channels={:d} points={:d} synchronized={:d}\n",
 					i, Envelope.m_Name.c_str(), Envelope.m_Channels, Envelope.m_vPoints.size(), Envelope.m_Synchronized);
 				for(std::size_t p = 0; p < Envelope.m_vPoints.size(); p++)
 				{
 					const CEnvelopePoint &Point = Envelope.m_vPoints[p];
-					std::cout << base::Format("    point %zu t=%d curve=%s values=%d,%d,%d,%d\n", p, Point.m_Time,
+					std::cout << base::Format("    point {:d} t={:d} curve={} values={:d},{:d},{:d},{:d}\n", p, Point.m_Time,
 						Point.m_Curvetype == CURVETYPE_STEP ? "step" : Point.m_Curvetype == CURVETYPE_SLOW ? "slow" :
 						Point.m_Curvetype == CURVETYPE_FAST ? "fast" : Point.m_Curvetype == CURVETYPE_SMOOTH ? "smooth" :
 						Point.m_Curvetype == CURVETYPE_BEZIER ? "bezier" : "linear",
@@ -225,7 +225,7 @@ namespace game
 				}
 			}
 			for(const CExtraItem &Extra : Map.m_vExtras)
-				std::cout << base::Format("  preserved item type=%d id=%d size=%zu\n", Extra.m_Type, Extra.m_ID, Extra.m_Data.size());
+				std::cout << base::Format("  preserved item type={:d} id={:d} size={:d}\n", Extra.m_Type, Extra.m_ID, Extra.m_Data.size());
 		}
 
 		// structural comparison of two models, used by the selftest
@@ -241,24 +241,24 @@ namespace game
 			const CMapStatistics StatsB = B.Statistics();
 			if(StatsA.m_Images != StatsB.m_Images)
 			{
-				Error = base::Format("image count %d -> %d", StatsA.m_Images, StatsB.m_Images);
+				Error = base::Format("image count {:d} -> {:d}", StatsA.m_Images, StatsB.m_Images);
 				return false;
 			}
 			for(std::size_t i = 0; i < A.m_vImages.size(); i++)
 			{
 				if(A.m_vImages[i].m_Name != B.m_vImages[i].m_Name)
 				{
-					Error = base::Format("image %zu name '%s' -> '%s'", i, A.m_vImages[i].m_Name.c_str(), B.m_vImages[i].m_Name.c_str());
+					Error = base::Format("image {:d} name '{}' -> '{}'", i, A.m_vImages[i].m_Name.c_str(), B.m_vImages[i].m_Name.c_str());
 					return false;
 				}
 				if(A.m_vImages[i].m_Width != B.m_vImages[i].m_Width || A.m_vImages[i].m_Height != B.m_vImages[i].m_Height)
 				{
-					Error = base::Format("image %zu dimensions changed", i);
+					Error = base::Format("image {:d} dimensions changed", i);
 					return false;
 				}
 				if(A.m_vImages[i].m_Data != B.m_vImages[i].m_Data)
 				{
-					Error = base::Format("image %zu pixel data changed", i);
+					Error = base::Format("image {:d} pixel data changed", i);
 					return false;
 				}
 			}
@@ -273,33 +273,33 @@ namespace game
 			}
 			else if(A.m_vExtras.size() != B.m_vExtras.size())
 			{
-				Error = base::Format("preserved item count %zu -> %zu", A.m_vExtras.size(), B.m_vExtras.size());
+				Error = base::Format("preserved item count {:d} -> {:d}", A.m_vExtras.size(), B.m_vExtras.size());
 				return false;
 			}
 			for(std::size_t i = 0; bExpectExtras && i < A.m_vExtras.size() && i < B.m_vExtras.size(); i++)
 			{
 				if(A.m_vExtras[i].m_Type != B.m_vExtras[i].m_Type || A.m_vExtras[i].m_ID != B.m_vExtras[i].m_ID)
 				{
-					Error = base::Format("preserved item %zu changed type/id (%d/%d -> %d/%d)", i,
+					Error = base::Format("preserved item {:d} changed type/id ({:d}/{:d} -> {:d}/{:d})", i,
 						A.m_vExtras[i].m_Type, A.m_vExtras[i].m_ID, B.m_vExtras[i].m_Type, B.m_vExtras[i].m_ID);
 					return false;
 				}
 				if(A.m_vExtras[i].m_Data != B.m_vExtras[i].m_Data)
 				{
-					Error = base::Format("preserved item %zu (type %d) changed body", i, A.m_vExtras[i].m_Type);
+					Error = base::Format("preserved item {:d} (type {:d}) changed body", i, A.m_vExtras[i].m_Type);
 					return false;
 				}
 			}
 			if(A.m_vEnvelopes.size() != B.m_vEnvelopes.size())
 			{
-				Error = base::Format("envelope count %zu -> %zu", A.m_vEnvelopes.size(), B.m_vEnvelopes.size());
+				Error = base::Format("envelope count {:d} -> {:d}", A.m_vEnvelopes.size(), B.m_vEnvelopes.size());
 				return false;
 			}
 			for(std::size_t i = 0; i < A.m_vEnvelopes.size(); i++)
 			{
 				if(A.m_vEnvelopes[i].m_vPoints.size() != B.m_vEnvelopes[i].m_vPoints.size())
 				{
-					Error = base::Format("envelope %zu point count changed", i);
+					Error = base::Format("envelope {:d} point count changed", i);
 					return false;
 				}
 				for(std::size_t p = 0; p < A.m_vEnvelopes[i].m_vPoints.size(); p++)
@@ -309,7 +309,7 @@ namespace game
 					if(PA.m_Time != PB.m_Time || PA.m_Curvetype != PB.m_Curvetype ||
 						std::memcmp(PA.m_aValues, PB.m_aValues, sizeof(PA.m_aValues)) != 0)
 					{
-						Error = base::Format("envelope %zu point %zu changed", i, p);
+						Error = base::Format("envelope {:d} point {:d} changed", i, p);
 						return false;
 					}
 				}
@@ -336,42 +336,42 @@ namespace game
 					const CLayer &LB = GroupB.m_vLayers[l];
 					if(LA.m_Type != LB.m_Type || LA.m_Name != LB.m_Name)
 					{
-						Error = base::Format("group %zu layer %zu identity changed", g, l);
+						Error = base::Format("group {:d} layer {:d} identity changed", g, l);
 						return false;
 					}
 					if(LA.IsTiles())
 					{
 						if(LA.m_Width != LB.m_Width || LA.m_Height != LB.m_Height)
 						{
-							Error = base::Format("group %zu layer %zu dimensions changed", g, l);
+							Error = base::Format("group {:d} layer {:d} dimensions changed", g, l);
 							return false;
 						}
 						// the layer colour and its envelope have to survive too
 						if(LA.m_Color.r != LB.m_Color.r || LA.m_Color.g != LB.m_Color.g ||
 							LA.m_Color.b != LB.m_Color.b || LA.m_Color.a != LB.m_Color.a)
 						{
-							Error = base::Format("group %zu layer %zu colour changed (%d,%d,%d,%d -> %d,%d,%d,%d)", g, l,
+							Error = base::Format("group {:d} layer {:d} colour changed ({:d},{:d},{:d},{:d} -> {:d},{:d},{:d},{:d})", g, l,
 								LA.m_Color.r, LA.m_Color.g, LA.m_Color.b, LA.m_Color.a,
 								LB.m_Color.r, LB.m_Color.g, LB.m_Color.b, LB.m_Color.a);
 							return false;
 						}
 						if(LA.m_ColorEnv != LB.m_ColorEnv || LA.m_ColorEnvOffset != LB.m_ColorEnvOffset)
 						{
-							Error = base::Format("group %zu layer %zu colour envelope changed", g, l);
+							Error = base::Format("group {:d} layer {:d} colour envelope changed", g, l);
 							return false;
 						}
 						if(LA.IsPhysicsLayer())
 							continue;
 						if(LA.m_vTiles.size() != LB.m_vTiles.size())
 						{
-							Error = base::Format("group %zu layer %zu tile count changed", g, l);
+							Error = base::Format("group {:d} layer {:d} tile count changed", g, l);
 							return false;
 						}
 						for(std::size_t t = 0; t < LA.m_vTiles.size(); t++)
 						{
 							if(LA.m_vTiles[t].m_Index != LB.m_vTiles[t].m_Index || LA.m_vTiles[t].m_Flags != LB.m_vTiles[t].m_Flags)
 							{
-								Error = base::Format("group %zu layer %zu tile %zu changed (%d/%d -> %d/%d)", g, l, t,
+								Error = base::Format("group {:d} layer {:d} tile {:d} changed ({:d}/{:d} -> {:d}/{:d})", g, l, t,
 									LA.m_vTiles[t].m_Index, LA.m_vTiles[t].m_Flags, LB.m_vTiles[t].m_Index, LB.m_vTiles[t].m_Flags);
 								return false;
 							}
@@ -381,7 +381,7 @@ namespace game
 					{
 						if(LA.m_vQuads.size() != LB.m_vQuads.size())
 						{
-							Error = base::Format("group %zu layer %zu quad count changed", g, l);
+							Error = base::Format("group {:d} layer {:d} quad count changed", g, l);
 							return false;
 						}
 						for(std::size_t q = 0; q < LA.m_vQuads.size(); q++)
@@ -392,21 +392,21 @@ namespace game
 								const CColor &CB = LB.m_vQuads[q].m_aColors[c];
 								if(CA.r != CB.r || CA.g != CB.g || CA.b != CB.b || CA.a != CB.a)
 								{
-									Error = base::Format("group %zu layer %zu quad %zu corner %d colour changed", g, l, q, c);
+									Error = base::Format("group {:d} layer {:d} quad {:d} corner {:d} colour changed", g, l, q, c);
 									return false;
 								}
 							}
 							if(LA.m_vQuads[q].m_ColorEnv != LB.m_vQuads[q].m_ColorEnv ||
 								LA.m_vQuads[q].m_PosEnv != LB.m_vQuads[q].m_PosEnv)
 							{
-								Error = base::Format("group %zu layer %zu quad %zu envelope changed", g, l, q);
+								Error = base::Format("group {:d} layer {:d} quad {:d} envelope changed", g, l, q);
 								return false;
 							}
 						}
 					}
 					else if(LA.IsSounds() && LA.m_vSources.size() != LB.m_vSources.size())
 					{
-						Error = base::Format("group %zu layer %zu sound source count changed", g, l);
+						Error = base::Format("group {:d} layer {:d} sound source count changed", g, l);
 						return false;
 					}
 				}
@@ -438,6 +438,37 @@ namespace game
 
 		int Failures = 0;
 		int Checks = 0;
+
+		/*
+			The string builder of the interface. It is std::format with "{}"
+			fields now, so a call is checked against its arguments when it is
+			compiled; a format string that is only known while the program runs
+			goes through the unchecked variant, which has to return something
+			readable rather than throw in the middle of a frame.
+		*/
+		{
+			Checks++;
+			const std::string Real = base::Format("{:d} of {} = {:.2f}", 2, std::string("five"), 2.5);
+			const std::string Padded = base::Format("[{:>4d}][{:<4d}]", 7, 7);
+			bool bOk = Real == "2 of five = 2.50" && Padded == "[   7][7   ]";
+			// the runtime variant is what a translated format string goes
+			// through, and it agrees with the checked one
+			const std::string_view Runtime = "{:d} of {} = {:.2f}";
+			bOk = bOk && base::FormatRuntime(Runtime, 2, std::string("five"), 2.5) == Real;
+			// a format string that does not match its arguments cannot be a
+			// build error here: it leaves the string on screen, and what the
+			// check pins down is that nothing was thrown on the way
+			bOk = bOk && base::FormatRuntime("{:d}", "not a number") == "{:d}";
+
+			if(bOk)
+				std::cout << "\n  ok   format strings are built with std::format\n";
+			else
+			{
+				std::cout << "\n  FAIL the string builder changed behaviour\n";
+				Failures++;
+			}
+		}
+
 		for(const std::string &MapFile : Maps)
 		{
 			std::cout << "\n== " << MapFile << "\n";
@@ -524,7 +555,7 @@ namespace game
 					continue;
 				}
 
-				std::cout << base::Format("  ok   %-6s %6zu bytes -> reload ok, stable%s\n",
+				std::cout << base::Format("  ok   {:<6} {:6d} bytes -> reload ok, stable{}\n",
 					Profile.m_pId, Bytes.size(), Warnings.c_str());
 			}
 
@@ -559,7 +590,7 @@ namespace game
 					}
 					else
 					{
-						std::cout << base::Format("  ok   %-6s %6zu bytes -> package round trip ok\n", "unitwp", Packed.size());
+						std::cout << base::Format("  ok   {:<6} {:6d} bytes -> package round trip ok\n", "unitwp", Packed.size());
 					}
 				}
 			}
@@ -681,7 +712,7 @@ namespace game
 					if(!Edited.SaveToBytes(Bytes, Target, &Error) || !Back.LoadFromBytes(Bytes, &Error))
 					{
 						bOk = false;
-						Why = base::Format("%s: %s", GetTargetProfile(Target).m_pId, Error.c_str());
+						Why = base::Format("{}: {}", GetTargetProfile(Target).m_pId, Error.c_str());
 						break;
 					}
 
@@ -701,7 +732,7 @@ namespace game
 					if(!bFoundTile || !bFoundQuad)
 					{
 						bOk = false;
-						Why = base::Format("%s lost the %s colour", GetTargetProfile(Target).m_pId,
+						Why = base::Format("{} lost the {} colour", GetTargetProfile(Target).m_pId,
 							bFoundTile ? "quad" : "layer");
 						break;
 					}
@@ -1095,20 +1126,20 @@ namespace game
 				if(!Map.SaveToBytes(Bytes, Target, &Error) || !Back.LoadFromBytes(Bytes, &Error))
 				{
 					bOk = false;
-					Why = base::Format("%s: %s", GetTargetProfile(Target).m_pId, Error.c_str());
+					Why = base::Format("{}: {}", GetTargetProfile(Target).m_pId, Error.c_str());
 					break;
 				}
 				if(Back.m_vEnvelopes.size() != 1 || Back.m_vEnvelopes[0].m_vPoints.size() != 2)
 				{
 					bOk = false;
-					Why = base::Format("%s: the envelope did not come back", GetTargetProfile(Target).m_pId);
+					Why = base::Format("{}: the envelope did not come back", GetTargetProfile(Target).m_pId);
 					break;
 				}
 				const CEnvelopePoint &Point = Back.m_vEnvelopes[0].m_vPoints[1];
 				if(Point.m_Curvetype != CURVETYPE_BEZIER)
 				{
 					bOk = false;
-					Why = base::Format("%s: the curve type is %d, not bezier", GetTargetProfile(Target).m_pId, Point.m_Curvetype);
+					Why = base::Format("{}: the curve type is {:d}, not bezier", GetTargetProfile(Target).m_pId, Point.m_Curvetype);
 					break;
 				}
 				for(int c = 0; c < 4; c++)
@@ -1118,7 +1149,7 @@ namespace game
 						Point.m_Bezier.m_aOutTangentdy[c] != B.m_Bezier.m_aOutTangentdy[c])
 					{
 						bOk = false;
-						Why = base::Format("%s: channel %d lost its tangents", GetTargetProfile(Target).m_pId, c);
+						Why = base::Format("{}: channel {:d} lost its tangents", GetTargetProfile(Target).m_pId, c);
 						break;
 					}
 				if(!bOk)
@@ -1700,17 +1731,17 @@ namespace game
 			}
 
 			if(bOk)
-				std::cout << base::Format("  ok   svg     the icons parse and rasterize at %dx%d and %dx%d"
-					" (%.0f and %.0f covered pixels)\n", 24, 24, 48, 48, SmallCoverage, LargeCoverage);
+				std::cout << base::Format("  ok   svg     the icons parse and rasterize at {:d}x{:d} and {:d}x{:d}"
+					" ({:.0f} and {:.0f} covered pixels)\n", 24, 24, 48, 48, SmallCoverage, LargeCoverage);
 			else
 			{
-				std::cout << base::Format("  FAIL svg     an icon did not rasterize (%.0f and %.0f covered pixels)\n",
+				std::cout << base::Format("  FAIL svg     an icon did not rasterize ({:.0f} and {:.0f} covered pixels)\n",
 					SmallCoverage, LargeCoverage);
 				Failures++;
 			}
 		}
 
-		std::cout << base::Format("\n%d checks, %d failures\n", Checks, Failures);
+		std::cout << base::Format("\n{:d} checks, {:d} failures\n", Checks, Failures);
 		return Failures == 0 ? 0 : 1;
 	}
 	int RunCommandLine(const std::vector<std::string> &Arguments)

@@ -27,10 +27,10 @@ namespace engine
 
 		if(!SDL_Init(SDL_INIT_VIDEO))
 		{
-			LOG_ERROR("graphics", "failed to initialise SDL: %s", SDL_GetError());
+			LOG_ERROR("graphics", "failed to initialise SDL: {}", SDL_GetError());
 			return false;
 		}
-		LOG_INFO("graphics", "SDL %d.%d.%d", SDL_VERSIONNUM_MAJOR(SDL_GetVersion()),
+		LOG_INFO("graphics", "SDL {:d}.{:d}.{:d}", SDL_VERSIONNUM_MAJOR(SDL_GetVersion()),
 			SDL_VERSIONNUM_MINOR(SDL_GetVersion()), SDL_VERSIONNUM_MICRO(SDL_GetVersion()));
 
 		SDL_WindowFlags Flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -40,7 +40,7 @@ namespace engine
 		m_pWindow = SDL_CreateWindow(Title.c_str(), Width, Height, Flags);
 		if(m_pWindow == nullptr)
 		{
-			LOG_ERROR("graphics", "failed to create the window: %s", SDL_GetError());
+			LOG_ERROR("graphics", "failed to create the window: {}", SDL_GetError());
 			SDL_Quit();
 			return false;
 		}
@@ -80,11 +80,11 @@ namespace engine
 		}
 		if(m_pRenderer == nullptr)
 		{
-			LOG_ERROR("graphics", "failed to create a renderer: %s", SDL_GetError());
+			LOG_ERROR("graphics", "failed to create a renderer: {}", SDL_GetError());
 			Close();
 			return false;
 		}
-		LOG_INFO("graphics", "renderer '%s'", SDL_GetRendererName(m_pRenderer));
+		LOG_INFO("graphics", "renderer '{}'", SDL_GetRendererName(m_pRenderer));
 		SDL_SetRenderVSync(m_pRenderer, 1);
 
 		// the three system faces, with the configured overrides taking precedence
@@ -105,7 +105,7 @@ namespace engine
 		m_Painter.Init(m_pRenderer, &m_Text);
 		m_Painter.SetTextureLookup(&CGraphics::LookupTextureCallback, this);
 
-		LOG_INFO("graphics", "window %dx%d created, %s, font '%s'", Width, Height,
+		LOG_INFO("graphics", "window {:d}x{:d} created, {}, font '{}'", Width, Height,
 			m_bClientDecorations ? "drawn title bar (the editor draws it)" : "system title bar",
 			m_FontPath.empty() ? "(none)" : m_FontPath.c_str());
 		return true;
@@ -203,7 +203,7 @@ namespace engine
 		if(WindowSize.x != m_WindowSize.x || WindowSize.y != m_WindowSize.y ||
 			FramebufferSize.x != m_FramebufferSize.x || FramebufferSize.y != m_FramebufferSize.y)
 		{
-			LOG_TRACE("graphics", "window %.0fx%.0f, framebuffer %.0fx%.0f, pixel ratio %.2f",
+			LOG_TRACE("graphics", "window {:.0f}x{:.0f}, framebuffer {:.0f}x{:.0f}, pixel ratio {:.2f}",
 				WindowSize.x, WindowSize.y, FramebufferSize.x, FramebufferSize.y, m_PixelRatio);
 			m_WindowSize = WindowSize;
 			m_FramebufferSize = FramebufferSize;
@@ -302,7 +302,7 @@ namespace engine
 
 		if(!SDL_SetWindowBordered(m_pWindow, false))
 		{
-			LOG_WARN("graphics", "this platform refused a window without decorations (%s), keeping the system title bar",
+			LOG_WARN("graphics", "this platform refused a window without decorations ({}), keeping the system title bar",
 				SDL_GetError());
 			m_bClientDecorations = false;
 			return false;
@@ -315,7 +315,7 @@ namespace engine
 				the decorations come back and the editor draws no window
 				buttons of its own.
 			*/
-			LOG_WARN("graphics", "this platform cannot hit test a window (%s), keeping the system title bar",
+			LOG_WARN("graphics", "this platform cannot hit test a window ({}), keeping the system title bar",
 				SDL_GetError());
 			SDL_SetWindowBordered(m_pWindow, true);
 			m_bClientDecorations = false;
@@ -368,7 +368,7 @@ namespace engine
 		if(m_pWindow == nullptr)
 			return;
 		if(!SDL_ShowWindowSystemMenu(m_pWindow, static_cast<int>(Position.x), static_cast<int>(Position.y)))
-			LOG_TRACE("graphics", "no system menu for this window: %s", SDL_GetError());
+			LOG_TRACE("graphics", "no system menu for this window: {}", SDL_GetError());
 	}
 
 	void CGraphics::SetClearColor(float Red, float Green, float Blue)
@@ -421,21 +421,21 @@ namespace engine
 		const std::optional<storage::byte_vector> Bytes = storage::read(File);
 		if(!Bytes.has_value())
 		{
-			LOG_WARN("graphics", "failed to read the texture '%s'", File.string().c_str());
+			LOG_WARN("graphics", "failed to read the texture '{}'", File.string().c_str());
 			m_Textures.emplace(Key, -1);
 			return -1;
 		}
 		const std::optional<game::CDecodedImage> Decoded = game::DecodePng(*Bytes);
 		if(!Decoded.has_value())
 		{
-			LOG_WARN("graphics", "failed to decode the texture '%s'", File.string().c_str());
+			LOG_WARN("graphics", "failed to decode the texture '{}'", File.string().c_str());
 			m_Textures.emplace(Key, -1);
 			return -1;
 		}
 
 		const int Handle = CreateTextureRGBA(Key, Decoded->m_Width, Decoded->m_Height, Decoded->m_Pixels);
 		if(Handle > 0)
-			LOG_TRACE("graphics", "loaded texture '%s' from '%s' (%dx%d)", Key.c_str(), File.string().c_str(),
+			LOG_TRACE("graphics", "loaded texture '{}' from '{}' ({:d}x{:d})", Key.c_str(), File.string().c_str(),
 				Decoded->m_Width, Decoded->m_Height);
 		return Handle;
 	}
@@ -452,7 +452,7 @@ namespace engine
 			SDL_TEXTUREACCESS_STATIC, Width, Height);
 		if(pTexture == nullptr)
 		{
-			LOG_WARN("graphics", "failed to create the texture '%s': %s", Key.c_str(), SDL_GetError());
+			LOG_WARN("graphics", "failed to create the texture '{}': {}", Key.c_str(), SDL_GetError());
 			m_Textures.emplace(Key, -1);
 			return -1;
 		}
@@ -499,7 +499,7 @@ namespace engine
 			SDL_TEXTUREACCESS_STATIC, Width, Height);
 		if(pTexture == nullptr)
 		{
-			LOG_WARN("graphics", "failed to re-create the texture '%s': %s", Key.c_str(), SDL_GetError());
+			LOG_WARN("graphics", "failed to re-create the texture '{}': {}", Key.c_str(), SDL_GetError());
 			return Handle;
 		}
 		SDL_SetTextureScaleMode(pTexture, bSmooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);

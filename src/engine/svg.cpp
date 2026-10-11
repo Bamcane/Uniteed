@@ -90,15 +90,15 @@ namespace engine::svg
 		const std::optional<std::string> Text = storage::read_text(File);
 		if(!Text.has_value())
 		{
-			LOG_WARN("svg", "failed to read '%s'", File.string().c_str());
+			LOG_WARN("svg", "failed to read '{}'", File.string().c_str());
 			return false;
 		}
 		if(!LoadFromMemory(*Text, pUnits, Dpi))
 		{
-			LOG_WARN("svg", "failed to parse '%s'", File.string().c_str());
+			LOG_WARN("svg", "failed to parse '{}'", File.string().c_str());
 			return false;
 		}
-		LOG_TRACE("svg", "parsed '%s' (%.0fx%.0f units)", File.string().c_str(), m_pImage->width, m_pImage->height);
+		LOG_TRACE("svg", "parsed '{}' ({:.0f}x{:.0f} units)", File.string().c_str(), m_pImage->width, m_pImage->height);
 		return true;
 	}
 

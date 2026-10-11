@@ -258,7 +258,7 @@ namespace storage
 		}
 		catch(const std::runtime_error &Error)
 		{
-			LOG_ERROR("storage", "failed to write '%s': %s", target.c_str(), Error.what());
+			LOG_ERROR("storage", "failed to write '{}': {}", target.c_str(), Error.what());
 			return false;
 		}
 	}

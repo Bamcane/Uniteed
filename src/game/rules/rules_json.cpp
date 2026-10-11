@@ -484,7 +484,7 @@ namespace game::rules
 		int LineNumber = 0;
 		auto Fail = [&](const std::string &Message) {
 			if(pError != nullptr)
-				*pError = base::Format("line %d: %s", LineNumber, Message.c_str());
+				*pError = base::Format("line {:d}: {}", LineNumber, Message.c_str());
 			return false;
 		};
 
@@ -534,7 +534,7 @@ namespace game::rules
 			if(Words[0] == "NewRun" && pConfig != nullptr)
 			{
 				CRun Run;
-				Run.m_Name = base::Format("run %zu", pConfig->m_vRuns.size() + 1);
+				Run.m_Name = base::Format("run {:d}", pConfig->m_vRuns.size() + 1);
 				pConfig->m_vRuns.push_back(std::move(Run));
 				pRun = &pConfig->m_vRuns.back();
 				pIndex = nullptr;

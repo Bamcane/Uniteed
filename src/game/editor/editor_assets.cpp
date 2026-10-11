@@ -161,7 +161,7 @@ namespace game
 		ForgetImageTextures();
 		m_Dirty = true;
 		const int Index = static_cast<int>(m_Map.m_vImages.size()) - 1;
-		SetStatus(base::Format("added the image '%s' (%dx%d, embedded)", m_Map.m_vImages[static_cast<std::size_t>(Index)].m_Name.c_str(),
+		SetStatus(base::Format("added the image '{}' ({:d}x{:d}, embedded)", m_Map.m_vImages[static_cast<std::size_t>(Index)].m_Name.c_str(),
 			Width, Height));
 		return Index;
 	}
@@ -180,7 +180,7 @@ namespace game
 			// tell apart
 			if(!ReplaceImagePixels(Existing, Pixels->m_Width, Pixels->m_Height, Pixels->m_Pixels, pError))
 				return -1;
-			SetStatus(base::Format("replaced the image '%s' from %s", Name.c_str(),
+			SetStatus(base::Format("replaced the image '{}' from {}", Name.c_str(),
 				storage::path(Path).filename().string().c_str()));
 			return Existing;
 		}
@@ -244,7 +244,7 @@ namespace game
 		if(!File.has_value())
 		{
 			if(pError != nullptr)
-				*pError = base::Format("no mapres file for '%s' in this version", Image.m_Name.c_str());
+				*pError = base::Format("no mapres file for '{}' in this version", Image.m_Name.c_str());
 			return false;
 		}
 		const std::optional<CSourcePixels> Pixels = DecodeFile(File->string(), pError);
@@ -252,7 +252,7 @@ namespace game
 			return false;
 		if(!ReplaceImagePixels(Index, Pixels->m_Width, Pixels->m_Height, Pixels->m_Pixels, pError))
 			return false;
-		SetStatus(base::Format("embedded the image '%s'", Image.m_Name.c_str()));
+		SetStatus(base::Format("embedded the image '{}'", Image.m_Name.c_str()));
 		return true;
 	}
 
@@ -272,7 +272,7 @@ namespace game
 			// dropping the pixels would leave the map pointing at a file that
 			// does not exist, so the caller is told instead
 			if(pError != nullptr)
-				*pError = base::Format("there is no mapres/%s.png to fall back on", Image.m_Name.c_str());
+				*pError = base::Format("there is no mapres/{}.png to fall back on", Image.m_Name.c_str());
 			return false;
 		}
 		PushUndo(m_SelectedGroup, m_SelectedLayer, undo_scope::whole);
@@ -282,7 +282,7 @@ namespace game
 		Image.m_aTileFlagsValid = false;
 		ForgetImageTextures();
 		m_Dirty = true;
-		SetStatus(base::Format("the image '%s' is external again", Image.m_Name.c_str()));
+		SetStatus(base::Format("the image '{}' is external again", Image.m_Name.c_str()));
 		return true;
 	}
 
@@ -314,7 +314,7 @@ namespace game
 			if(!File.has_value())
 			{
 				if(pError != nullptr)
-					*pError = base::Format("no mapres file for '%s' in this version", Image.m_Name.c_str());
+					*pError = base::Format("no mapres file for '{}' in this version", Image.m_Name.c_str());
 				return false;
 			}
 			const std::optional<byte_vector> Bytes = storage::read(*File);
@@ -365,12 +365,12 @@ namespace game
 			an imported item.
 		*/
 		if(!m_Map.m_vExtras.empty())
-			LOG_WARN("editor", "removed image %d while the map carries %zu items the editor does not model: "
+			LOG_WARN("editor", "removed image {:d} while the map carries {:d} items the editor does not model: "
 				"those items keep the image indices they were imported with", Index, m_Map.m_vExtras.size());
 
 		ForgetImageTextures();
 		m_Dirty = true;
-		SetStatus(base::Format("removed image %d", Index));
+		SetStatus(base::Format("removed image {:d}", Index));
 		return true;
 	}
 
@@ -384,7 +384,7 @@ namespace game
 		if(!File.has_value())
 		{
 			if(pError != nullptr)
-				*pError = base::Format("no mapres/%s.png in this version", Clean.c_str());
+				*pError = base::Format("no mapres/{}.png in this version", Clean.c_str());
 			return -1;
 		}
 
@@ -409,7 +409,7 @@ namespace game
 		ForgetImageTextures();
 		m_Dirty = true;
 		const int Index = static_cast<int>(m_Map.m_vImages.size()) - 1;
-		SetStatus(base::Format("added the mapres image '%s'", Clean.c_str()));
+		SetStatus(base::Format("added the mapres image '{}'", Clean.c_str()));
 		return Index;
 	}
 
@@ -431,7 +431,7 @@ namespace game
 		m_Map.m_vSounds.push_back(std::move(Sound));
 		m_Dirty = true;
 		const int Index = static_cast<int>(m_Map.m_vSounds.size()) - 1;
-		SetStatus(base::Format("added the sound '%s' (%s)", m_Map.m_vSounds[static_cast<std::size_t>(Index)].m_Name.c_str(),
+		SetStatus(base::Format("added the sound '{}' ({})", m_Map.m_vSounds[static_cast<std::size_t>(Index)].m_Name.c_str(),
 			bEmbedded ? "embedded" : "external"));
 		return Index;
 	}
@@ -456,7 +456,7 @@ namespace game
 			Sound.m_External = 0;
 			Sound.m_Data = *Bytes;
 			m_Dirty = true;
-			SetStatus(base::Format("replaced the sound '%s' from %s", Name.c_str(),
+			SetStatus(base::Format("replaced the sound '{}' from {}", Name.c_str(),
 				storage::path(Path).filename().string().c_str()));
 			return Existing;
 		}
@@ -470,7 +470,7 @@ namespace game
 		if(!File.has_value())
 		{
 			if(pError != nullptr)
-				*pError = base::Format("no audio/%s.opus in this version", Clean.c_str());
+				*pError = base::Format("no audio/{}.opus in this version", Clean.c_str());
 			return -1;
 		}
 		const int Existing = FindSound(Clean);
@@ -503,7 +503,7 @@ namespace game
 		if(!File.has_value())
 		{
 			if(pError != nullptr)
-				*pError = base::Format("no audio/%s.opus in this version", Sound.m_Name.c_str());
+				*pError = base::Format("no audio/{}.opus in this version", Sound.m_Name.c_str());
 			return false;
 		}
 		const std::optional<byte_vector> Bytes = storage::read(*File);
@@ -517,7 +517,7 @@ namespace game
 		Sound.m_External = 0;
 		Sound.m_Data = *Bytes;
 		m_Dirty = true;
-		SetStatus(base::Format("embedded the sound '%s'", Sound.m_Name.c_str()));
+		SetStatus(base::Format("embedded the sound '{}'", Sound.m_Name.c_str()));
 		return true;
 	}
 
@@ -535,14 +535,14 @@ namespace game
 		if(!FindSoundFile(Sound.m_Name).has_value())
 		{
 			if(pError != nullptr)
-				*pError = base::Format("there is no audio/%s.opus to fall back on, so the bytes are kept", Sound.m_Name.c_str());
+				*pError = base::Format("there is no audio/{}.opus to fall back on, so the bytes are kept", Sound.m_Name.c_str());
 			return false;
 		}
 		PushUndo(m_SelectedGroup, m_SelectedLayer, undo_scope::whole);
 		Sound.m_External = 1;
 		Sound.m_Data.clear();
 		m_Dirty = true;
-		SetStatus(base::Format("the sound '%s' is external again", Sound.m_Name.c_str()));
+		SetStatus(base::Format("the sound '{}' is external again", Sound.m_Name.c_str()));
 		return true;
 	}
 
@@ -569,7 +569,7 @@ namespace game
 		if(!File.has_value())
 		{
 			if(pError != nullptr)
-				*pError = base::Format("no audio/%s.opus in this version", Sound.m_Name.c_str());
+				*pError = base::Format("no audio/{}.opus in this version", Sound.m_Name.c_str());
 			return false;
 		}
 		const std::optional<byte_vector> Bytes = storage::read(*File);
@@ -608,7 +608,7 @@ namespace game
 					Layer.m_Sound = -1;
 			}
 		m_Dirty = true;
-		SetStatus(base::Format("removed sound %d", Index));
+		SetStatus(base::Format("removed sound {:d}", Index));
 		return true;
 	}
 

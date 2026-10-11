@@ -23,7 +23,7 @@ namespace engine
 			SDL_Surface *pSurface = SDL_RenderReadPixels(pRenderer, nullptr);
 			if(pSurface == nullptr)
 			{
-				LOG_ERROR("editor", "failed to read the frame back: %s", SDL_GetError());
+				LOG_ERROR("editor", "failed to read the frame back: {}", SDL_GetError());
 				return false;
 			}
 
@@ -32,7 +32,7 @@ namespace engine
 			SDL_DestroySurface(pSurface);
 			if(pRgba == nullptr)
 			{
-				LOG_ERROR("editor", "failed to convert the frame: %s", SDL_GetError());
+				LOG_ERROR("editor", "failed to convert the frame: {}", SDL_GetError());
 				return false;
 			}
 
@@ -337,7 +337,7 @@ namespace engine
 		if(!ToOpen.empty())
 		{
 			if(!Editor.OpenFile(ToOpen))
-				LOG_WARN("editor", "could not open '%s', starting empty", ToOpen.c_str());
+				LOG_WARN("editor", "could not open '{}', starting empty", ToOpen.c_str());
 		}
 
 		if(bScreenshot)
@@ -364,7 +364,7 @@ namespace engine
 				// and a second map is opened the same way, which throws every
 				// texture of the first one away
 				if(Frame == 1 && !Setup.m_OpenAfter.empty() && !Editor.OpenFile(Setup.m_OpenAfter))
-					LOG_WARN("editor", "could not open '%s'", Setup.m_OpenAfter.c_str());
+					LOG_WARN("editor", "could not open '{}'", Setup.m_OpenAfter.c_str());
 				Graphics.BeginFrame(false);
 				Editor.Update();
 				// Update() clears the cursor when the real mouse is outside the
@@ -381,10 +381,10 @@ namespace engine
 			const int FramebufferHeight = static_cast<int>(Framebuffer.y);
 			if(!SaveFramebuffer(Graphics.Renderer(), ScreenshotPath, FramebufferWidth, FramebufferHeight))
 			{
-				LOG_ERROR("editor", "failed to write the screenshot '%s'", ScreenshotPath.c_str());
+				LOG_ERROR("editor", "failed to write the screenshot '{}'", ScreenshotPath.c_str());
 				return 1;
 			}
-			LOG_INFO("editor", "screenshot written to '%s' (%dx%d)", ScreenshotPath.c_str(), FramebufferWidth, FramebufferHeight);
+			LOG_INFO("editor", "screenshot written to '{}' ({:d}x{:d})", ScreenshotPath.c_str(), FramebufferWidth, FramebufferHeight);
 			// the audio device has to be closed before SDL_Quit(), which
 			// Graphics.Close() calls: SDL_Quit would tear the audio subsystem
 			// down underneath a live stream
@@ -464,7 +464,7 @@ namespace engine
 
 		if(!MapPath.empty() && !Editor.OpenFile(MapPath))
 		{
-			LOG_ERROR("editor", "could not open '%s'", MapPath.c_str());
+			LOG_ERROR("editor", "could not open '{}'", MapPath.c_str());
 			Graphics.Close();
 			return 1;
 		}
@@ -484,7 +484,7 @@ namespace engine
 		// and another map opened after it, which is the other thing that throws
 		// every texture away
 		if(!Setup.m_OpenAfter.empty() && !Editor.OpenFile(Setup.m_OpenAfter))
-			LOG_WARN("editor", "could not open '%s'", Setup.m_OpenAfter.c_str());
+			LOG_WARN("editor", "could not open '{}'", Setup.m_OpenAfter.c_str());
 
 		base::vec2 Cursor(1.0f, 1.0f);
 		std::vector<SDL_Keycode> ModifierKeys;
@@ -500,7 +500,7 @@ namespace engine
 			{
 				Resolved.m_Move = Editor.QuadPointScreen(Step.m_QuadPoint.x, Step.m_QuadPoint.y);
 				if(Resolved.m_Move.x < 0.0f)
-					LOG_WARN("editor", "quad %d has no point %d to click", Step.m_QuadPoint.x, Step.m_QuadPoint.y);
+					LOG_WARN("editor", "quad {:d} has no point {:d} to click", Step.m_QuadPoint.x, Step.m_QuadPoint.y);
 			}
 			PushInputFrame(Resolved, Cursor, ModifierKeys);
 			Graphics.BeginFrame(true);
@@ -539,12 +539,12 @@ namespace engine
 		const int FramebufferHeight = static_cast<int>(Framebuffer.y);
 		if(!SaveFramebuffer(Graphics.Renderer(), ScreenshotPath, FramebufferWidth, FramebufferHeight))
 		{
-			LOG_ERROR("editor", "failed to write the screenshot '%s'", ScreenshotPath.c_str());
+			LOG_ERROR("editor", "failed to write the screenshot '{}'", ScreenshotPath.c_str());
 			Editor.ShutdownSoundPreview();
 			Graphics.Close();
 			return 1;
 		}
-		LOG_INFO("editor", "script of %zu steps written to '%s' (%dx%d)", Steps.size(), ScreenshotPath.c_str(), FramebufferWidth, FramebufferHeight);
+		LOG_INFO("editor", "script of {:d} steps written to '{}' ({:d}x{:d})", Steps.size(), ScreenshotPath.c_str(), FramebufferWidth, FramebufferHeight);
 		Editor.ShutdownSoundPreview();
 		Graphics.Close();
 		return 0;

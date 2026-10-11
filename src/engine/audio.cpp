@@ -87,7 +87,7 @@ namespace engine
 			{
 				// the file is corrupt past this point, the rest would only be
 				// noise, so this is the end of the sound
-				LOG_WARN(TAG, "decoder error %d, stopping '%s'", Samples, pAudio->m_Name.c_str());
+				LOG_WARN(TAG, "decoder error {:d}, stopping '{}'", Samples, pAudio->m_Name.c_str());
 				pAudio->m_Finished = true;
 				break;
 			}
@@ -106,7 +106,7 @@ namespace engine
 			// an odd byte cannot happen: both Samples and the cap are floats
 			if(!SDL_PutAudioStreamData(static_cast<SDL_AudioStream *>(pStream), pPcm, Bytes))
 			{
-				LOG_WARN(TAG, "putting sound data failed: %s", SDL_GetError());
+				LOG_WARN(TAG, "putting sound data failed: {}", SDL_GetError());
 				pAudio->m_Finished = true;
 				break;
 			}
@@ -134,7 +134,7 @@ namespace engine
 			// the one place this is logged: Play() is called on every click of
 			// a sound layer and must not spam the log on a machine without a
 			// sound card
-			LOG_WARN(TAG, "no audio device, sound preview disabled: %s", SDL_GetError());
+			LOG_WARN(TAG, "no audio device, sound preview disabled: {}", SDL_GetError());
 			return false;
 		}
 
@@ -145,7 +145,7 @@ namespace engine
 		m_pStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &Spec, &AudioDecodeThunk, this);
 		if(m_pStream == nullptr)
 		{
-			LOG_WARN(TAG, "no audio device, sound preview disabled: %s", SDL_GetError());
+			LOG_WARN(TAG, "no audio device, sound preview disabled: {}", SDL_GetError());
 			SDL_QuitSubSystem(SDL_INIT_AUDIO);
 			return false;
 		}
@@ -154,7 +154,7 @@ namespace engine
 		// playback has to be resumed once
 		if(!SDL_ResumeAudioStreamDevice(static_cast<SDL_AudioStream *>(m_pStream)))
 		{
-			LOG_WARN(TAG, "resuming the audio device failed: %s", SDL_GetError());
+			LOG_WARN(TAG, "resuming the audio device failed: {}", SDL_GetError());
 			SDL_DestroyAudioStream(static_cast<SDL_AudioStream *>(m_pStream));
 			m_pStream = nullptr;
 			SDL_QuitSubSystem(SDL_INIT_AUDIO);
@@ -225,7 +225,7 @@ namespace engine
 			return false;
 		if(Opus.empty())
 		{
-			LOG_WARN(TAG, "sound '%s' is empty", std::string(Name).c_str());
+			LOG_WARN(TAG, "sound '{}' is empty", std::string(Name).c_str());
 			return false;
 		}
 
@@ -250,7 +250,7 @@ namespace engine
 		OggOpusFile *pFile = op_open_memory(reinterpret_cast<const unsigned char *>(m_Data.data()), m_Data.size(), &Error);
 		if(pFile == nullptr)
 		{
-			LOG_WARN(TAG, "opening '%s' as Opus failed: %d", std::string(Name).c_str(), Error);
+			LOG_WARN(TAG, "opening '{}' as Opus failed: {:d}", std::string(Name).c_str(), Error);
 			{
 				std::lock_guard<std::mutex> Guard(m_Lock);
 				m_Data.clear();
@@ -263,7 +263,7 @@ namespace engine
 		{
 			// a map resources is meant to be mono or stereo; more channels
 			// would be read as stereo and come out wrong, so refuse it
-			LOG_WARN(TAG, "'%s' has %d channels, only mono and stereo are played", std::string(Name).c_str(), Channels);
+			LOG_WARN(TAG, "'{}' has {:d} channels, only mono and stereo are played", std::string(Name).c_str(), Channels);
 			op_free(pFile);
 			{
 				std::lock_guard<std::mutex> Guard(m_Lock);
@@ -290,14 +290,14 @@ namespace engine
 		SDL_AudioStream *pStream = static_cast<SDL_AudioStream *>(m_pStream);
 		if(pStream == nullptr || !SDL_ClearAudioStream(pStream) || !SDL_ResumeAudioStreamDevice(pStream))
 		{
-			LOG_WARN(TAG, "starting playback of '%s' failed: %s", std::string(Name).c_str(), SDL_GetError());
+			LOG_WARN(TAG, "starting playback of '{}' failed: {}", std::string(Name).c_str(), SDL_GetError());
 			Stop();
 			return false;
 		}
 
 		// the device was resumed while empty, so the callback fires and decodes
 		// the first chunks: no data has to be pushed from here
-		LOG_INFO(TAG, "playing '%s', %.2f s%s", std::string(Name).c_str(), Duration, Mono ? " (mono upmixed)" : "");
+		LOG_INFO(TAG, "playing '{}', {:.2f} s{}", std::string(Name).c_str(), Duration, Mono ? " (mono upmixed)" : "");
 		return true;
 	}
 
@@ -307,7 +307,7 @@ namespace engine
 		if(!Opus.has_value())
 		{
 			// storage::read already told why it could not read the file
-			LOG_WARN(TAG, "cannot read sound '%s' from '%s'", std::string(Name).c_str(), Path.c_str());
+			LOG_WARN(TAG, "cannot read sound '{}' from '{}'", std::string(Name).c_str(), Path.c_str());
 			return false;
 		}
 		return Play(Name, *Opus);

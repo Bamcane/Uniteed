@@ -215,7 +215,7 @@ namespace game
 
 	std::string CEditor::TintSlotKey(std::size_t Slot) const
 	{
-		return base::Format("tintslot:%zu", Slot);
+		return base::Format("tintslot:{:d}", Slot);
 	}
 
 } // namespace game
@@ -249,7 +249,7 @@ namespace game
 		return false;
 	}
 
-	std::string CEditor::TintSlotKey(std::size_t Slot) const { return base::Format("tintslot:%zu", Slot); }
+	std::string CEditor::TintSlotKey(std::size_t Slot) const { return base::Format("tintslot:{:d}", Slot); }
 
 } // namespace game
 

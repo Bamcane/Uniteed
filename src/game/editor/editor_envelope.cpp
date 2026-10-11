@@ -161,7 +161,7 @@ namespace game
 		{
 			const base::rect Cycle = base::rect::FromSize(base::vec2(Area.m_BottomRight.x - 76.0f, y), base::vec2(68.0f, 22.0f));
 			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Cycle,
-				base::Format("%d / %d", EnvelopeIndex + 1, EnvelopeCount)))
+				base::Format("{:d} / {:d}", EnvelopeIndex + 1, EnvelopeCount)))
 			{
 				m_SelectedEnvelope = (EnvelopeIndex + 1) % EnvelopeCount;
 				m_SelectedEnvelopePoint = -1;
@@ -178,7 +178,7 @@ namespace game
 		y += 26.0f;
 
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 11.0f, ui::Theme.m_TextDim,
-			pEnvelope != nullptr ? base::Format("%d channels, %zu points, %.3fs loop", ChannelCount,
+			pEnvelope != nullptr ? base::Format("{:d} channels, {:d} points, {:.3f}s loop", ChannelCount,
 				pEnvelope->m_vPoints.size(), EnvelopeLength(*pEnvelope)) : "create one to start", Width);
 		y += 18.0f;
 
@@ -218,7 +218,7 @@ namespace game
 			if(m_EnvelopeChannelBase >= Channels)
 				m_EnvelopeChannelBase = 0;
 			m_Dirty = true;
-			SetStatus(base::Format("the envelope now has %d channels", Channels));
+			SetStatus(base::Format("the envelope now has {:d} channels", Channels));
 		}
 		y += 26.0f;
 
@@ -359,7 +359,7 @@ namespace game
 					continue;
 				if(g_Envelope.m_bGrid)
 					ui::Line(pPainter, base::vec2(Plot.m_TopLeft.x, GridY), base::vec2(Plot.m_BottomRight.x, GridY), ui::Theme.m_CurveGrid);
-				const std::string Label = Value < 1024.0f ? base::Format("%.0f", Value) : base::Format("x%.0f", Value / 1024.0f);
+				const std::string Label = Value < 1024.0f ? base::Format("{:.0f}", Value) : base::Format("x{:.0f}", Value / 1024.0f);
 				ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Plot.m_TopLeft.x + 4.0f, GridY - 3.0f), 10.0f,
 					ui::Theme.m_TextDim, Label);
 			}
@@ -380,7 +380,7 @@ namespace game
 				const float GridX = TimeToX(Time);
 				ui::Line(pPainter, base::vec2(GridX, Plot.m_TopLeft.y), base::vec2(GridX, Plot.m_BottomRight.y), ui::Theme.m_CurveGrid);
 				ui::Text(pPainter, m_pGraphics->Font(), base::vec2(GridX + 3.0f, Plot.m_BottomRight.y - 4.0f), 10.0f,
-					ui::Theme.m_TextDim, base::Format("%.3gs", Time));
+					ui::Theme.m_TextDim, base::Format("{:.3g}s", Time));
 			}
 		}
 
@@ -422,7 +422,7 @@ namespace game
 			{
 				const int Channel = m_EnvelopeChannelBase + Pair;
 				ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Plot.m_TopLeft.x + 4.0f, Plot.m_TopLeft.y + 12.0f + Pair * 12.0f), 10.5f,
-					aCurveColor[Pair], base::Format("ch %d  %.3f", Channel, Sample[static_cast<std::size_t>(Channel)]));
+					aCurveColor[Pair], base::Format("ch {:d}  {:.3f}", Channel, Sample[static_cast<std::size_t>(Channel)]));
 			}
 		}
 
@@ -579,7 +579,7 @@ namespace game
 		ui::Rect(pPainter, List, ui::Theme.m_PanelDark);
 		ui::RectOutline(pPainter, List, ui::Theme.m_Border);
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(List.m_TopLeft.x + 6.0f, List.m_TopLeft.y + 12.0f), 11.0f,
-			ui::Theme.m_TextDim, base::Format("%d points", PointCount), List.Width() - 12.0f);
+			ui::Theme.m_TextDim, base::Format("{:d} points", PointCount), List.Width() - 12.0f);
 
 		pPainter->Save();
 		pPainter->Scissor(List.m_TopLeft.x, List.m_TopLeft.y + 18.0f, List.Width(), std::max(1.0f, List.Height() - 18.0f));
@@ -596,7 +596,7 @@ namespace game
 			else if(ui::Hovered(Input, Row))
 				ui::Rect(pPainter, Row, ui::Theme.m_Hover);
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Row.m_TopLeft.x + 4.0f, Row.Center().y + 4.0f), 11.0f,
-				ui::Theme.m_Text, base::Format("%3d  %6dms  %-7s  %5d %5d %5d %5d", i, Point.m_Time,
+				ui::Theme.m_Text, base::Format("{:3d}  {:6d}ms  {:<7}  {:5d} {:5d} {:5d} {:5d}", i, Point.m_Time,
 					CurveName(Point.m_Curvetype).c_str(), Point.m_aValues[0], Point.m_aValues[1], Point.m_aValues[2], Point.m_aValues[3]),
 				Row.Width() - 8.0f);
 			if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
@@ -628,7 +628,7 @@ namespace game
 				PushUndo(m_SelectedGroup, m_SelectedLayer, undo_scope::envelope);
 				Point.m_Curvetype = (Point.m_Curvetype + 1) % NUM_CURVETYPES;
 				m_Dirty = true;
-				SetStatus(base::Format("point %d is now '%s'", m_SelectedEnvelopePoint, CurveName(Point.m_Curvetype).c_str()));
+				SetStatus(base::Format("point {:d} is now '{}'", m_SelectedEnvelopePoint, CurveName(Point.m_Curvetype).c_str()));
 			}
 			/*
 				The tangents of a bezier point are packed into the point itself,
@@ -642,7 +642,7 @@ namespace game
 					"bezier tangents are not editable here yet", HintWidth);
 			else
 				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X + 82.0f, y + 12.0f), 10.5f, ui::Theme.m_TextDim,
-					base::Format("%.3fs", static_cast<float>(Point.m_Time) / 1000.0f), HintWidth);
+					base::Format("{:.3f}s", static_cast<float>(Point.m_Time) / 1000.0f), HintWidth);
 
 			const base::rect DeleteButton = base::rect::FromSize(base::vec2(Area.m_BottomRight.x - 88.0f, y),
 				base::vec2(80.0f, 18.0f));
@@ -667,7 +667,7 @@ namespace game
 
 		// ------------------------------------------------------------- footnote
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(X, y + 12.0f), 10.5f, ui::Theme.m_TextDim,
-			base::Format("wheel over the curve: zoom   ctrl+click: add   right click: delete   shift+%c: channel pair   %c: grid",
+			base::Format("wheel over the curve: zoom   ctrl+click: add   right click: delete   shift+{:c}: channel pair   {:c}: grid",
 				static_cast<char>(EnvelopeKeyChannel), static_cast<char>(EnvelopeKeyGrid)), Width);
 
 		// ------------------------------------------------------------- shortcuts
@@ -682,7 +682,7 @@ namespace game
 			m_EnvelopeChannelBase = m_EnvelopeChannelBase == 0 ? 2 : 0;
 			if(m_EnvelopeChannelBase >= ChannelCount)
 				m_EnvelopeChannelBase = 0;
-			SetStatus(base::Format("the curve view now plots channel %d", m_EnvelopeChannelBase));
+			SetStatus(base::Format("the curve view now plots channel {:d}", m_EnvelopeChannelBase));
 		}
 		if(!Shift && Input.KeyPressed(EnvelopeKeyGrid))
 		{

@@ -72,7 +72,7 @@ namespace game
 			m_RuleSet = rules::FromJson(m_Project.m_Rules, &RuleError);
 			if(!RuleError.empty())
 			{
-				LOG_WARN("editor", "the project's rules did not load: %s", RuleError.c_str());
+				LOG_WARN("editor", "the project's rules did not load: {}", RuleError.c_str());
 				m_RuleSet = rules::CRuleSet{};
 			}
 		}
@@ -173,7 +173,7 @@ namespace game
 		}
 		ClampSelection();
 
-		SetStatus(base::Format("opened the project '%s' (%s)", m_Project.m_Meta.m_Name.c_str(),
+		SetStatus(base::Format("opened the project '{}' ({})", m_Project.m_Meta.m_Name.c_str(),
 			storage::path(Path).filename().string().c_str()));
 		return true;
 	}
@@ -283,7 +283,7 @@ namespace game
 		m_SourcePath = Path;
 		m_bSessionSeeded = true;
 		m_Dirty = false;
-		SetStatus(base::Format("saved the project '%s'", storage::path(Path).filename().string().c_str()));
+		SetStatus(base::Format("saved the project '{}'", storage::path(Path).filename().string().c_str()));
 		return true;
 	}
 
@@ -302,7 +302,7 @@ namespace game
 		m_RuleRun = 0;
 		m_RuleIndex = 0;
 		m_Dirty = true;
-		SetStatus(base::Format("loaded %d configurations, %d rules from %s",
+		SetStatus(base::Format("loaded {:d} configurations, {:d} rules from {}",
 			static_cast<int>(m_RuleSet.m_vConfigs.size()), m_RuleSet.RuleCount(),
 			storage::path(Path).filename().string().c_str()));
 		return true;
@@ -316,7 +316,7 @@ namespace game
 			SetStatus("saving the rules failed: " + Error);
 			return false;
 		}
-		SetStatus(base::Format("saved %d rules to %s", m_RuleSet.RuleCount(),
+		SetStatus(base::Format("saved {:d} rules to {}", m_RuleSet.RuleCount(),
 			storage::path(Path).filename().string().c_str()));
 		return true;
 	}
@@ -337,7 +337,7 @@ namespace game
 	void CEditor::AddRuleConfig()
 	{
 		rules::CConfiguration Config;
-		Config.m_Name = base::Format("config %d", static_cast<int>(m_RuleSet.m_vConfigs.size()) + 1);
+		Config.m_Name = base::Format("config {:d}", static_cast<int>(m_RuleSet.m_vConfigs.size()) + 1);
 		rules::CRun Run;
 		Run.m_Name = "run 1";
 		// reading the first plain tile layer is what almost every rule does
@@ -355,7 +355,7 @@ namespace game
 		if(m_RuleConfig < 0 || m_RuleConfig >= static_cast<int>(m_RuleSet.m_vConfigs.size()))
 			return;
 		rules::CRun Run;
-		Run.m_Name = base::Format("run %d", static_cast<int>(m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)].m_vRuns.size()) + 1);
+		Run.m_Name = base::Format("run {:d}", static_cast<int>(m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)].m_vRuns.size()) + 1);
 		Run.m_ReadSlot = 6;
 		m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)].m_vRuns.push_back(std::move(Run));
 		m_RuleRun = static_cast<int>(m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)].m_vRuns.size()) - 1;
@@ -376,7 +376,7 @@ namespace game
 		// surprising default and the one the DDRace editor uses too
 		Rule.m_Tile = m_BrushTile;
 		Rule.m_Flag = m_BrushFlags;
-		Rule.m_Name = base::Format("rule %d", static_cast<int>(Run.m_vIndexRules.size()) + 1);
+		Rule.m_Name = base::Format("rule {:d}", static_cast<int>(Run.m_vIndexRules.size()) + 1);
 		Run.m_vIndexRules.push_back(std::move(Rule));
 		m_RuleIndex = static_cast<int>(Run.m_vIndexRules.size()) - 1;
 		m_Dirty = true;
@@ -474,7 +474,7 @@ namespace game
 
 		int Group = 0, Layer = 0;
 		if(!LayerForSlot(TargetSlot, Group, Layer))
-			return Fail(base::Format("slot %d is not a tile layer of this map", TargetSlot));
+			return Fail(base::Format("slot {:d} is not a tile layer of this map", TargetSlot));
 		CLayer *pTarget = LayerAt(Group, Layer);
 		if(pTarget == nullptr || !pTarget->IsTiles())
 			return Fail("the target slot is not a tile layer");
@@ -539,7 +539,7 @@ namespace game
 		}
 		m_Dirty = true;
 		m_LastRuleSeed = Result.m_Seed;
-		SetStatus(base::Format("autorules wrote %d tiles over %d runs in %s (seed %d)",
+		SetStatus(base::Format("autorules wrote {:d} tiles over {:d} runs in {} (seed {:d})",
 			Result.m_TilesWritten, Result.m_RunsApplied,
 			Target.m_Name.empty() ? "the target layer" : Target.m_Name.c_str(), Result.m_Seed));
 		return true;
@@ -609,7 +609,7 @@ namespace game
 		EnsureViewStates();
 		m_SelectedLayer = static_cast<int>(pGroup->m_vLayers.size()) - 1;
 		m_Dirty = true;
-		SetStatus(base::Format("added the %s physics layer", pName));
+		SetStatus(base::Format("added the {} physics layer", pName));
 	}
 
 	// ---------------------------------------------------------------- envelopes
@@ -665,7 +665,7 @@ namespace game
 	{
 		CEnvelope Envelope;
 		Envelope.m_Channels = base::clamp(Channels, 1, 4);
-		Envelope.m_Name = base::Format("envelope %d", static_cast<int>(m_Map.m_vEnvelopes.size()) + 1);
+		Envelope.m_Name = base::Format("envelope {:d}", static_cast<int>(m_Map.m_vEnvelopes.size()) + 1);
 		// one point is a constant, which is what a fresh envelope should be
 		CEnvelopePoint Point;
 		Point.m_Time = 0;
@@ -705,7 +705,7 @@ namespace game
 		{
 			pLayer->m_ColorEnv = Index;
 		}
-		SetStatus(base::Format("added the envelope '%s'", m_Map.m_vEnvelopes[static_cast<std::size_t>(Index)].m_Name.c_str()));
+		SetStatus(base::Format("added the envelope '{}'", m_Map.m_vEnvelopes[static_cast<std::size_t>(Index)].m_Name.c_str()));
 		return Index;
 	}
 

@@ -2,22 +2,48 @@
 #define BASE_STRING_H
 
 #include <cctype>
-#include <cstdarg>
-#include <cstdio>
 #include <cstring>
+#include <format>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace base
 {
-	inline std::string Format(const char *pFormat, ...)
+	/*
+		The string builder of the interface, in the shape the fmt library
+		established: "{}" fields rather than printf conversions, checked against
+		the arguments *when the call is compiled*. A format string that does not
+		match what it is given is a build error here rather than a wrong line in
+		the interface, and the argument types are asked for by name instead of
+		being promoted by hand - which is what makes a translated format string
+		safe to hand around.
+	*/
+	template<typename... Args>
+	std::string Format(std::format_string<Args...> Format, Args &&...args)
 	{
-		char aBuffer[1024];
-		va_list Args;
-		va_start(Args, pFormat);
-		std::vsnprintf(aBuffer, sizeof(aBuffer), pFormat, Args);
-		va_end(Args);
-		return aBuffer;
+		return std::format(Format, std::forward<Args>(args)...);
+	}
+
+	/*
+		The same for a format string that is only known while the program runs:
+		a translated one, a line chosen from two literals, or one handed in by a
+		caller. There is no compile time check then, so the fields are checked
+		while it formats and a mistake leaves the format string on screen
+		instead of taking the interface down; `--selftest` covers that path.
+	*/
+	template<typename... Args>
+	std::string FormatRuntime(std::string_view Format, Args &&...args)
+	{
+		try
+		{
+			return std::vformat(Format, std::make_format_args(args...));
+		}
+		catch(const std::format_error &)
+		{
+			return std::string(Format);
+		}
 	}
 
 	inline bool StartsWith(const std::string &String, const std::string &Prefix)

@@ -74,7 +74,7 @@ namespace game
 		Add(Base / "mapres");
 
 		storage::SetResourcePaths(std::move(Paths));
-		LOG_TRACE("assets", "resource paths for version '%s': %zu directories", s_ActiveVersion.c_str(), storage::ResourcePaths().size());
+		LOG_TRACE("assets", "resource paths for version '{}': {:d} directories", s_ActiveVersion.c_str(), storage::ResourcePaths().size());
 	}
 
 	std::optional<storage::path> FindImageFile(std::string_view Name)

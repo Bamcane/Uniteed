@@ -304,7 +304,7 @@ namespace game
 			Name = "untitled";
 		// the window list shows the same thing, and a system that still draws a
 		// title bar of its own at least shows it there
-		m_pGraphics->SetWindowTitle(base::Format("%s%s - " GAME_DISPLAY_NAME, m_Dirty ? "*" : "", Name.c_str()));
+		m_pGraphics->SetWindowTitle(base::Format("{}{} - " GAME_DISPLAY_NAME, m_Dirty ? "*" : "", Name.c_str()));
 
 		const float BarStart = MenuTitleRect(pPainter, m_pGraphics->Font(), menu_id::settings).m_BottomRight.x + 6.0f;
 		const float BarEnd = Area.m_BottomRight.x - (bClient ? WindowButton * 3.0f + 12.0f : 8.0f);
@@ -503,7 +503,7 @@ namespace game
 			PanelX += PanelButton + PanelGap;
 			const bool bShown = PanelShown(Entry.m_Panel);
 			if(ui::Hovered(Input, Rect))
-				Hint(Rect, base::Format("%s - click to %s", Entry.m_pName, bShown ? "hide" : "show"),
+				Hint(Rect, base::Format("{} - click to {}", Entry.m_pName, bShown ? "hide" : "show"),
 					TabHint(Entry.m_Panel));
 			if(editor_icons::Button(m_VectorTextures, pPainter, Input, Rect, Entry.m_Icon, bShown, true, PanelIconInset))
 				TogglePanel(Entry.m_Panel);
@@ -527,7 +527,7 @@ namespace game
 			const base::rect Rect = base::rect::FromSize(base::vec2(x, Y), base::vec2(Width, ButtonHeight));
 			x += Width + 6.0f;
 			if(ui::Hovered(Input, Rect))
-				Hint(Rect, pKey != nullptr ? base::Format("%s  (%s)", Label.c_str(), pKey) : Label,
+				Hint(Rect, pKey != nullptr ? base::Format("{}  ({})", Label.c_str(), pKey) : Label,
 					Detail.empty() ? (Enabled ? "click for " + Label : "nothing to do here yet") : Detail);
 			return ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, Label, Active, Enabled);
 		};
@@ -545,7 +545,7 @@ namespace game
 		{
 			const CMapTargetProfile &Profile = GetTargetProfile(Target);
 			if(Button(Profile.m_pId, m_Target == Target, true, nullptr,
-				base::Format("%s: datafile v%d, %s%s", Profile.m_pName, Profile.m_DatafileVersion,
+				base::Format("{}: datafile v{:d}, {}{}", Profile.m_pName, Profile.m_DatafileVersion,
 					Profile.HasExtension(ext_game_entities) ? "DDRace entities" : "vanilla entities",
 					m_Target == Target ? " (already selected)" : "")))
 			{
@@ -555,9 +555,9 @@ namespace game
 				// says out loud what it will cost
 				const std::vector<std::string> Warnings = m_Map.CompatibilityWarnings(Target);
 				if(Warnings.empty())
-					SetStatus(base::Format("target %s", Profile.m_pName));
+					SetStatus(base::Format("target {}", Profile.m_pName));
 				else
-					SetStatus(base::Format("target %s: %s", Profile.m_pName, Warnings.front().c_str()));
+					SetStatus(base::Format("target {}: {}", Profile.m_pName, Warnings.front().c_str()));
 			}
 		}
 		// the DDRace features keep their own switch beside the targets, so a

@@ -713,7 +713,7 @@ namespace engine::painter
 				SDL_TEXTUREACCESS_STREAMING, Width, Height);
 			if(m_pGlyphTexture == nullptr)
 			{
-				LOG_ERROR("painter", "failed to create the glyph atlas texture: %s", SDL_GetError());
+				LOG_ERROR("painter", "failed to create the glyph atlas texture: {}", SDL_GetError());
 				return nullptr;
 			}
 			SDL_SetTextureBlendMode(m_pGlyphTexture, SDL_BLENDMODE_BLEND);

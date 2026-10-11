@@ -70,10 +70,10 @@ namespace game::editor_icons
 				Loaded++;
 		}
 		if(Loaded < g_IconCount)
-			LOG_WARN("icons", "%d of %d icons were loaded from '%s'", Loaded, g_IconCount,
+			LOG_WARN("icons", "{:d} of {:d} icons were loaded from '{}'", Loaded, g_IconCount,
 				Directory.string().c_str());
 		else
-			LOG_TRACE("icons", "%d icons loaded from '%s'", Loaded, Directory.string().c_str());
+			LOG_TRACE("icons", "{:d} icons loaded from '{}'", Loaded, Directory.string().c_str());
 	}
 
 	void Draw(engine::CVectorTextures &Textures, ui::CPainter *pPainter, icon Icon, const base::rect &Area,

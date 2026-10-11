@@ -65,7 +65,7 @@ namespace game
 		const auto Fail = [&](const char *pMessage) {
 			if(pError != nullptr)
 				*pError = pMessage;
-			LOG_ERROR("datafile", "%s", pMessage);
+			LOG_ERROR("datafile", "{}", pMessage);
 			return false;
 		};
 

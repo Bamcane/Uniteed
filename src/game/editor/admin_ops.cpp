@@ -57,7 +57,7 @@ namespace game::admin::ops
 		{
 			CLayer *pLayer = Editor.Layer(Group, Layer);
 			if(pLayer == nullptr)
-				Error = base::Format("there is no layer %d of group %d", Layer, Group);
+				Error = base::Format("there is no layer {:d} of group {:d}", Layer, Group);
 			return pLayer;
 		}
 
@@ -104,12 +104,12 @@ namespace game::admin::ops
 			CLayer *pLayer = Editor.Layer(Group, Layer);
 			if(pLayer == nullptr)
 			{
-				Error = base::Format("there is no layer %d of group %d", Layer, Group);
+				Error = base::Format("there is no layer {:d} of group {:d}", Layer, Group);
 				return nullptr;
 			}
 			if(!pLayer->IsTiles())
 			{
-				Error = base::Format("layer %d of group %d is not a tile layer", Layer, Group);
+				Error = base::Format("layer {:d} of group {:d} is not a tile layer", Layer, Group);
 				return nullptr;
 			}
 			return pLayer;
@@ -443,10 +443,10 @@ namespace game::admin::ops
 					if(!Layer.IsTiles())
 						continue;
 					if(Layer.m_vTiles.size() != Layer.TileCount())
-						Problems.push_back(base::Format("group %zu layer %zu has %zu tiles but is %dx%d",
+						Problems.push_back(base::Format("group {:d} layer {:d} has {:d} tiles but is {:d}x{:d}",
 							g, l, Layer.m_vTiles.size(), Layer.m_Width, Layer.m_Height));
 					if(Layer.m_Image >= static_cast<int>(Editor.Map().m_vImages.size()))
-						Problems.push_back(base::Format("group %zu layer %zu uses image %d, which does not exist",
+						Problems.push_back(base::Format("group {:d} layer {:d} uses image {:d}, which does not exist",
 							g, l, Layer.m_Image));
 					if(bFirst)
 					{
@@ -455,10 +455,10 @@ namespace game::admin::ops
 						bFirst = false;
 					}
 					else if(Layer.m_Width != MinWidth || Layer.m_Height != MinHeight)
-						Problems.push_back(base::Format("group %zu layer %zu is %dx%d where the first tile layer is %dx%d",
+						Problems.push_back(base::Format("group {:d} layer {:d} is {:d}x{:d} where the first tile layer is {:d}x{:d}",
 							g, l, Layer.m_Width, Layer.m_Height, MinWidth, MinHeight));
 					if(Layer.m_ColorEnv >= static_cast<int>(Editor.Map().m_vEnvelopes.size()))
-						Problems.push_back(base::Format("group %zu layer %zu points at envelope %d, which does not exist",
+						Problems.push_back(base::Format("group {:d} layer {:d} points at envelope {:d}, which does not exist",
 							g, l, Layer.m_ColorEnv));
 				}
 			if(!bGame)
@@ -969,7 +969,7 @@ namespace game::admin::ops
 			if(!EntityFromParam(Context.Json("entity"), Entity))
 				return Context.Fail("unknown entity; call game.list_entities for the names");
 			if(Entity != ENTITY_NULL && Entity >= NUM_VANILLA_ENTITIES && !Editor.GameEntities())
-				return Context.Fail(base::Format("entity %d is a DDRace only one: set allow_extensions to true or export to a DDRace target", Entity));
+				return Context.Fail(base::Format("entity {:d} is a DDRace only one: set allow_extensions to true or export to a DDRace target", Entity));
 
 			const int X = Context.Int("x", -1), Y = Context.Int("y", -1);
 			if(!pLayer->InBounds(X, Y))
@@ -1475,7 +1475,7 @@ namespace game::admin::ops
 				return Context.Fail("rules.add_rule has no configuration to add to");
 			rules::CConfiguration &Config = Context.m_Editor.RuleSet().m_vConfigs[static_cast<std::size_t>(ConfigIndex)];
 			if(RunIndex < 0 || RunIndex >= static_cast<int>(Config.m_vRuns.size()))
-				return Context.Fail(base::Format("run %d is not in configuration %d", RunIndex, ConfigIndex));
+				return Context.Fail(base::Format("run {:d} is not in configuration {:d}", RunIndex, ConfigIndex));
 			rules::CRun &Run = Config.m_vRuns[static_cast<std::size_t>(RunIndex)];
 			if(Run.m_vIndexRules.empty())
 				return Context.Fail("the rule was not added to the run");
@@ -1892,7 +1892,7 @@ namespace game::admin::ops
 				return Context.Fail("images.set needs an \"index\"");
 			const int Index = Context.Int("index", -1);
 			if(Index < 0 || Index >= Editor.ImageCount())
-				return Context.Fail(base::Format("there is no image %d", Index));
+				return Context.Fail(base::Format("there is no image {:d}", Index));
 			std::string Error;
 			if(Context.Has("name") && !Editor.SetImageName(Index, Context.Str("name")))
 				return Context.Fail("the image name cannot be empty");
@@ -1929,7 +1929,7 @@ namespace game::admin::ops
 				return Context.Fail("images.export needs an \"index\"");
 			const int Index = Context.Int("index", -1);
 			if(Index < 0 || Index >= Editor.ImageCount())
-				return Context.Fail(base::Format("there is no image %d", Index));
+				return Context.Fail(base::Format("there is no image {:d}", Index));
 			std::string Path = Context.Str("path");
 			if(Path.empty())
 				Path = (storage::GetExportDirectory() / (storage::SanitiseName(
@@ -2003,7 +2003,7 @@ namespace game::admin::ops
 				return Context.Fail("sounds.set needs an \"index\"");
 			const int Index = Context.Int("index", -1);
 			if(Index < 0 || Index >= Editor.SoundCount())
-				return Context.Fail(base::Format("there is no sound %d", Index));
+				return Context.Fail(base::Format("there is no sound {:d}", Index));
 			std::string Error;
 			if(Context.Has("name") && !Editor.SetSoundName(Index, Context.Str("name")))
 				return Context.Fail("the sound name cannot be empty");
@@ -2032,7 +2032,7 @@ namespace game::admin::ops
 				return Context.Fail("sounds.export needs an \"index\"");
 			const int Index = Context.Int("index", -1);
 			if(Index < 0 || Index >= Editor.SoundCount())
-				return Context.Fail(base::Format("there is no sound %d", Index));
+				return Context.Fail(base::Format("there is no sound {:d}", Index));
 			std::string Path = Context.Str("path");
 			if(Path.empty())
 				Path = (storage::GetExportDirectory() / (storage::SanitiseName(
@@ -2070,7 +2070,7 @@ namespace game::admin::ops
 			{
 				Index = Editor.FindSound(Context.Str("name"));
 				if(Index < 0)
-					return Context.Fail(base::Format("there is no sound named '%s'", Context.Str("name").c_str()));
+					return Context.Fail(base::Format("there is no sound named '{}'", Context.Str("name").c_str()));
 			}
 			Editor.AddSoundLayerOp(Index);
 			base::json Result = Changed(Editor, "sound_layers.add");
@@ -2118,7 +2118,7 @@ namespace game::admin::ops
 			{
 				Index = Editor.FindSound(Context.Str("name"));
 				if(Index < 0)
-					return Context.Fail(base::Format("there is no sound named '%s'", Context.Str("name").c_str()));
+					return Context.Fail(base::Format("there is no sound named '{}'", Context.Str("name").c_str()));
 			}
 			if(!Editor.SetSoundLayerSound(Index))
 				return Context.Fail("select a sound layer first");

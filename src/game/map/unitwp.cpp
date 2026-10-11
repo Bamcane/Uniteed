@@ -244,7 +244,7 @@ namespace game
 			WriteChunk(Out, ChunkResource, std::string_view(reinterpret_cast<const char *>(Table.data()), Table.size()));
 		}
 
-		LOG_INFO("unitwp", "serialised package: %zu bytes (map %zu bytes, %zu resources)",
+		LOG_INFO("unitwp", "serialised package: {:d} bytes (map {:d} bytes, {:d} resources)",
 			Out.size(), MapBytes.size(), m_vResources.size());
 		return true;
 	}
@@ -254,7 +254,7 @@ namespace game
 		const auto Fail = [&](const std::string &Message) {
 			if(pError != nullptr)
 				*pError = Message;
-			LOG_ERROR("unitwp", "%s", Message.c_str());
+			LOG_ERROR("unitwp", "{}", Message.c_str());
 			return false;
 		};
 
@@ -333,7 +333,7 @@ namespace game
 		if(!HaveMap)
 			return Fail("the package has no map chunk");
 
-		LOG_INFO("unitwp", "loaded package '%s' (%zu resources)", m_Meta.m_Name.c_str(), m_vResources.size());
+		LOG_INFO("unitwp", "loaded package '{}' ({:d} resources)", m_Meta.m_Name.c_str(), m_vResources.size());
 		return true;
 	}
 

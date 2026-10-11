@@ -148,7 +148,7 @@ namespace game
 			{
 				SetStatus(bEnabled ? pHint : "this needs a tile layer: pick one in the Layers docker");
 				RequestTooltip(base::vec2(Rect.m_BottomRight.x + 8.0f, Rect.m_TopLeft.y - 4.0f),
-					base::Format("%s  (%s)", pName, pKey),
+					base::Format("{}  ({})", pName, pKey),
 					bEnabled ? pHint : "select a tile layer to use this tool");
 			}
 			return bClicked;

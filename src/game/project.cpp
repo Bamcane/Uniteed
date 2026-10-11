@@ -64,7 +64,7 @@ namespace game
 			const base::json Document = base::json::parse(Text, &Error);
 			if(!Document.is_object() && !Document.is_array())
 			{
-				LOG_WARN("project", "the %s in this project did not parse: %s", pWhat,
+				LOG_WARN("project", "the {} in this project did not parse: {}", pWhat,
 					Error.empty() ? "not a JSON document" : Error.c_str());
 				return base::json();
 			}
@@ -248,13 +248,13 @@ namespace game
 			const std::optional<byte_vector> Bytes = storage::read(File);
 			if(!Bytes.has_value() || !CUnitwpPackage::IsPackage(*Bytes))
 			{
-				LOG_WARN("project", "skipping '%s': not a .unitwp package", File.filename().string().c_str());
+				LOG_WARN("project", "skipping '{}': not a .unitwp package", File.filename().string().c_str());
 				continue;
 			}
 			std::string MetaText;
 			if(!CUnitwpPackage::FindChunk(*Bytes, ChunkMeta, &MetaText))
 			{
-				LOG_WARN("project", "skipping '%s': the package has no metadata", File.filename().string().c_str());
+				LOG_WARN("project", "skipping '{}': the package has no metadata", File.filename().string().c_str());
 				continue;
 			}
 			CEntry Entry;

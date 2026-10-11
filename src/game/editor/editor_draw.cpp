@@ -1012,7 +1012,7 @@ namespace game
 				else
 					ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(Row.m_TopLeft.x + 8.0f, Row.m_TopLeft.y + 15.0f), 12.5f, ui::Theme.m_Text, Label, Row.Width() - 16.0f);
 				if(ui::Hovered(Input, Row))
-					Hint(Row, Label, base::Format("group %d: parallax %d%%/%d%%, %zu layers - click to select it, double click to rename it",
+					Hint(Row, Label, base::Format("group {:d}: parallax {:d}%/{:d}%, {:d} layers - click to select it, double click to rename it",
 						static_cast<int>(g), Group.m_ParallaxX, Group.m_ParallaxY, Group.m_vLayers.size()));
 				if(ui::Hovered(Input, Row) && Input.MouseDoubleClicked(engine::CInput::mouse_button::left))
 					BeginRename(static_cast<int>(g), -1);
@@ -1055,11 +1055,11 @@ namespace game
 
 					std::string Kind = "?";
 					if(Layer.IsTiles())
-						Kind = Layer.IsGameLayer() ? "game" : (Layer.IsPhysicsLayer() ? "physics" : base::Format("tiles %dx%d", Layer.m_Width, Layer.m_Height));
+						Kind = Layer.IsGameLayer() ? "game" : (Layer.IsPhysicsLayer() ? "physics" : base::Format("tiles {:d}x{:d}", Layer.m_Width, Layer.m_Height));
 					else if(Layer.IsQuads())
-						Kind = base::Format("quads %zu", Layer.m_vQuads.size());
+						Kind = base::Format("quads {:d}", Layer.m_vQuads.size());
 					else if(Layer.IsSounds())
-						Kind = base::Format("sounds %zu", Layer.m_vSources.size());
+						Kind = base::Format("sounds {:d}", Layer.m_vSources.size());
 					const std::string Label = (Layer.m_Name.empty() ? std::string("layer") : Layer.m_Name) + "  " + Kind;
 					const ui::CColor TextColor = (pView != nullptr && !pView->m_Visible) ? ui::Theme.m_TextDim : ui::Theme.m_Text;
 					if(Renaming() && m_RenameGroup == static_cast<int>(g) && m_RenameLayer == static_cast<int>(l))
@@ -1142,7 +1142,7 @@ namespace game
 							ClearQuadSelection();
 							SetQuadColorTarget(AllQuadCorners);
 							m_PaletteScroll = 0.0f;
-							SetStatus(base::Format("editing '%s' (%s)", Layer.m_Name.empty() ? "layer" : Layer.m_Name.c_str(),
+							SetStatus(base::Format("editing '{}' ({})", Layer.m_Name.empty() ? "layer" : Layer.m_Name.c_str(),
 								Layer.IsQuads() ? "quads: drag the points, C for a corner colour" :
 								(Layer.IsTiles() ? (Layer.IsPhysicsLayer() ? "physics layer, read only" : "tiles: Space takes the tile under the cursor") : "not editable")));
 						}
@@ -1351,8 +1351,8 @@ namespace game
 		y += 30.0f;
 
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 12.0f), 12.5f, ui::Theme.m_Text,
-			m_BrushW == 1 && m_BrushH == 1 ? base::Format("tile %d   flags %d", m_BrushTile, m_BrushFlags) :
-			base::Format("brush %dx%d   tile %d   flags %d", m_BrushW, m_BrushH, m_BrushTile, m_BrushFlags));
+			m_BrushW == 1 && m_BrushH == 1 ? base::Format("tile {:d}   flags {:d}", m_BrushTile, m_BrushFlags) :
+			base::Format("brush {:d}x{:d}   tile {:d}   flags {:d}", m_BrushW, m_BrushH, m_BrushTile, m_BrushFlags));
 		y += 22.0f;
 		// the two shortcuts a tile layer has that nothing else can do
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 12.0f), 11.5f, ui::Theme.m_TextDim,
@@ -1402,19 +1402,19 @@ namespace game
 					const base::rect CellRect = base::rect::FromSize(base::vec2(TopLeft.x + Col * Cell, TopLeft.y + Row * Cell),
 						base::vec2(Cell, Cell));
 					if(const char *pName = Index >= ENTITY_OFFSET ? EntityName(Index - ENTITY_OFFSET) : nullptr)
-						Hint(CellRect, pName, base::Format("%s is cell %d of the sheet: click to paint it", pName, Index));
+						Hint(CellRect, pName, base::Format("{} is cell {:d} of the sheet: click to paint it", pName, Index));
 					else if(Index >= ENTITY_OFFSET)
-						Hint(CellRect, base::Format("entity %d", Index - ENTITY_OFFSET),
+						Hint(CellRect, base::Format("entity {:d}", Index - ENTITY_OFFSET),
 							"an entity this build has no name for; the client draws it as it is");
 					else
-						Hint(CellRect, base::Format("cell %d", Index),
+						Hint(CellRect, base::Format("cell {:d}", Index),
 							"a tile controller of the game layer, not an entity: entities start at cell 191");
 					ui::RectOutline(pPainter, CellRect, ui::Theme.m_Border, 1.5f);
 					if(Input.MousePressed(engine::CInput::mouse_button::left))
 					{
 						SetBrushTile(Index);
 						SetTool(editor_tool::paint);
-						SetStatus(base::Format("painting with cell %d of the entity sheet", Index));
+						SetStatus(base::Format("painting with cell {:d} of the entity sheet", Index));
 					}
 				}
 
@@ -1485,8 +1485,8 @@ namespace game
 						{
 							m_bPaletteSelecting = false;
 							SetStatus(m_BrushW == 1 && m_BrushH == 1 ?
-								base::Format("brush tile %d", m_BrushTile) :
-								base::Format("brush %dx%d of the sheet, tile %d", m_BrushW, m_BrushH, m_BrushTile));
+								base::Format("brush tile {:d}", m_BrushTile) :
+								base::Format("brush {:d}x{:d} of the sheet, tile {:d}", m_BrushW, m_BrushH, m_BrushTile));
 						}
 					}
 				}
@@ -1529,9 +1529,9 @@ namespace game
 
 		// which quad: the buttons walk the layer, the map moves the selection
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 12.0f), 12.0f, ui::Theme.m_TextDim,
-			m_vSelectedQuads.empty() ? base::Format("no quad selected (%zu in the layer)", pLayer->m_vQuads.size()) :
-				base::Format("quad %d of %zu%s", Selected, pLayer->m_vQuads.size(),
-					m_vSelectedQuads.size() > 1 ? base::Format(" (%zu selected)", m_vSelectedQuads.size()).c_str() : ""));
+			m_vSelectedQuads.empty() ? base::Format("no quad selected ({:d} in the layer)", pLayer->m_vQuads.size()) :
+				base::Format("quad {:d} of {:d}{}", Selected, pLayer->m_vQuads.size(),
+					m_vSelectedQuads.size() > 1 ? base::Format(" ({:d} selected)", m_vSelectedQuads.size()).c_str() : ""));
 		y += 20.0f;
 
 		float x = Area.m_TopLeft.x + 12.0f;
@@ -1547,7 +1547,7 @@ namespace game
 			CColor Color;
 			if(PickerColor(Color))
 				m_PickerColor = Color;
-			SetStatus(base::Format("quad %d selected", Index));
+			SetStatus(base::Format("quad {:d} selected", Index));
 		};
 		if(RowButton("Previous", 74.0f, "select the quad before this one"))
 			SelectQuad(Selected <= 0 ? static_cast<int>(pLayer->m_vQuads.size()) - 1 : Selected - 1);
@@ -1592,8 +1592,8 @@ namespace game
 			ui::Rect(pPainter, Swatch, ToColor(aColors[i]));
 			ui::RectOutline(pPainter, Swatch, bActive ? ui::Theme.m_Accent : (ui::Hovered(Input, Swatch) ? ui::RGB(200, 205, 215) : ui::Theme.m_Border), bActive ? 2.5f : 1.0f);
 			if(ui::Hovered(Input, Swatch))
-				Hint(Swatch, base::Format("the %s corner", CornerName(i)),
-					base::Format("colour of the %s corner: right click it on the map to colour it", CornerName(i)));
+				Hint(Swatch, base::Format("the {} corner", CornerName(i)),
+					base::Format("colour of the {} corner: right click it on the map to colour it", CornerName(i)));
 		}
 		y += 30.0f;
 
@@ -1617,7 +1617,7 @@ namespace game
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(x, y + 16.0f), 11.5f, ui::Theme.m_TextDim,
 			"right click a corner on the map", Area.m_BottomRight.x - 12.0f - x);
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 40.0f), 11.5f, ui::Theme.m_TextDim,
-			bAll ? "editing all four corners (C)" : base::Format("editing the %s corner (C)", CornerName(m_QuadColorTarget)), Area.Width() - 24.0f);
+			bAll ? "editing all four corners (C)" : base::Format("editing the {} corner (C)", CornerName(m_QuadColorTarget)), Area.Width() - 24.0f);
 		y += 52.0f;
 
 		ui::Line(pPainter, base::vec2(Area.m_TopLeft.x + 8.0f, y), base::vec2(Area.m_BottomRight.x - 8.0f, y), ui::Theme.m_Border);
@@ -1634,13 +1634,13 @@ namespace game
 			const base::rect Swatch = base::rect::FromSize(base::vec2(Area.m_TopLeft.x + 12.0f, y + 3.0f), base::vec2(10.0f, 10.0f));
 			ui::Rect(pPainter, Swatch, (m_QuadColorTarget == i) ? ui::Theme.m_Accent : ui::Theme.m_TextDim);
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 28.0f, y + 12.0f), 11.5f, ui::Theme.m_Text,
-				base::Format("%-13s %8.1f %8.1f", CornerName(i), aWorld[i].x, aWorld[i].y));
+				base::Format("{:<13} {:8.1f} {:8.1f}", CornerName(i), aWorld[i].x, aWorld[i].y));
 			y += 16.0f;
 		}
 		const base::vec2 Pivot = m_LayerView.WorldToScreen(base::vec2(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y)));
 		(void)Pivot;
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 28.0f, y + 12.0f), 11.5f, ui::Theme.m_TextDim,
-			base::Format("%-13s %8.1f %8.1f", "pivot", base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y)));
+			base::Format("{:<13} {:8.1f} {:8.1f}", "pivot", base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y)));
 		y += 22.0f;
 
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 10.0f), 11.5f, ui::Theme.m_TextDim,
@@ -1655,7 +1655,7 @@ namespace game
 
 		if(Quad.m_PosEnv >= 0)
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 10.0f), 11.5f, ui::Theme.m_Warning,
-				base::Format("position envelope %d is applied", Quad.m_PosEnv));
+				base::Format("position envelope {:d} is applied", Quad.m_PosEnv));
 	}
 
 	// ------------------------------------------------------------- status bar
@@ -1669,7 +1669,7 @@ namespace game
 		const int TileY = m_bCursorValid ? static_cast<int>(std::floor(m_CursorWorld.y / TileSize)) : -1;
 		const edit_mode Mode = this->Mode();
 		const char *pMode = Mode == edit_mode::tiles ? "tiles" : (Mode == edit_mode::quads ? "quads" : "read only");
-		std::string Info = base::Format("v%d  %s  target %s  %s  tile %d,%d  zoom %.2f  %s",
+		std::string Info = base::Format("v{:d}  {}  target {}  {}  tile {:d},{:d}  zoom {:.2f}  {}",
 			m_Map.m_SourceDatafileVersion,
 			m_VersionId.c_str(),
 			GetTargetProfile(m_Target).m_pId,
@@ -1677,8 +1677,8 @@ namespace game
 			TileX, TileY, m_View.m_Zoom,
 			pLayer != nullptr ? (pLayer->m_Name.empty() ? "layer" : pLayer->m_Name.c_str()) : "no layer");
 		if(Mode == edit_mode::quads && pLayer != nullptr)
-			Info += base::Format("  quads %s", m_vSelectedQuads.empty() ? "none selected" :
-				base::Format("%d selected", static_cast<int>(m_vSelectedQuads.size())).c_str());
+			Info += base::Format("  quads {}", m_vSelectedQuads.empty() ? "none selected" :
+				base::Format("{:d} selected", static_cast<int>(m_vSelectedQuads.size())).c_str());
 
 		const double Age = base::Now() - m_StatusTime;
 		const ui::CColor MessageColor = Age < 6.0 ? ui::Theme.m_Accent : ui::Theme.m_TextDim;
@@ -1850,7 +1850,7 @@ namespace game
 			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Row, Profile.m_pName, Active))
 				m_ExportTarget = Index;
 			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Row.m_BottomRight.x - 12.0f, Row.Center().y + 4.0f), 11.0f, ui::Theme.m_TextDim,
-				base::Format("datafile v%d", Profile.m_DatafileVersion), ui::text_align::right);
+				base::Format("datafile v{:d}", Profile.m_DatafileVersion), ui::text_align::right);
 			y += 32.0f;
 			Index++;
 		}
@@ -1944,7 +1944,7 @@ namespace game
 								SetQuadColorTarget(i);
 								m_PickerColor = pLayer->m_vQuads[static_cast<std::size_t>(Index)].m_aColors[i];
 								RgbToHsv(m_PickerColor, m_PickerHue, Saturation, Value, m_PickerHue);
-								SetStatus(base::Format("the picker now edits the %s corner", CornerName(i)));
+								SetStatus(base::Format("the picker now edits the {} corner", CornerName(i)));
 							}
 						}
 						const base::rect All = base::rect::FromSize(base::vec2(X, y + 20.0f), base::vec2(Width, 18.0f));
@@ -2050,7 +2050,7 @@ namespace game
 			static_cast<unsigned char>(m_PickerColor.a)));
 		ui::RectOutline(pPainter, Preview, ui::Theme.m_Border);
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Preview.m_BottomRight.x + 8.0f, Preview.Center().y + 4.0f), 12.0f, ui::Theme.m_TextDim,
-			base::Format("%d %d %d %d", m_PickerColor.r, m_PickerColor.g, m_PickerColor.b, m_PickerColor.a));
+			base::Format("{:d} {:d} {:d} {:d}", m_PickerColor.r, m_PickerColor.g, m_PickerColor.b, m_PickerColor.a));
 
 		const CColor aPresets[8] = {{255, 255, 255, 255}, {0, 0, 0, 255}, {255, 255, 255, 128}, {140, 90, 50, 255},
 			{120, 200, 120, 255}, {90, 140, 240, 255}, {240, 200, 90, 255}, {200, 90, 90, 255}};
@@ -2094,7 +2094,7 @@ namespace game
 		x += 30.0f;
 
 		const base::rect Speed = base::rect::FromSize(base::vec2(x, Area.m_TopLeft.y), base::vec2(40.0f, Area.Height()));
-		if(ui::Button(pPainter, Input, m_pGraphics->Font(), Speed, base::Format("%.2gx", m_EnvelopeSpeed)))
+		if(ui::Button(pPainter, Input, m_pGraphics->Font(), Speed, base::Format("{:.2g}x", m_EnvelopeSpeed)))
 		{
 			const float aSpeeds[] = {0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f};
 			std::size_t Next = 0;
@@ -2114,7 +2114,7 @@ namespace game
 			m_bEnvelopePlaying = false; // scrubbing is a deliberate position
 		}
 		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Area.m_BottomRight.x, Area.m_TopLeft.y + 15.0f), 11.5f, ui::Theme.m_TextDim,
-			base::Format("%.2fs / %.2fs", m_EnvelopeTime, Loop), ui::text_align::right);
+			base::Format("{:.2f}s / {:.2f}s", m_EnvelopeTime, Loop), ui::text_align::right);
 	}
 
 	void CEditor::DrawPopups(ui::CPainter *pPainter)
@@ -2183,7 +2183,7 @@ namespace game
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Tab.Center().x, Tab.Center().y + 4.5f), 12.0f,
 			Active ? ui::Theme.m_Text : ui::Theme.m_TextDim, Label, Tab.Width() - 8.0f, ui::text_align::center);
 		if(bHover && !bDragging)
-			Hint(Tab, Label, base::Format("%s - drag the tab to move it between the dockers", TabHint(Panel)));
+			Hint(Tab, Label, base::Format("{} - drag the tab to move it between the dockers", TabHint(Panel)));
 		if(!bHover)
 			return false;
 		return Input.MousePressed(engine::CInput::mouse_button::left);
@@ -2515,7 +2515,7 @@ namespace game
 		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(Head.m_TopLeft.x + 8.0f, Head.Center().y + 4.5f), 12.5f,
 			ui::Theme.m_Text, "Autorules");
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Head.m_BottomRight.x - 8.0f, Head.Center().y + 4.5f), 11.0f,
-			ui::Theme.m_TextDim, base::Format("%d configs / %d rules", static_cast<int>(m_RuleSet.m_vConfigs.size()), m_RuleSet.RuleCount()),
+			ui::Theme.m_TextDim, base::Format("{:d} configs / {:d} rules", static_cast<int>(m_RuleSet.m_vConfigs.size()), m_RuleSet.RuleCount()),
 			Head.Width() * 0.6f, ui::text_align::right);
 
 		float y = Head.m_BottomRight.y + 6.0f;
@@ -2549,10 +2549,10 @@ namespace game
 			else if(ui::Hovered(Input, Row))
 				ui::Rect(pPainter, Row, ui::Theme.m_Hover);
 			ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(Row.m_TopLeft.x + 6.0f, Row.Center().y + 4.5f), 12.0f,
-				ui::Theme.m_Text, base::Format("config %zu  %s", c + 1, Config.m_Name.c_str()), Row.Width() - 12.0f);
+				ui::Theme.m_Text, base::Format("config {:d}  {}", c + 1, Config.m_Name.c_str()), Row.Width() - 12.0f);
 			if(ui::Hovered(Input, Row))
-				Hint(Row, base::Format("config %zu", c + 1),
-					base::Format("%s: a page of rules, applied to the layers it names", Config.m_Name.c_str()));
+				Hint(Row, base::Format("config {:d}", c + 1),
+					base::Format("{}: a page of rules, applied to the layers it names", Config.m_Name.c_str()));
 			if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
 				SetRuleSelection(static_cast<int>(c), 0, 0);
 			ty += RowHeight;
@@ -2567,11 +2567,11 @@ namespace game
 				else if(ui::Hovered(Input, RunRow))
 					ui::Rect(pPainter, RunRow, ui::Theme.m_Hover);
 				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(RunRow.m_TopLeft.x + 6.0f, RunRow.Center().y + 4.5f), 11.5f,
-					ui::Theme.m_Text, base::Format("%s  ->  %s  (%d rules)", RuleSlotName(Run.m_ReadSlot), RuleSlotName(Run.m_TargetSlot),
+					ui::Theme.m_Text, base::Format("{}  ->  {}  ({:d} rules)", RuleSlotName(Run.m_ReadSlot), RuleSlotName(Run.m_TargetSlot),
 						static_cast<int>(Run.m_vIndexRules.size())),
 					RunRow.Width() - 12.0f);
 				if(ui::Hovered(Input, RunRow))
-					Hint(RunRow, "run", base::Format("reads '%s' and writes '%s', in one pass",
+					Hint(RunRow, "run", base::Format("reads '{}' and writes '{}', in one pass",
 						RuleSlotName(Run.m_ReadSlot), RuleSlotName(Run.m_TargetSlot)));
 				if(ui::Hovered(Input, RunRow) && Input.MousePressed(engine::CInput::mouse_button::left))
 					SetRuleSelection(static_cast<int>(c), static_cast<int>(r), 0);
@@ -2588,7 +2588,7 @@ namespace game
 					else if(ui::Hovered(Input, RuleRow))
 						ui::Rect(pPainter, RuleRow, ui::Theme.m_Hover);
 					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(RuleRow.m_TopLeft.x + 6.0f, RuleRow.Center().y + 4.5f), 11.0f,
-						ui::Theme.m_TextDim, base::Format("%s  writes %d", Rule.m_Name.c_str(), Rule.m_Tile), RuleRow.Width() - 12.0f);
+						ui::Theme.m_TextDim, base::Format("{}  writes {:d}", Rule.m_Name.c_str(), Rule.m_Tile), RuleRow.Width() - 12.0f);
 					if(ui::Hovered(Input, RuleRow))
 						Hint(RuleRow, Rule.m_Name.empty() ? "rule" : Rule.m_Name,
 							"an index rule: where its conditions match, it writes its tile");
@@ -2634,7 +2634,7 @@ namespace game
 			if(Slot < 0)
 				SetStatus("select a tile layer to apply rules to");
 			else if(!ApplyRules(m_RuleConfig, Slot, 0, &Error))
-				LOG_WARN("editor", "autorules: %s", Error.c_str());
+				LOG_WARN("editor", "autorules: {}", Error.c_str());
 		}
 		if(ui::Button(pPainter, Input, m_pGraphics->Font(),
 			base::rect::FromSize(base::vec2(ApplyRow.m_TopLeft.x + HalfWidth + 6.0f, ApplyRow.m_TopLeft.y), base::vec2(HalfWidth, ApplyRow.Height())), "Apply all"))
@@ -2644,7 +2644,7 @@ namespace game
 			if(Slot < 0)
 				SetStatus("select a tile layer to apply rules to");
 			else if(!ApplyRules(-1, Slot, 0, &Error))
-				LOG_WARN("editor", "autorules: %s", Error.c_str());
+				LOG_WARN("editor", "autorules: {}", Error.c_str());
 		}
 		y += 30.0f;
 
@@ -2732,7 +2732,7 @@ namespace game
 						Rule.m_Name, "unnamed");
 					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
 						base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f + FieldWidth * 0.62f, iy), base::vec2(FieldWidth * 0.38f, 20.0f)),
-						base::Format("%d", Rule.m_Tile)))
+						base::Format("{:d}", Rule.m_Tile)))
 						Rule.m_Tile = (Rule.m_Tile + 1) % 256;
 					iy += 24.0f;
 
@@ -2749,7 +2749,7 @@ namespace game
 
 					Label("conditions and randomness");
 					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_TopLeft.x + 6.0f, iy + 10.0f), 11.0f,
-						ui::Theme.m_TextDim, base::Format("%d position rules, %d modulo rules", static_cast<int>(Rule.m_vRules.size()),
+						ui::Theme.m_TextDim, base::Format("{:d} position rules, {:d} modulo rules", static_cast<int>(Rule.m_vRules.size()),
 							static_cast<int>(Rule.m_vModuloRules.size())), FieldWidth);
 					iy += 16.0f;
 					float Random = Rule.m_RandomProbability;
@@ -2757,7 +2757,7 @@ namespace game
 						Random, 0.0f, 1.0f))
 						Rule.m_RandomProbability = Random;
 					ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_BottomRight.x - 6.0f, iy + 12.0f), 11.0f,
-						ui::Theme.m_TextDim, base::Format("%.2f", Rule.m_RandomProbability), ui::text_align::right);
+						ui::Theme.m_TextDim, base::Format("{:.2f}", Rule.m_RandomProbability), ui::text_align::right);
 					iy += 22.0f;
 
 					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
