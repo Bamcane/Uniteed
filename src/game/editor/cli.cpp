@@ -1439,6 +1439,25 @@ namespace game
 			// the toolbox has to know which tools the canvas can use
 			bOk = bOk && Editor.Mode() == edit_mode::tiles;
 
+			/*
+				The target decides which mapres set the map is read with, so
+				switching one has to move the resource paths and the version a
+				save records with it. Leaving them behind is what made a map
+				switched from 0.6 to 0.8 keep drawing the old tiles.
+			*/
+			Editor.SetTarget(map_target::tee06);
+			bOk = bOk && Editor.VersionId() == "06" && Editor.VersionForSave() == "06" &&
+				!storage::ResourcePaths().empty() &&
+				storage::ResourcePaths().front().string().find("versions/06") != std::string::npos;
+			Editor.SetTarget(map_target::ddnet07);
+			bOk = bOk && Editor.VersionId() == "ddnet" && Editor.VersionForSave() == "ddnet" &&
+				!storage::ResourcePaths().empty() &&
+				storage::ResourcePaths().front().string().find("versions/ddnet") != std::string::npos;
+			Editor.SetTarget(map_target::tee08);
+			bOk = bOk && Editor.VersionId() == "07" && Editor.VersionForSave() == "07" &&
+				!storage::ResourcePaths().empty() &&
+				storage::ResourcePaths().front().string().find("versions/07") != std::string::npos;
+
 			// the drag order of a dock is state, so reordering it must stick
 			std::vector<CEditor::dock_panel> Order = Editor.Tabs(dock_slot::right_upper);
 			bOk = bOk && Order.size() >= 2 && Order[0] == CEditor::dock_panel::tiles;

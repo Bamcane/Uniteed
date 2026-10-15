@@ -573,7 +573,9 @@ namespace game
 					Tr(Profile.HasExtension(ext_game_entities) ? "DDRace entities" : "vanilla entities"),
 					m_Target == Target ? " (already selected)" : "")))
 			{
-				m_Target = Target;
+				// through SetTarget, so the mapres set and the texture cache
+				// follow the version the button just chose
+				SetTarget(Target);
 				// the extensions switch decides whether the DDRace features the
 				// map already has are kept or dropped, so changing the target
 				// says out loud what it will cost

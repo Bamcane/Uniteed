@@ -795,6 +795,18 @@ namespace game
 	{
 		m_Target = Target;
 		m_TargetVersionId = VersionIdForTarget(Target);
+		/*
+			The target decides which mapres set the map is read with, so picking
+			one has to move the assets with it: the resource paths are re-armed
+			and the texture cache is dropped, or a map switched from 0.6 to 0.8
+			would keep drawing the tiles it had already loaded. This is also the
+			moment the map stops deciding the version, because the user just did.
+		*/
+		m_VersionId = m_TargetVersionId;
+		m_bMapVersionKnown = false;
+		SetupResourcePaths(m_VersionId);
+		LOG_INFO("editor", "assets of version '{}' selected for the target", m_VersionId.c_str());
+		ResetTextures();
 	}
 
 	void CEditor::SetSelectedLayer(int Group, int Layer)
