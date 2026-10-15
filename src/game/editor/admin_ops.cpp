@@ -13,14 +13,18 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 #include "base/define.h"
 #include "base/logger.h"
+#include "base/png.h"
 #include "base/string.h"
+#include "game/assets.h"
 #include "game/editor/admin.h"
 #include "game/editor/admin_ops.h"
 #include "game/editor/editor.h"
+#include "game/editor/render.h"
 #include "game/map/envelope.h"
 
 namespace game::admin::ops
@@ -2151,6 +2155,85 @@ namespace game::admin::ops
 		}
 	} // namespace
 
+	// ---------------------------------------------------------------- render
+	namespace
+	{
+		/*
+			The headless renderer as a method, so a script or an agent can picture
+			an area without a window. `path` is where the PNG lands; the rest of
+			the options default to the whole map at a viewable size.
+		*/
+		bool RenderMap(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+
+			CMapRenderOptions Options;
+			const base::json &Size = Context.Json("size");
+			if(Size.is_array() && Size.size() >= 2)
+			{
+				Options.m_Width = std::max(1, static_cast<int>(Size.at(0).as_int(800)));
+				Options.m_Height = std::max(1, static_cast<int>(Size.at(1).as_int(600)));
+			}
+			const base::json &Center = Context.Json("center");
+			if(Center.is_array() && Center.size() >= 2)
+			{
+				Options.m_Center = base::vec2(static_cast<float>(Center.at(0).as_double(0.0)),
+					static_cast<float>(Center.at(1).as_double(0.0)));
+				Options.m_bCenterSet = true;
+			}
+			Options.m_Zoom = static_cast<float>(Context.Json("zoom").as_double(1.0));
+			Options.m_Time = static_cast<float>(Context.Json("time").as_double(0.0));
+			Options.m_bTransparent = Context.Bool("transparent", false);
+			const base::json &Background = Context.Json("background");
+			if(Background.is_array() && Background.size() >= 3)
+				Options.m_Background = CColor{static_cast<int>(Background.at(0).as_int(24)),
+					static_cast<int>(Background.at(1).as_int(26)), static_cast<int>(Background.at(2).as_int(30)), 255};
+			else if(Background.is_string())
+			{
+				std::string Text = Background.as_string();
+				if(!Text.empty() && Text[0] == '#')
+					Text = Text.substr(1);
+				const unsigned long Rgb = std::strtoul(Text.c_str(), nullptr, 16);
+				Options.m_Background = CColor{static_cast<int>((Rgb >> 16) & 0xFF),
+					static_cast<int>((Rgb >> 8) & 0xFF), static_cast<int>(Rgb & 0xFF), 255};
+			}
+
+			// the render installs the map's own version's mapres paths; the
+			// editor's set is put back so a later draw of the session is unaffected
+			const std::string RestoreVersion = Editor.VersionId();
+			storage::byte_vector Pixels;
+			CMapRenderStats Stats;
+			std::string Error;
+			if(!RenderMapToRgba(Editor.Map(), Options, Pixels, Stats, Error))
+			{
+				SetupResourcePaths(RestoreVersion);
+				return Context.Fail(Error);
+			}
+			SetupResourcePaths(RestoreVersion);
+
+			std::string Path = Context.Str("path");
+			if(Path.empty())
+			{
+				const std::string Name = Editor.ProjectName().empty() ? "untitled" : Editor.ProjectName();
+				Path = (storage::GetExportDirectory() / (storage::SanitiseName(Name) + ".render.png")).string();
+			}
+			if(!base::WritePng(storage::path(Path), Options.m_Width, Options.m_Height, Pixels))
+				return Context.Fail(base::Format("could not write '{}'", Path.c_str()));
+
+			base::json Result = base::json::object();
+			Result["path"] = Path;
+			Result["width"] = Options.m_Width;
+			Result["height"] = Options.m_Height;
+			Result["groups"] = Stats.m_Groups;
+			Result["layers"] = Stats.m_Layers;
+			Result["tiles"] = Stats.m_Tiles;
+			Result["quads"] = Stats.m_Quads;
+			Result["images"] = Stats.m_Images;
+			Result["missing_images"] = Stats.m_MissingImages;
+			return Context.Ok(std::move(Result));
+		}
+	} // namespace
+
 	// ------------------------------------------------------------------- table
 	const std::vector<CDescriptor> &Table()
 	{
@@ -2249,6 +2332,9 @@ namespace game::admin::ops
 			{"export.map", "target, path, project", "write the map for a target; without a path, under the export directory", ExportMap},
 			{"export.all", "targets, project", "write the map for every target, or for the named ones", ExportAll},
 			{"export.package", "path, project", "write a .unitwp package with the mapres files it needs; \"project\" opens that project first", ExportPackage},
+
+			{"render.map", "path, center, size, zoom, time, transparent, background",
+				"draw the map's tiles and quads to a PNG with no window; center is [x,y] world pixels, size is [w,h] pixels", RenderMap},
 
 			{"select.get", "", "the selection, the brush, the target and the extensions gate", SelectGet},
 			{"select.set", "group, layer", "select a layer", SelectSet},

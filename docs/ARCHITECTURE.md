@@ -40,6 +40,7 @@ src/
       editor.h/cpp         state, input, actions, undo, the project and rule operations
       editor_project.cpp   projects, rules, physics layers, envelope operations
       editor_assets.cpp    the image and sound model, no renderer needed
+      render.h/cpp         the headless map picture: tiles, quads, envelopes
       editor_sound.cpp     sound layers, sound sources and the preview
       editor_window.cpp    the menu bar and the toolbar, and the menus (GUI build only)
       editor_chrome.cpp    the tool box and the floating panels (GUI build only)
@@ -273,6 +274,13 @@ that needs a renderer (`editor_draw.cpp`, `editor_envelope.cpp`,
 `editor_files.cpp` are compiled either way and stub themselves out without a
 window, which is what lets the command line and the agent interface drive the
 same `CEditor` the window does.
+
+`render.cpp` is the map picture without SDL: it draws the tile and quad layers
+of every group into a plain RGBA buffer, through the same `LayerColorAt`,
+`QuadColorsAt` and `QuadPointsAt` helpers the canvas calls, so a render and the
+window cannot disagree about a layer colour or an animated quad. Being model
+code it compiles into the headless build too, and `--render` and the
+`render.map` method are the one implementation.
 
 `admin_ops.cpp` holds one table: a row per administrative method with its name, a
 one line parameter list, a description and the function that runs it. The

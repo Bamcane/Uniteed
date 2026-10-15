@@ -514,6 +514,16 @@ is the separate decision to carry the pixels.
 |---|---|---|
 | `export.map` — write the map for a target | `target` (the current target), `path` (default `<export>/<target>/<name>.<target>.map`), `project` (open that project first, which a one-shot invocation needs) | `path`, `target`, `profile`, `datafile_version`, `status`, `warnings` |
 | `export.all` — write the map for every target, or for the named ones | `targets` (an array of ids; every export target when absent). The comparison is against the canonical id, so write `ddnet06`, not `ddnet`; `project` as above | `exports`, each `target`, `path` and `ok` (with `error` when it failed) |
+| `render.map` — draw the map's tiles and quads to a PNG with no window | `path` (default `<export>/<name>.render.png`), `center` (`[x, y]` world pixels, tile * 32; the map centre when absent), `size` (`[width, height]` pixels, `800` by `600`), `zoom` (`1`), `time` (seconds on the envelope clock), `transparent` (bool), `background` (`[r, g, b]` or `#rrggbb`) | `path`, `width`, `height`, `groups`, `layers`, `tiles`, `quads`, `images`, `missing_images` |
+
+`render.map` is the headless picture of the map, not of the interface: it draws
+the tile and quad layers of every group through the same parallax, clipping,
+layer colour and envelope evaluation the canvas uses, and writes the result as a
+PNG. Game and physics layers are editor affordances rather than the map's
+picture, so they are left out, and the `time` parameter is what freezes an
+animation — a colour or position envelope is evaluated at that second. It is the
+same renderer `uniteed --render` runs, and it works in a build with no SDL at
+all.
 
 ### selection
 
@@ -681,9 +691,10 @@ than a hidden limitation:
   client act on teleporters it does not know about.
 * **Undo and redo move one step at a time** and the history is not exposed, so
   an agent cannot inspect or roll back to a named point in it.
-* **There is no rendering or playback.** An agent cannot produce a PNG (that is
-  the separate `--screenshot` mode of the command line, not a method) and cannot
-  play audio.
+* **There is no playback beyond a still frame.** `render.map` draws the map's
+  tiles and quads to a PNG with no window, at the envelope `time` it is given,
+  but nothing animates across time and there is no way to play a map's audio as a
+  whole (`sounds.preview` plays one sound at a time).
 * **One-shot calls do not share state.** Each `uniteed <method>` process is a
   fresh session; persistence is `project.save` plus `project.open`, or one
   resident `--agent` session. Three commands cover the common case without a

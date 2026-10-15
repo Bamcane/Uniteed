@@ -16,6 +16,7 @@
 #include "engine/ui_theme.h"
 #include "game/assets.h"
 #include "game/editor/editor_icons.h"
+#include "game/editor/render.h"
 #include "game/map/envelope.h"
 
 namespace game
@@ -594,20 +595,9 @@ namespace game
 
 	bool CEditor::SetupVersionForMap(bool bMapDecidesVersion)
 	{
-		// which mapres directory matches what the map was built for: DDRace maps
-		// reference the ddnet tiles, 0.8 ships the 0.7 images, and a map without
-		// run length tiles and without DDRace items is treated as 0.6
-		std::string Version = "07";
-		if(m_Map.m_SourceHasDdnetItems)
-			Version = "ddnet";
-		else if(m_Map.m_SourceDatafileVersion == 5)
-			Version = "07";
-		else
-			Version = "06";
-		for(const CGroup &Group : m_Map.m_vGroups)
-			for(const CLayer &Layer : Group.m_vLayers)
-				if(Layer.m_SourceTilemapVersion >= 4)
-					Version = m_Map.m_SourceHasDdnetItems ? "ddnet" : "07";
+		// which mapres directory matches what the map was built for; the rule
+		// lives with the assets so the headless renderer picks the same set
+		const std::string Version = MapVersionId(m_Map);
 
 		m_VersionId = Version;
 		/*
@@ -994,43 +984,20 @@ namespace game
 	}
 
 	// ----------------------------------------------------------------- colours
-	namespace
-	{
-		int TintChannel(int Value, float Scale)
-		{
-			return base::clamp(static_cast<int>(std::lround(static_cast<float>(Value) * Scale)), 0, 255);
-		}
-	} // namespace
-
+	/*
+		The colour and point helpers are free functions in render.cpp, shared with
+		the headless renderer: a layer colour and a quad's animated corners have
+		to mean the same thing in a picture and in a render, so both go through
+		one implementation.
+	*/
 	CColor CEditor::LayerColor(const CLayer &Layer) const
 	{
-		CEnvelopeSample Environment;
-		Environment[0] = Environment[1] = Environment[2] = Environment[3] = 1.0f;
-		if(Layer.m_ColorEnv >= 0 && Layer.m_ColorEnv < static_cast<int>(m_Map.m_vEnvelopes.size()))
-			EvaluateEnvelope(m_Map.m_vEnvelopes[static_cast<std::size_t>(Layer.m_ColorEnv)], m_EnvelopeTime + Layer.m_ColorEnvOffset / 1000.0f, Environment, 4);
-
-		CColor Color;
-		Color.r = TintChannel(Layer.m_Color.r, Environment[0]);
-		Color.g = TintChannel(Layer.m_Color.g, Environment[1]);
-		Color.b = TintChannel(Layer.m_Color.b, Environment[2]);
-		Color.a = TintChannel(Layer.m_Color.a, Environment[3]);
-		return Color;
+		return LayerColorAt(m_Map, Layer, m_EnvelopeTime);
 	}
 
 	void CEditor::QuadColors(const CQuad &Quad, CColor *paColors) const
 	{
-		CEnvelopeSample Environment;
-		Environment[0] = Environment[1] = Environment[2] = Environment[3] = 1.0f;
-		if(Quad.m_ColorEnv >= 0 && Quad.m_ColorEnv < static_cast<int>(m_Map.m_vEnvelopes.size()))
-			EvaluateEnvelope(m_Map.m_vEnvelopes[static_cast<std::size_t>(Quad.m_ColorEnv)], m_EnvelopeTime + Quad.m_ColorEnvOffset / 1000.0f, Environment, 4);
-
-		for(int i = 0; i < 4; i++)
-		{
-			paColors[i].r = TintChannel(Quad.m_aColors[i].r, Environment[0]);
-			paColors[i].g = TintChannel(Quad.m_aColors[i].g, Environment[1]);
-			paColors[i].b = TintChannel(Quad.m_aColors[i].b, Environment[2]);
-			paColors[i].a = TintChannel(Quad.m_aColors[i].a, Environment[3]);
-		}
+		QuadColorsAt(m_Map, Quad, m_EnvelopeTime, paColors);
 	}
 
 	base::view_transform CEditor::GroupView(const CGroup &Group) const { return game::GroupView(m_View, Group); }
@@ -1045,27 +1012,7 @@ namespace game
 
 	void CEditor::QuadPoints(const CQuad &Quad, base::vec2 *paPoints) const
 	{
-		CEnvelopeSample Position;
-		if(Quad.m_PosEnv >= 0 && Quad.m_PosEnv < static_cast<int>(m_Map.m_vEnvelopes.size()))
-			EvaluateEnvelope(m_Map.m_vEnvelopes[static_cast<std::size_t>(Quad.m_PosEnv)], m_EnvelopeTime + Quad.m_PosEnvOffset / 1000.0f, Position, 3);
-
-		const base::vec2 Offset(Position[0], Position[1]);
-		const float Rotation = Position[2] / 180.0f * base::Pi;
-		// the fifth point is the pivot the rotation turns around
-		const base::vec2 Pivot(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y));
-
-		for(int i = 0; i < 4; i++)
-		{
-			base::vec2 Point(base::FixedToFloat(Quad.m_aPoints[i].x), base::FixedToFloat(Quad.m_aPoints[i].y));
-			if(Rotation != 0.0f)
-			{
-				const base::vec2 Relative = Point - Pivot;
-				const float Cos = std::cos(Rotation);
-				const float Sin = std::sin(Rotation);
-				Point = base::vec2(Relative.x * Cos - Relative.y * Sin, Relative.x * Sin + Relative.y * Cos) + Pivot;
-			}
-			paPoints[i] = Point + Offset;
-		}
+		QuadPointsAt(m_Map, Quad, m_EnvelopeTime, paPoints);
 	}
 
 	float CEditor::EnvelopeLoopLength() const

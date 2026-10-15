@@ -32,6 +32,15 @@ namespace game
 	// the asset directory of a target ("06", "07" or "ddnet")
 	std::string VersionIdForTarget(map_target Target);
 
+	/*
+		The mapres directory a map's images belong to, from what the map records:
+		a map with DDRace items uses the ddnet tiles, a datafile v5 map the 0.7
+		images, and one without run length tiles and without DDRace items is 0.6.
+		The editor picks its asset set with this rule, and so does the headless
+		renderer, so both draw a map from the same files.
+	*/
+	std::string MapVersionId(const CMap &Map);
+
 	// installs the search order for a version
 	void SetupResourcePaths(std::string_view VersionId);
 

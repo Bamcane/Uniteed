@@ -11,6 +11,7 @@
 #include "base/i18n.h"
 #include "base/logger.h"
 #include "base/math.h"
+#include "base/png.h"
 #include "base/string.h"
 #include "base/time.h"
 #include "engine/chrome.h"
@@ -18,6 +19,7 @@
 #include "engine/svg.h"
 #include "game/assets.h"
 #include "game/editor/editor.h"
+#include "game/editor/render.h"
 #include "game/map/envelope.h"
 #include "game/map/map.h"
 #include "game/map/unitwp.h"
@@ -47,6 +49,9 @@ namespace game
 				"                                  wrap a map into a .unitwp package\n"
 				"  --unpack <in.unitwp> <out.map> [--target id]\n"
 				"                                  export a package as a plain map\n"
+				"  --render <map> <out.png> [--center X,Y] [--size WxH] [--zoom Z] [--time S]\n"
+				"                                  [--transparent] [--background RRGGBB]\n"
+				"                                  draw the map's tiles and quads to a PNG, no window\n"
 				"  --targets                       print the version matrix\n"
 				"  --selftest [map ...]            round trip every bundled map\n"
 				"  --agent                         a resident JSON session on stdin and stdout\n"
@@ -87,6 +92,14 @@ namespace game
 			bool m_Embed = false;
 			int m_Width = 50;
 			int m_Height = 50;
+			bool m_bSizeSet = false;
+			// --render: where to look, how far in, and at which envelope time
+			base::vec2 m_Center;
+			bool m_bCenterSet = false;
+			float m_Zoom = 1.0f;
+			float m_Time = 0.0f;
+			bool m_bTransparent = false;
+			CColor m_Background{24, 26, 30, 255};
 		};
 
 		bool ParseArguments(const std::vector<std::string> &Arguments, CArguments &Out)
@@ -104,6 +117,45 @@ namespace game
 				{
 					Out.m_Embed = true;
 				}
+				else if(Argument == "--center")
+				{
+					if(i + 1 >= Arguments.size())
+						return false;
+					const std::string Value = Arguments[++i];
+					const std::size_t Comma = Value.find(',');
+					if(Comma == std::string::npos)
+						return false;
+					Out.m_Center.x = static_cast<float>(std::atof(Value.substr(0, Comma).c_str()));
+					Out.m_Center.y = static_cast<float>(std::atof(Value.substr(Comma + 1).c_str()));
+					Out.m_bCenterSet = true;
+				}
+				else if(Argument == "--zoom")
+				{
+					if(i + 1 >= Arguments.size())
+						return false;
+					Out.m_Zoom = static_cast<float>(std::atof(Arguments[++i].c_str()));
+				}
+				else if(Argument == "--time")
+				{
+					if(i + 1 >= Arguments.size())
+						return false;
+					Out.m_Time = static_cast<float>(std::atof(Arguments[++i].c_str()));
+				}
+				else if(Argument == "--transparent")
+				{
+					Out.m_bTransparent = true;
+				}
+				else if(Argument == "--background")
+				{
+					if(i + 1 >= Arguments.size())
+						return false;
+					std::string Value = Arguments[++i];
+					if(!Value.empty() && Value[0] == '#')
+						Value = Value.substr(1);
+					const unsigned long Rgb = std::strtoul(Value.c_str(), nullptr, 16);
+					Out.m_Background = CColor{static_cast<int>((Rgb >> 16) & 0xFF),
+						static_cast<int>((Rgb >> 8) & 0xFF), static_cast<int>(Rgb & 0xFF), 255};
+				}
 				else if(Argument == "--size")
 				{
 					if(i + 1 >= Arguments.size())
@@ -114,6 +166,7 @@ namespace game
 						return false;
 					Out.m_Width = std::max(1, std::atoi(Size.substr(0, Pos).c_str()));
 					Out.m_Height = std::max(1, std::atoi(Size.substr(Pos + 1).c_str()));
+					Out.m_bSizeSet = true;
 				}
 				else if(!Argument.empty() && Argument[0] == '-' && Out.m_Command.empty())
 				{
@@ -1786,6 +1839,127 @@ namespace game
 			}
 		}
 
+		// ------------------------------------------------------ headless render
+		/*
+			The renderer is how a map is pictured with no window, so the two
+			things a dump cannot show are pinned here: a tile really fills its
+			32 pixel cell (drawing it one pixel wide was the first bug), and a
+			semi transparent quad is composited once rather than once per
+			overlapping triangle, which would show as a seam.
+		*/
+		{
+			Checks++;
+			CMap SheetMap;
+			SheetMap.InitNew("render-tile");
+			CImage Sheet;
+			Sheet.m_Name = "test_sheet";
+			Sheet.m_External = 0;
+			Sheet.m_Width = 16;
+			Sheet.m_Height = 16;
+			Sheet.m_Data.assign(16 * 16 * 4, std::byte{0});
+			for(std::size_t i = 0; i < 16 * 16; i++)
+			{
+				Sheet.m_Data[i * 4 + 0] = static_cast<std::byte>(255);
+				Sheet.m_Data[i * 4 + 3] = static_cast<std::byte>(255);
+			}
+			// InitNew installs a default external image at index 0; replace it so
+			// the layer really points at this embedded sheet and no file is needed
+			SheetMap.m_vImages.clear();
+			SheetMap.m_vImages.push_back(Sheet);
+
+			// the plain tile layer of the last group, one red tile at (0,0)
+			CGroup &TileGroup = SheetMap.m_vGroups.back();
+			for(CLayer &Layer : TileGroup.m_vLayers)
+				if(Layer.IsTiles())
+				{
+					Layer.Resize(2, 2);
+					Layer.m_Image = 0;
+					Layer.m_Color = CColor{255, 255, 255, 255};
+					Layer.m_vTiles[0].m_Index = 1;
+				}
+
+			CMapRenderOptions Options;
+			Options.m_Width = 64;
+			Options.m_Height = 64;
+			Options.m_bTransparent = true;
+			Options.m_bCenterSet = true;
+			Options.m_Center = base::vec2(16.0f, 16.0f);
+			Options.m_Zoom = 1.0f;
+
+			storage::byte_vector Pixels;
+			CMapRenderStats Stats;
+			std::string Error;
+			bool bOk = RenderMapToRgba(SheetMap, Options, Pixels, Stats, Error);
+			int Covered = 0;
+			for(std::size_t i = 0; i < static_cast<std::size_t>(Options.m_Width) * Options.m_Height; i++)
+				if(Pixels[i * 4 + 3] != std::byte{0})
+					Covered++;
+			bOk = bOk && Covered == 32 * 32;
+			const std::size_t Center = (static_cast<std::size_t>(32) * Options.m_Width + 32) * 4;
+			bOk = bOk && Pixels[Center + 0] == std::byte{255} && Pixels[Center + 1] == std::byte{0} &&
+				Pixels[Center + 2] == std::byte{0} && Pixels[Center + 3] == std::byte{255};
+
+			if(bOk)
+				std::cout << "  ok   render a tile fills its cell and keeps the layer colour\n";
+			else
+			{
+				std::cout << "  FAIL render a tile did not fill its 32x32 cell (" << Covered << " pixels)\n";
+				Failures++;
+			}
+		}
+
+		{
+			Checks++;
+			CMap QuadMap;
+			QuadMap.InitNew("render-quad");
+			QuadMap.m_vGroups.clear();
+			CGroup &Group = QuadMap.NewGroup();
+			CLayer &Layer = QuadMap.NewQuadLayer(Group, -1);
+			Layer.m_vQuads.emplace_back();
+			CQuad &Quad = Layer.m_vQuads.back();
+			// a 64 by 64 world square, all four corners half transparent
+			for(int i = 0; i < 4; i++)
+			{
+				Quad.m_aColors[i] = CColor{255, 255, 255, 128};
+				Quad.m_aPoints[i].x = (i % 2) * 64 * 1024;
+				Quad.m_aPoints[i].y = (i / 2) * 64 * 1024;
+			}
+			Quad.m_aPoints[4].x = 32 * 1024;
+			Quad.m_aPoints[4].y = 32 * 1024;
+
+			CMapRenderOptions Options;
+			Options.m_Width = 64;
+			Options.m_Height = 64;
+			Options.m_bTransparent = true;
+			Options.m_bCenterSet = true;
+			Options.m_Center = base::vec2(32.0f, 32.0f);
+			Options.m_Zoom = 1.0f;
+
+			storage::byte_vector Pixels;
+			CMapRenderStats Stats;
+			std::string Error;
+			bool bOk = RenderMapToRgba(QuadMap, Options, Pixels, Stats, Error);
+			int Covered = 0;
+			for(std::size_t i = 0; i < static_cast<std::size_t>(Options.m_Width) * Options.m_Height; i++)
+			{
+				const unsigned char Alpha = static_cast<unsigned char>(Pixels[i * 4 + 3]);
+				if(Alpha == 0)
+					continue;
+				Covered++;
+				if(Alpha != 128)
+					bOk = false;
+			}
+			bOk = bOk && Covered == 64 * 64;
+
+			if(bOk)
+				std::cout << "  ok   render a half transparent quad is composited exactly once\n";
+			else
+			{
+				std::cout << "  FAIL render a quad was blended more than once (" << Covered << " pixels)\n";
+				Failures++;
+			}
+		}
+
 		std::cout << base::Format("\n{:d} checks, {:d} failures\n", Checks, Failures);
 		return Failures == 0 ? 0 : 1;
 	}
@@ -2000,6 +2174,50 @@ namespace game
 				return 1;
 			}
 			std::cout << "wrote " << Args.m_vPositional[1] << "\n";
+			return 0;
+		}
+
+		if(Args.m_Command == "--render")
+		{
+			if(Args.m_vPositional.size() < 2)
+			{
+				std::cout << "--render needs an input map and an output image\n";
+				return 2;
+			}
+			CMap Map;
+			std::string Error;
+			if(!Map.LoadFromFile(Args.m_vPositional[0], &Error))
+			{
+				std::cout << "error: " << Error << "\n";
+				return 1;
+			}
+
+			CMapRenderOptions Options;
+			Options.m_Width = Args.m_bSizeSet ? Args.m_Width : 800;
+			Options.m_Height = Args.m_bSizeSet ? Args.m_Height : 600;
+			Options.m_bCenterSet = Args.m_bCenterSet;
+			Options.m_Center = Args.m_Center;
+			Options.m_Zoom = Args.m_Zoom;
+			Options.m_Time = Args.m_Time;
+			Options.m_bTransparent = Args.m_bTransparent;
+			Options.m_Background = Args.m_Background;
+
+			storage::byte_vector Pixels;
+			CMapRenderStats Stats;
+			if(!RenderMapToRgba(Map, Options, Pixels, Stats, Error))
+			{
+				std::cout << "error: " << Error << "\n";
+				return 1;
+			}
+			if(!base::WritePng(Args.m_vPositional[1], Options.m_Width, Options.m_Height, Pixels))
+			{
+				std::cout << "error: could not write '" << Args.m_vPositional[1] << "'\n";
+				return 1;
+			}
+			std::cout << base::Format("rendered {}x{} to {}: {} groups, {} layers, {} tiles, {} quads, {} images{}\n",
+				Options.m_Width, Options.m_Height, Args.m_vPositional[1], Stats.m_Groups, Stats.m_Layers,
+				Stats.m_Tiles, Stats.m_Quads, Stats.m_Images,
+				Stats.m_MissingImages > 0 ? base::Format(", {} missing", Stats.m_MissingImages) : std::string());
 			return 0;
 		}
 

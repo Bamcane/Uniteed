@@ -127,6 +127,7 @@ uniteed --dump map                  print groups, layers, images, envelopes
 uniteed --convert in out.map --target id
 uniteed --pack in out.unitwp [--embed]
 uniteed --unpack in.unitwp out.map --target id
+uniteed --render map out.png [opts] draw the map's tiles and quads to a PNG
 uniteed --targets                    print the version matrix
 uniteed --selftest [map ...]         round trip every bundled map through every target
 uniteed --screenshot out.png [map]   render one frame offscreen and exit
@@ -139,6 +140,20 @@ uniteed <method> [--key value ...]   one administrative method, as JSON
 puts the mapres PNGs the map references into the package so it can travel on its own,
 and `--unpack` reads a saved project as well: a `.unitwp` is the same container either
 way, so a map can be recovered from the file the editor was working in.
+
+`--render` is the headless picture: it draws the tile and quad layers of every
+group — through the same parallax, clipping, layer colour and envelope evaluation
+the canvas uses — into a PNG, without a window and without a display. `--center
+X,Y` is the world pixel at the middle (the map centre when left out), `--size WxH`
+the picture size (800x600), `--zoom` the scale, `--time` the envelope clock in
+seconds, `--transparent` leaves the background clear, and `--background RRGGBB`
+sets it. Game and physics layers are editor affordances, so a render leaves them
+out.
+
+```
+$ ./build/uniteed --render data/maps/06/dm1.map build/dm1.png --size 1200x900 --zoom 0.6
+rendered 1200x900 to build/dm1.png: 7 groups, 13 layers, 1422 tiles, 23 quads, 7 images
+```
 
 Every administrative method is also a subcommand, so the whole editor is drivable
 without a window:
@@ -153,13 +168,16 @@ $ uniteed export.map --target ddnet07
 Each one prints one JSON document, and `uniteed --agent` keeps the session alive so a
 script can make a hundred edits without starting the editor a hundred times. The whole
 reference is in [docs/AGENT.md](docs/AGENT.md); `uniteed --agent-describe` prints the
-catalogue.
+catalogue. The same renderer is the `render.map` method, so a script can picture a
+map without shelling out to the command line.
 
 The screenshot mode is also how the interface is checked without a display, so it can
 be told which state to render and can be driven with real input events:
 
 ```
 uniteed --screenshot out.png map --layer G:L     select group G, layer L
+                                                  ("G:" selects the group row itself,
+                                                  which is the group's properties)
 uniteed --screenshot out.png map --quad N        select quad N (default: the first)
 uniteed --screenshot out.png map --corner N      aim the picker at corner N (0..3)
 uniteed --screenshot out.png map --color         open the colour picker
@@ -226,7 +244,7 @@ the buttons that must stay clickable - answers for every point of a window.
 ```
 $ ./build/uniteed --selftest
 ...
-67 checks, 0 failures
+72 checks, 0 failures
 
 $ python3 tools/verify_map.py build/tmp/dm1_08.map data/maps/06/coverage.map
 ok   build/tmp/dm1_08.map: datafile v5 35 items, 24 data blocks, 6 tile layers, 5 envelopes / 11 points

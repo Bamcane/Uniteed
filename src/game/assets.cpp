@@ -77,6 +77,24 @@ namespace game
 		LOG_TRACE("assets", "resource paths for version '{}': {:d} directories", s_ActiveVersion.c_str(), storage::ResourcePaths().size());
 	}
 
+	std::string MapVersionId(const CMap &Map)
+	{
+		std::string Version = "07";
+		if(Map.m_SourceHasDdnetItems)
+			Version = "ddnet";
+		else if(Map.m_SourceDatafileVersion == 5)
+			Version = "07";
+		else
+			Version = "06";
+		// run length tiles only exist from 0.7 on, so a layer that used them
+		// decides the version even when the map has no other tell
+		for(const CGroup &Group : Map.m_vGroups)
+			for(const CLayer &Layer : Group.m_vLayers)
+				if(Layer.m_SourceTilemapVersion >= 4)
+					Version = Map.m_SourceHasDdnetItems ? "ddnet" : "07";
+		return Version;
+	}
+
 	std::optional<storage::path> FindImageFile(std::string_view Name)
 	{
 		std::string File(Name);
