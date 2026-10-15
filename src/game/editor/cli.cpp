@@ -1177,6 +1177,117 @@ namespace game
 			}
 		}
 
+		/*
+			The configuration region: it clips the write and nothing else. A
+			rule on the edge of a region can still read its neighbour, and a
+			cell outside the region is left exactly as it was, which is what the
+			panel promises with its x, y, width, height fields.
+		*/
+		{
+			Checks++;
+			rules::CRuleSet Rules;
+			rules::CConfiguration Config;
+			Config.m_StartX = 0;
+			Config.m_StartY = 0;
+			Config.m_EndX = 3;
+			Config.m_EndY = 1;
+			rules::CRun Run;
+			Run.m_ReadSlot = 6;
+			Run.m_bCopy = true;
+			{
+				rules::CIndexRule Rule;
+				Rule.m_Tile = 1;
+				rules::CPosRule When;
+				When.m_X = 1;
+				When.m_Mode = rules::pos_rule_mode::index;
+				rules::CIndexInfo Info;
+				Info.m_Tile = 2;
+				When.m_vIndices.push_back(Info);
+				Rule.m_vRules.push_back(When);
+				Run.m_vIndexRules.push_back(Rule);
+			}
+			Config.m_vRuns.push_back(Run);
+			Rules.m_vConfigs.push_back(Config);
+
+			constexpr int Width = 8, Height = 1;
+			std::vector<std::uint8_t> ReadTiles(Width * Height, 0), ReadFlags(Width * Height, 0);
+			std::vector<std::uint8_t> TargetTiles(Width * Height, 0), TargetFlags(Width * Height, 0);
+			// the rule would fire at 2 and 5; the region stops at x = 3
+			ReadTiles[3] = 2;
+			ReadTiles[6] = 2;
+
+			const rules::CRuleLayer Target{TargetTiles.data(), TargetFlags.data(), Width, Height};
+			std::vector<rules::CRuleLayer> Read;
+			Read.resize(7);
+			Read[6] = rules::CRuleLayer{ReadTiles.data(), ReadFlags.data(), Width, Height};
+			const rules::CApplyResult Result = rules::Apply(Rules, 0, Target, Read, 99);
+			const bool bRegion = Result.m_bOk && TargetTiles[2] == 1 && TargetTiles[5] == 0 &&
+				TargetTiles[0] == 0 && TargetTiles[3] == 0 && TargetTiles[6] == 0;
+			// an all zero region is still the whole layer
+			Rules.m_vConfigs[0].m_EndX = 0;
+			Rules.m_vConfigs[0].m_EndY = 0;
+			std::vector<std::uint8_t> WholeTiles(Width * Height, 0), WholeFlags(Width * Height, 0);
+			const rules::CRuleLayer Whole{WholeTiles.data(), WholeFlags.data(), Width, Height};
+			const rules::CApplyResult All = rules::Apply(Rules, 0, Whole, Read, 99);
+			const bool bWhole = All.m_bOk && WholeTiles[2] == 1 && WholeTiles[5] == 1;
+			if(bRegion && bWhole)
+				std::cout << "  ok   rules  a configuration region clips the write, and 0 0 0 0 is the whole layer\n";
+			else
+			{
+				std::cout << "  FAIL rules  the configuration region does not clip the write\n";
+				Failures++;
+			}
+		}
+
+		/*
+			Deleting at a level: the tree's config, run and rule rows each name
+			what the delete button removes, so a whole configuration or a run
+			can be dropped and not only an index rule.
+		*/
+		{
+			Checks++;
+			CEditor Editor;
+			Editor.InitHeadless();
+			bool bOk = true;
+			Editor.NewRuleSetOp();
+			Editor.AddRuleConfigOp();
+			Editor.SelectRule(1, 0, 0, static_cast<int>(CEditor::rule_level::config));
+			Editor.AddRuleRunOp();
+			Editor.SelectRule(1, 0, 0, static_cast<int>(CEditor::rule_level::run));
+			Editor.AddRuleOp();
+			Editor.AddRuleOp();
+			bOk = bOk && Editor.RuleSet().m_vConfigs.size() == 2 &&
+				Editor.RuleSet().m_vConfigs[1].m_vRuns.size() == 2 &&
+				Editor.RuleSet().m_vConfigs[1].m_vRuns[0].m_vIndexRules.size() == 2;
+
+			// a rule
+			Editor.SelectRule(1, 0, 0, static_cast<int>(CEditor::rule_level::rule));
+			bOk = bOk && Editor.CanDeleteRuleSelection();
+			Editor.DeleteRuleSelectionOp();
+			bOk = bOk && Editor.RuleSet().m_vConfigs[1].m_vRuns[0].m_vIndexRules.size() == 1;
+
+			// a run; the last one in a configuration cannot go, or the
+			// configuration would have nowhere to put a rule
+			Editor.SelectRule(1, 0, 0, static_cast<int>(CEditor::rule_level::run));
+			Editor.DeleteRuleSelectionOp();
+			bOk = bOk && Editor.RuleSet().m_vConfigs[1].m_vRuns.size() == 1;
+			Editor.DeleteRuleSelectionOp();
+			bOk = bOk && Editor.RuleSet().m_vConfigs[1].m_vRuns.size() == 1;
+
+			// a configuration
+			Editor.SelectRule(1, 0, 0, static_cast<int>(CEditor::rule_level::config));
+			Editor.DeleteRuleSelectionOp();
+			bOk = bOk && Editor.RuleSet().m_vConfigs.size() == 1 && Editor.RuleConfig() == 0;
+
+			if(bOk)
+				std::cout << "  ok   rules  a configuration, a run and an index rule can each be deleted\n";
+			else
+			{
+				std::cout << "  FAIL rules  deleting a configuration, a run or a rule is off\n";
+				Failures++;
+			}
+		}
+
 		// ------------------------------------------------- bezier envelope export
 		/*
 			The requirement this pins: a custom curve is written the Teeworlds
@@ -1564,6 +1675,61 @@ namespace game
 			for(const CGroup &Group : Editor.Map().m_vGroups)
 				for(const CLayer &Layer : Group.m_vLayers)
 					bOk = bOk && Layer.m_Image <= 0;
+
+			/*
+				The live tiles: a layer that is a function of another one. The
+				pass is a model operation, so it runs without a window. A source
+				tile with a mapping becomes its target, one without becomes
+				empty, and a rectangle pass leaves the rest of the layer alone.
+			*/
+			{
+				Checks++;
+				CEditor Live;
+				Live.InitHeadless();
+				bool bLiveOk = true;
+				CGroup &LiveGroup = Live.Map().m_vGroups[0];
+				Live.Map().NewTileLayer(LiveGroup, 4, 1, -1);
+				Live.Map().NewTileLayer(LiveGroup, 4, 1, -1);
+				const int SourceIndex = static_cast<int>(LiveGroup.m_vLayers.size()) - 2;
+				const int TargetIndex = SourceIndex + 1;
+				CLiveMap IntoTarget;
+				IntoTarget.m_Source = 2;
+				IntoTarget.m_Target = 9;
+				CLiveMap IntoEmpty;
+				IntoEmpty.m_Source = 3;
+				IntoEmpty.m_Target = 0;
+				{
+					CLayer &Target = LiveGroup.m_vLayers[static_cast<std::size_t>(TargetIndex)];
+					Target.m_bLive = true;
+					Target.m_LiveSourceGroup = 0;
+					Target.m_LiveSourceLayer = SourceIndex;
+					Target.m_vLiveMaps.push_back(IntoTarget);
+					Target.m_vLiveMaps.push_back(IntoEmpty);
+				}
+				// paint the source, then run the live pass over the whole layer
+				Live.Layer(0, SourceIndex)->Tile(0, 0)->m_Index = 2;
+				Live.Layer(0, SourceIndex)->Tile(1, 0)->m_Index = 3;
+				Live.Layer(0, SourceIndex)->Tile(2, 0)->m_Index = 4;
+				Live.ApplyLiveTiles(0, SourceIndex);
+				const CLayer *pOut = Live.Layer(0, TargetIndex);
+				bLiveOk = bLiveOk && pOut->Tile(0, 0)->m_Index == 9;
+				bLiveOk = bLiveOk && pOut->Tile(1, 0)->m_Index == 0;
+				bLiveOk = bLiveOk && pOut->Tile(2, 0)->m_Index == 0;
+				// the rectangle pass only touches the cells it covers
+				Live.Layer(0, TargetIndex)->Tile(3, 0)->m_Index = 7;
+				Live.Layer(0, SourceIndex)->Tile(3, 0)->m_Index = 2;
+				Live.RefreshLiveTiles(0, SourceIndex, 3, 0, 3, 0);
+				bLiveOk = bLiveOk && Live.Layer(0, TargetIndex)->Tile(3, 0)->m_Index == 9;
+				// the source is never rewritten by the pass it drives
+				bLiveOk = bLiveOk && Live.Layer(0, SourceIndex)->Tile(0, 0)->m_Index == 2;
+				if(bLiveOk)
+					std::cout << "  ok   live   a live layer follows its source, one tile at a time\n";
+				else
+				{
+					std::cout << "  FAIL live   a live layer does not follow its source\n";
+					Failures++;
+				}
+			}
 
 			// a sound is embedded by definition, and its layer names it
 			const int Sound = Editor.AddSoundData("probe", byte_vector(64, std::byte{0}), true, &Error);

@@ -526,6 +526,75 @@ namespace game
 		return true;
 	}
 
+	/*
+		The live pass. A layer that is live is a function of its source layer:
+		every cell is the mapping of the source tile there, and a source tile
+		with no mapping becomes empty. That is what makes the result predictable
+		while painting, and why the layer panel states the mapping as a table
+		rather than as a rule.
+	*/
+	void CEditor::RefreshLiveTiles(int SourceGroup, int SourceLayer, int X0, int Y0, int X1, int Y1)
+	{
+		const CLayer *pSource = LayerAt(SourceGroup, SourceLayer);
+		if(pSource == nullptr || !pSource->IsTiles())
+			return;
+		if(X1 < X0 || Y1 < Y0)
+			return;
+
+		for(int g = 0; g < static_cast<int>(m_Map.m_vGroups.size()); g++)
+		{
+			for(int l = 0; l < static_cast<int>(m_Map.m_vGroups[static_cast<std::size_t>(g)].m_vLayers.size()); l++)
+			{
+				CLayer *pTarget = LayerAt(g, l);
+				if(pTarget == nullptr || !pTarget->IsTiles() || pTarget == pSource)
+					continue;
+				if(!pTarget->m_bLive)
+					continue;
+				if(pTarget->m_LiveSourceGroup != SourceGroup || pTarget->m_LiveSourceLayer != SourceLayer)
+					continue;
+
+				bool bChanged = false;
+				for(int y = Y0; y <= Y1; y++)
+				{
+					for(int x = X0; x <= X1; x++)
+					{
+						CTile *pTile = pTarget->Tile(x, y);
+						if(pTile == nullptr)
+							continue;
+						const CTile *pSrcTile = pSource->Tile(x, y);
+						const int Src = pSrcTile != nullptr ? pSrcTile->m_Index : 0;
+						int Index = 0, Flags = 0;
+						for(const CLiveMap &Map : pTarget->m_vLiveMaps)
+							if(Map.m_Source == Src)
+							{
+								Index = Map.m_Target;
+								Flags = Map.m_Flags;
+								break;
+							}
+						const std::uint8_t NewIndex = static_cast<std::uint8_t>(base::clamp(Index, 0, 255));
+						const std::uint8_t NewFlags = static_cast<std::uint8_t>(Flags & (TILEFLAG_HFLIP | TILEFLAG_VFLIP | TILEFLAG_ROTATE));
+						if(pTile->m_Index != NewIndex || pTile->m_Flags != NewFlags)
+						{
+							pTile->m_Index = NewIndex;
+							pTile->m_Flags = NewFlags;
+							bChanged = true;
+						}
+					}
+				}
+				if(bChanged)
+					m_Dirty = true;
+			}
+		}
+	}
+
+	void CEditor::ApplyLiveTiles(int Group, int Layer)
+	{
+		const CLayer *pSource = LayerAt(Group, Layer);
+		if(pSource == nullptr)
+			return;
+		RefreshLiveTiles(Group, Layer, 0, 0, pSource->m_Width - 1, pSource->m_Height - 1);
+	}
+
 	CLayerView *CEditor::ViewState(int Group, int Layer)
 	{
 		if(Group < 0 || Group >= static_cast<int>(m_vViewStates.size()))
@@ -1558,6 +1627,9 @@ namespace game
 			std::vector<bool> Seen(static_cast<std::size_t>(Width) * static_cast<std::size_t>(Height), false);
 			std::vector<base::ivec2> Stack;
 			Stack.push_back(base::ivec2(TileX, TileY));
+			// the bounding box of the flooded cells, so the live pass only
+			// touches what the flood changed
+			int MinX = Width, MinY = Height, MaxX = -1, MaxY = -1;
 			// 250k cells is a 500 by 500 region, well past any hand drawn map
 			std::size_t Budget = 250000;
 			while(!Stack.empty() && Budget > 0)
@@ -1582,8 +1654,15 @@ namespace game
 				Stack.push_back(base::ivec2(At.x - 1, At.y));
 				Stack.push_back(base::ivec2(At.x, At.y + 1));
 				Stack.push_back(base::ivec2(At.x, At.y - 1));
+				MinX = std::min(MinX, At.x);
+				MinY = std::min(MinY, At.y);
+				MaxX = std::max(MaxX, At.x);
+				MaxY = std::max(MaxY, At.y);
 			}
 			m_Dirty = true;
+			// the live layers that read this one follow the flood
+			if(MaxX >= 0)
+				RefreshLiveTiles(m_SelectedGroup, m_SelectedLayer, MinX, MinY, MaxX, MaxY);
 			return;
 		}
 		for(int y = 0; y < m_BrushH; y++)
@@ -1619,6 +1698,9 @@ namespace game
 			}
 		}
 		m_Dirty = true;
+		// the live layers that read this one follow the stamp
+		RefreshLiveTiles(m_SelectedGroup, m_SelectedLayer, Origin.x, Origin.y,
+			Origin.x + m_BrushW - 1, Origin.y + m_BrushH - 1);
 	}
 
 	// -------------------------------------------------------------- shortcuts
@@ -2018,12 +2100,82 @@ namespace game
 			const int TileY = static_cast<int>(std::floor(m_CursorWorld.y / TileSize));
 
 			/*
+				A live layer is a function of its source layer, so a Shift drag on
+				it is not painting: it frames a region of the source and takes
+				the tiles it covers as the ones to watch. Each becomes a mapping
+				to itself, which the layer panel then edits. This is how the
+				"specified tiles" of a source layer are chosen without typing
+				indices.
+			*/
+			CLayer *pLiveLayer = SelectedLayer();
+			const bool bLiveReady = Shift && pLiveLayer != nullptr && pLiveLayer->IsTiles() && pLiveLayer->m_bLive &&
+				pLiveLayer->m_LiveSourceGroup >= 0 && pLiveLayer->m_LiveSourceLayer >= 0;
+			if(bLiveReady && bInCanvas && Input.MousePressed(engine::CInput::mouse_button::left))
+			{
+				m_bLivePicking = true;
+				m_LivePickStartTile = base::ivec2(TileX, TileY);
+				m_LivePickEndTile = m_LivePickStartTile;
+			}
+			else if(m_bLivePicking && bInCanvas && Input.MouseDown(engine::CInput::mouse_button::left))
+				m_LivePickEndTile = base::ivec2(TileX, TileY);
+
+			if(m_bLivePicking && !Input.MouseDown(engine::CInput::mouse_button::left))
+			{
+				if(Input.MouseReleased(engine::CInput::mouse_button::left) && pLiveLayer != nullptr)
+				{
+					const CLayer *pSource = LayerAt(pLiveLayer->m_LiveSourceGroup, pLiveLayer->m_LiveSourceLayer);
+					if(pSource != nullptr && pSource->IsTiles())
+					{
+						const int X0 = base::clamp(std::min(m_LivePickStartTile.x, m_LivePickEndTile.x), 0, pSource->m_Width - 1);
+						const int Y0 = base::clamp(std::min(m_LivePickStartTile.y, m_LivePickEndTile.y), 0, pSource->m_Height - 1);
+						const int X1 = base::clamp(std::max(m_LivePickStartTile.x, m_LivePickEndTile.x), 0, pSource->m_Width - 1);
+						const int Y1 = base::clamp(std::max(m_LivePickStartTile.y, m_LivePickEndTile.y), 0, pSource->m_Height - 1);
+						int Added = 0;
+						for(int y = Y0; y <= Y1; y++)
+						{
+							for(int x = X0; x <= X1; x++)
+							{
+								const CTile *pTile = pSource->Tile(x, y);
+								if(pTile == nullptr || pTile->m_Index == 0)
+									continue;
+								bool bKnown = false;
+								for(const CLiveMap &Map : pLiveLayer->m_vLiveMaps)
+									if(Map.m_Source == pTile->m_Index)
+									{
+										bKnown = true;
+										break;
+									}
+								if(bKnown)
+									continue;
+								CLiveMap Map;
+								Map.m_Source = pTile->m_Index;
+								Map.m_Target = pTile->m_Index;
+								pLiveLayer->m_vLiveMaps.push_back(Map);
+								Added++;
+							}
+						}
+						if(Added > 0)
+						{
+							m_Dirty = true;
+							ApplyLiveTiles(m_SelectedGroup, m_SelectedLayer);
+							Notify(  base::FormatRuntime(Tr("live tiles: {:d} source tiles taken from {:d},{:d}"), Added, X0, Y0)  );
+						}
+						else
+							Notify( Tr("live tiles: every tile in that region is already listed") );
+					}
+				}
+				m_bLivePicking = false;
+				m_LivePickStartTile = base::ivec2(-1, -1);
+			}
+
+			/*
 				The pick tool takes a region, not a single tile: pressing starts
 				a marquee and letting go copies everything it covers, so a piece
 				of a map can be used as the brush. The brush is untouched until
 				the button comes up, so abandoning the drag changes nothing.
 			*/
-			if(bInCanvas && m_Tool == editor_tool::pick && Input.MousePressed(engine::CInput::mouse_button::left))
+			if(!m_bLivePicking && !bLiveReady &&
+				bInCanvas && m_Tool == editor_tool::pick && Input.MousePressed(engine::CInput::mouse_button::left))
 			{
 				m_bPickDragging = true;
 				m_PickStartTile = base::ivec2(TileX, TileY);
@@ -2069,7 +2221,7 @@ namespace game
 				m_PickStartTile = base::ivec2(-1, -1);
 			}
 
-			if(bInCanvas && m_Tool != editor_tool::pick &&
+			if(bInCanvas && m_Tool != editor_tool::pick && !m_bLivePicking && !bLiveReady &&
 				Input.MousePressed(engine::CInput::mouse_button::left) && !m_bPickDragging)
 			{
 				BeginStroke();

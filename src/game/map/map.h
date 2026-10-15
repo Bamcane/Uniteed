@@ -147,6 +147,19 @@ namespace game
 		}
 	};
 
+	/*
+		One entry of a layer's live tiles: the tile a source layer holds at a
+		position becomes this tile here. The pair table is the whole language,
+		because the rule engine lives in the autorules workspace; this is the
+		simple live case a map maker wants while drawing.
+	*/
+	struct CLiveMap
+	{
+		int m_Source = 0; // the tile read from the source layer
+		int m_Target = 0; // the tile written here; 0 is empty
+		int m_Flags = 0;  // the flips written with it
+	};
+
 	struct CLayer
 	{
 		int m_Type = LAYERTYPE_INVALID;
@@ -179,6 +192,17 @@ namespace game
 		// what the source map used, so the editor can warn about a downgrade
 		int m_SourceTilemapVersion = 0;
 		bool m_SourceHadPhysics = false;
+
+		/*
+			Live tiles: this layer is a function of another tile layer, rewritten
+			as that source is painted. It is editor data - the .map format has no
+			room for it - so the project stores it and the exporter ignores it,
+			the same way it ignores the view flags.
+		*/
+		bool m_bLive = false;
+		int m_LiveSourceGroup = -1;
+		int m_LiveSourceLayer = -1;
+		std::vector<CLiveMap> m_vLiveMaps;
 
 		bool IsTiles() const { return m_Type == LAYERTYPE_TILES; }
 		bool IsQuads() const { return m_Type == LAYERTYPE_QUADS; }

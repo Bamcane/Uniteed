@@ -250,6 +250,14 @@ namespace game
 		// applies one configuration (or every one) to a tile layer, with undo.
 		// The layer index is the slot numbering of rules.h.
 		bool ApplyRules(int ConfigIndex, int TargetSlot, int Seed = 0, std::string *pError = nullptr);
+		/*
+			The live tiles: a layer that reads another one and is rewritten as
+			that source is painted. RefreshLiveTiles covers a rectangle, which is
+			what a stroke calls; ApplyLiveTiles does the whole layer, which is
+			what the layer panel calls when a mapping or the source changes.
+		*/
+		void RefreshLiveTiles(int SourceGroup, int SourceLayer, int X0, int Y0, int X1, int Y1);
+		void ApplyLiveTiles(int Group, int Layer);
 
 		/*
 			The operations the command line and the agent interface need, kept
@@ -277,12 +285,24 @@ namespace game
 		// caller uses this rather than assuming the first run
 		int RuleRun() const { return m_RuleRun; }
 		int RuleIndexInRun() const { return m_RuleIndex; }
+		/*
+			Which level of the tree the selection is on. The delete button acts
+			on it, so a configuration or a run can be removed and not only the
+			index rule inside one; before this the button always meant "the rule"
+			and there was no way to drop the other two.
+		*/
+		enum class rule_level { config = 0, run = 1, rule = 2 };
+		int RuleLevel() const { return m_RuleLevel; }
 		void NewRuleSetOp();
 		void AddRuleConfigOp() { AddRuleConfig(); }
 		void AddRuleRunOp() { AddRuleRun(); }
 		void AddRuleOp() { AddRule(); }
 		void DeleteRuleSelectionOp() { DeleteRuleSelection(); }
-		void SelectRule(int Config, int Run, int Rule) { SetRuleSelection(Config, Run, Rule); }
+		// what delete can act on right now, and the level it would name: the
+		// tree row the user clicked decides it, and the agent passes it too
+		bool CanDeleteRuleSelection() const;
+		const char *RuleLevelName() const;
+		void SelectRule(int Config, int Run, int Rule, int Level = 2) { SetRuleSelection(Config, Run, Rule, Level); }
 		int AddEnvelopeOp(int Channels) { return AddEnvelope(Channels); }
 		void AddEnvelopePointOp(float Time) { AddEnvelopePoint(Time); }
 		int EnvelopePointOfSelection() const { return m_SelectedEnvelopePoint; }
@@ -694,6 +714,8 @@ namespace game
 		CLayerView *ViewState(int Group, int Layer);
 		bool EnsureViewStates();
 		void ClampSelection();
+		// the live tiles of the selected layer, drawn in the layer panel
+		void DrawLiveTilesSection(engine::painter::CPainter *pPainter, const base::rect &Area, float &y);
 
 		// the canvas inside the window: the layout, the drawing and the hit
 		// testing all go through this one function so they cannot drift apart
@@ -811,6 +833,7 @@ namespace game
 		// the marquee of a pick drag, which becomes the brush when it is let go
 		void DrawPickMarquee(engine::painter::CPainter *pPainter);
 		void DrawQuadCursor(engine::painter::CPainter *pPainter);
+		void DrawLiveMarquee(engine::painter::CPainter *pPainter);
 		void DrawToolbar(engine::painter::CPainter *pPainter, const base::rect &Area);
 		// the row above it: the menus and the window buttons, which is what a
 		// window without a system title bar needs at its top
@@ -869,7 +892,9 @@ namespace game
 		// the map
 		int RuleConfigIndex() const { return m_RuleConfig; }
 		int RuleIndex() const { return m_RuleIndex; }
-		void SetRuleSelection(int Config, int Run, int Rule);
+		void SetRuleSelection(int Config, int Run, int Rule, int Level = 2);
+		// keeps the three indices, and the level, pointing at something real
+		void ClampRuleSelection();
 		// a fresh rule set, and a fresh rule with the layer's own tiles as the
 		// source
 		void NewRuleSet();
@@ -877,6 +902,16 @@ namespace game
 		void AddRuleConfig();
 		void AddRuleRun();
 		void DeleteRuleSelection();
+		/*
+			The visual condition editor of the rule workspace. A position rule is
+			found by the offset it tests, so the preview grid can add and remove
+			one by clicking a cell; Index is the position rule inside the selected
+			index rule.
+		*/
+		rules::CIndexRule *SelectedIndexRule();
+		void AddRuleCondition(int X, int Y);
+		void DeleteRuleCondition(int Index);
+		void ToggleRuleConditionMode(int Index);
 		// the slot numbering of rules.h for a group/layer pair, and back
 		int SlotForLayer(int Group, int Layer) const;
 		bool LayerForSlot(int Slot, int &Group, int &Layer) const;
@@ -960,6 +995,14 @@ namespace game
 		bool m_bPickDragging = false;
 		base::ivec2 m_PickStartTile{-1, -1};
 		base::ivec2 m_PickEndTile{-1, -1};
+		// a Shift drag on a live layer takes the source tiles it frames
+		bool m_bLivePicking = false;
+		base::ivec2 m_LivePickStartTile{-1, -1};
+		base::ivec2 m_LivePickEndTile{-1, -1};
+		// the live mapping row the layer panel is editing, and the field it is
+		// scrubbing, so one drag is one edit
+		int m_LiveMap = -1;
+		int m_DragLiveField = -1;
 		// the same for the palette: a drag over the sheet takes a rectangle
 		bool m_bPaletteSelecting = false;
 		base::ivec2 m_PaletteStartCell{-1, -1};
@@ -1074,9 +1117,24 @@ namespace game
 		int m_RuleConfig = 0;
 		int m_RuleRun = 0;
 		int m_RuleIndex = 0;
+		// 0 a configuration, 1 a run, 2 an index rule: what delete removes and
+		// what the tree draws as the exact selection
+		int m_RuleLevel = static_cast<int>(rule_level::rule);
+		// the position rule the preview grid has selected, or -1 for none
+		int m_RuleCondition = -1;
+		// the preview shows the layer's tile sheet instead of the grid
+		bool m_bRuleSheet = false;
+		// the rare fields (name, flags, randomness, the run and the region) are
+		// folded away until a mapmaker asks for them
+		bool m_bRuleAdvanced = false;
+		// the field a rule IntField is scrubbing, so one drag is one edit
+		int m_DragRuleField = -1;
 		// the seed of the last apply, reported so a random run can be repeated
 		int m_LastRuleSeed = 0;
+		// the inspector and the tree scroll apart, so a long inspector can be
+		// walked while the tree stays where it is
 		float m_RuleScroll = 0.0f;
+		float m_RuleTreeScroll = 0.0f;
 
 	public:
 		/*

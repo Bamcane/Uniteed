@@ -168,6 +168,36 @@ namespace game
 						m_vViewStates[g][l].m_Visible = Entry["visible"].as_bool(m_vViewStates[g][l].m_Visible);
 						m_vViewStates[g][l].m_Locked = Entry["locked"].as_bool(m_vViewStates[g][l].m_Locked);
 					}
+
+			// the live tiles, restored onto the layers after the map was read:
+			// the map format cannot carry them, the project can
+			const base::json &Live = Json["live"];
+			if(Live.is_array())
+				for(std::size_t g = 0; g < m_Map.m_vGroups.size() && g < Live.size(); g++)
+					for(std::size_t l = 0; l < m_Map.m_vGroups[g].m_vLayers.size() && l < Live.at(g).size(); l++)
+					{
+						const base::json &Entry = Live.at(g).at(l);
+						if(!Entry.is_object())
+							continue;
+						CLayer &Layer = m_Map.m_vGroups[g].m_vLayers[l];
+						Layer.m_bLive = Entry["enabled"].as_bool(false);
+						Layer.m_LiveSourceGroup = static_cast<int>(Entry["source_group"].as_int(-1));
+						Layer.m_LiveSourceLayer = static_cast<int>(Entry["source_layer"].as_int(-1));
+						Layer.m_vLiveMaps.clear();
+						const base::json &Maps = Entry["maps"];
+						if(Maps.is_array())
+							for(std::size_t i = 0; i < Maps.size(); i++)
+							{
+								const base::json &Item = Maps.at(i);
+								if(!Item.is_object())
+									continue;
+								CLiveMap Map;
+								Map.m_Source = static_cast<int>(Item["source"].as_int(0));
+								Map.m_Target = static_cast<int>(Item["target"].as_int(0));
+								Map.m_Flags = static_cast<int>(Item["flags"].as_int(0));
+								Layer.m_vLiveMaps.push_back(Map);
+							}
+					}
 		}
 		else
 		{
@@ -220,6 +250,38 @@ namespace game
 			Views.push_back(std::move(Group));
 		}
 		Json["views"] = std::move(Views);
+
+		/*
+			The live tiles of each layer, in map order like the views: a layer is
+			identified by its position, and a stale list is applied only as far
+			as it reaches. They are editor data, so they cannot ride in the map
+			itself.
+		*/
+		base::json Live = base::json::array();
+		for(const CGroup &Group : m_Map.m_vGroups)
+		{
+			base::json GroupLive = base::json::array();
+			for(const CLayer &Layer : Group.m_vLayers)
+			{
+				base::json Entry = base::json::object();
+				Entry["enabled"] = Layer.m_bLive;
+				Entry["source_group"] = Layer.m_LiveSourceGroup;
+				Entry["source_layer"] = Layer.m_LiveSourceLayer;
+				base::json Maps = base::json::array();
+				for(const CLiveMap &Map : Layer.m_vLiveMaps)
+				{
+					base::json Item = base::json::object();
+					Item["source"] = Map.m_Source;
+					Item["target"] = Map.m_Target;
+					Item["flags"] = Map.m_Flags;
+					Maps.push_back(std::move(Item));
+				}
+				Entry["maps"] = std::move(Maps);
+				GroupLive.push_back(std::move(Entry));
+			}
+			Live.push_back(std::move(GroupLive));
+		}
+		Json["live"] = std::move(Live);
 
 		/*
 			The tab order of each dock travels with the project: a map maker who
@@ -303,6 +365,8 @@ namespace game
 		m_RuleConfig = 0;
 		m_RuleRun = 0;
 		m_RuleIndex = 0;
+		m_RuleLevel = static_cast<int>(rule_level::rule);
+		ClampRuleSelection();
 		m_Dirty = true;
 		Notify(  base::FormatRuntime(Tr("loaded {:d} configurations, {:d} rules from {}"),
 			static_cast<int>(m_RuleSet.m_vConfigs.size()), m_RuleSet.RuleCount(),
@@ -349,6 +413,7 @@ namespace game
 		m_RuleConfig = static_cast<int>(m_RuleSet.m_vConfigs.size()) - 1;
 		m_RuleRun = 0;
 		m_RuleIndex = 0;
+		m_RuleLevel = static_cast<int>(rule_level::config);
 		m_Dirty = true;
 	}
 
@@ -362,6 +427,7 @@ namespace game
 		m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)].m_vRuns.push_back(std::move(Run));
 		m_RuleRun = static_cast<int>(m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)].m_vRuns.size()) - 1;
 		m_RuleIndex = 0;
+		m_RuleLevel = static_cast<int>(rule_level::run);
 		m_Dirty = true;
 	}
 
@@ -381,29 +447,186 @@ namespace game
 		Rule.m_Name = base::Format("rule {:d}", static_cast<int>(Run.m_vIndexRules.size()) + 1);
 		Run.m_vIndexRules.push_back(std::move(Rule));
 		m_RuleIndex = static_cast<int>(Run.m_vIndexRules.size()) - 1;
+		m_RuleLevel = static_cast<int>(rule_level::rule);
 		m_Dirty = true;
 	}
 
+	/*
+		Delete what the tree has selected, at the level it is selected on: a
+		whole configuration, one of its runs, or a single index rule. The level
+		is what the config, run and rule rows each set when they are clicked, so
+		the button removes the row the user is looking at instead of always
+		reaching for a rule.
+	*/
 	void CEditor::DeleteRuleSelection()
 	{
 		if(m_RuleConfig < 0 || m_RuleConfig >= static_cast<int>(m_RuleSet.m_vConfigs.size()))
 			return;
 		rules::CConfiguration &Config = m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)];
+
+		if(m_RuleLevel == static_cast<int>(rule_level::config))
+		{
+			m_RuleSet.m_vConfigs.erase(m_RuleSet.m_vConfigs.begin() + m_RuleConfig);
+			ClampRuleSelection();
+			m_Dirty = true;
+			return;
+		}
 		if(m_RuleRun < 0 || m_RuleRun >= static_cast<int>(Config.m_vRuns.size()))
 			return;
 		rules::CRun &Run = Config.m_vRuns[static_cast<std::size_t>(m_RuleRun)];
+
+		if(m_RuleLevel == static_cast<int>(rule_level::run))
+		{
+			if(Config.m_vRuns.size() <= 1)
+				return;
+			Config.m_vRuns.erase(Config.m_vRuns.begin() + m_RuleRun);
+			ClampRuleSelection();
+			m_Dirty = true;
+			return;
+		}
 		if(m_RuleIndex < 0 || m_RuleIndex >= static_cast<int>(Run.m_vIndexRules.size()))
 			return;
 		Run.m_vIndexRules.erase(Run.m_vIndexRules.begin() + m_RuleIndex);
-		m_RuleIndex = std::max(0, std::min(m_RuleIndex, static_cast<int>(Run.m_vIndexRules.size()) - 1));
+		ClampRuleSelection();
 		m_Dirty = true;
 	}
 
-	void CEditor::SetRuleSelection(int Config, int Run, int Rule)
+	// what delete can act on right now: a rule, a run, or a configuration that
+	// has more than one of its own
+	bool CEditor::CanDeleteRuleSelection() const
+	{
+		if(m_RuleConfig < 0 || m_RuleConfig >= static_cast<int>(m_RuleSet.m_vConfigs.size()))
+			return false;
+		const rules::CConfiguration &Config = m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)];
+		if(m_RuleLevel == static_cast<int>(rule_level::config))
+			return true;
+		if(m_RuleRun < 0 || m_RuleRun >= static_cast<int>(Config.m_vRuns.size()))
+			return false;
+		const rules::CRun &Run = Config.m_vRuns[static_cast<std::size_t>(m_RuleRun)];
+		if(m_RuleLevel == static_cast<int>(rule_level::run))
+			return Config.m_vRuns.size() > 1;
+		return m_RuleIndex >= 0 && m_RuleIndex < static_cast<int>(Run.m_vIndexRules.size());
+	}
+
+	// the level the delete button will act on, named for the hint
+	const char *CEditor::RuleLevelName() const
+	{
+		if(m_RuleLevel == static_cast<int>(rule_level::config))
+			return Tr("configuration");
+		if(m_RuleLevel == static_cast<int>(rule_level::run))
+			return Tr("run");
+		return Tr("index rule");
+	}
+
+	void CEditor::ClampRuleSelection()
+	{
+		if(m_RuleSet.m_vConfigs.empty())
+		{
+			m_RuleConfig = 0;
+			m_RuleRun = 0;
+			m_RuleIndex = 0;
+			m_RuleCondition = -1;
+			return;
+		}
+		m_RuleConfig = base::clamp(m_RuleConfig, 0, static_cast<int>(m_RuleSet.m_vConfigs.size()) - 1);
+		rules::CConfiguration &Config = m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)];
+		if(Config.m_vRuns.empty())
+		{
+			m_RuleRun = 0;
+			m_RuleIndex = 0;
+			m_RuleCondition = -1;
+			return;
+		}
+		m_RuleRun = base::clamp(m_RuleRun, 0, static_cast<int>(Config.m_vRuns.size()) - 1);
+		rules::CRun &Run = Config.m_vRuns[static_cast<std::size_t>(m_RuleRun)];
+		m_RuleIndex = base::clamp(m_RuleIndex, 0, std::max(0, static_cast<int>(Run.m_vIndexRules.size()) - 1));
+		if(m_RuleCondition >= static_cast<int>(Run.m_vIndexRules.empty() ? 0 : Run.m_vIndexRules[static_cast<std::size_t>(m_RuleIndex)].m_vRules.size()))
+			m_RuleCondition = -1;
+	}
+
+	void CEditor::SetRuleSelection(int Config, int Run, int Rule, int Level)
 	{
 		m_RuleConfig = base::clamp(Config, 0, std::max(0, static_cast<int>(m_RuleSet.m_vConfigs.size()) - 1));
 		m_RuleRun = std::max(Run, 0);
 		m_RuleIndex = std::max(Rule, 0);
+		m_RuleLevel = base::clamp(Level, 0, 2);
+		// the condition of the rule that was being edited does not describe the
+		// one that is selected now
+		m_RuleCondition = -1;
+		ClampRuleSelection();
+	}
+
+	rules::CIndexRule *CEditor::SelectedIndexRule()
+	{
+		if(m_RuleConfig < 0 || m_RuleConfig >= static_cast<int>(m_RuleSet.m_vConfigs.size()))
+			return nullptr;
+		rules::CConfiguration &Config = m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)];
+		if(m_RuleRun < 0 || m_RuleRun >= static_cast<int>(Config.m_vRuns.size()))
+			return nullptr;
+		rules::CRun &Run = Config.m_vRuns[static_cast<std::size_t>(m_RuleRun)];
+		if(m_RuleIndex < 0 || m_RuleIndex >= static_cast<int>(Run.m_vIndexRules.size()))
+			return nullptr;
+		return &Run.m_vIndexRules[static_cast<std::size_t>(m_RuleIndex)];
+	}
+
+	void CEditor::AddRuleCondition(int X, int Y)
+	{
+		rules::CIndexRule *pRule = SelectedIndexRule();
+		if(pRule == nullptr)
+			return;
+		// an offset carries one position rule, so clicking a cell that already
+		// has one selects it instead of stacking a second that could not differ
+		for(std::size_t i = 0; i < pRule->m_vRules.size(); i++)
+			if(pRule->m_vRules[i].m_X == X && pRule->m_vRules[i].m_Y == Y)
+			{
+				m_RuleCondition = static_cast<int>(i);
+				return;
+			}
+
+		rules::CPosRule Pos;
+		Pos.m_X = X;
+		Pos.m_Y = Y;
+		Pos.m_Mode = rules::pos_rule_mode::index;
+		rules::CIndexInfo Info;
+		// the brush is what the mapmaker is already aiming at, so it is the
+		// least surprising first guess for "this tile has to be there"
+		Info.m_Tile = m_BrushTile;
+		Info.m_Role = -1;
+		Pos.m_vIndices.push_back(Info);
+		pRule->m_vRules.push_back(std::move(Pos));
+		m_RuleCondition = static_cast<int>(pRule->m_vRules.size()) - 1;
+		m_Dirty = true;
+	}
+
+	void CEditor::DeleteRuleCondition(int Index)
+	{
+		rules::CIndexRule *pRule = SelectedIndexRule();
+		if(pRule == nullptr || Index < 0 || Index >= static_cast<int>(pRule->m_vRules.size()))
+			return;
+		pRule->m_vRules.erase(pRule->m_vRules.begin() + Index);
+		if(pRule->m_vRules.empty())
+			m_RuleCondition = -1;
+		else
+			m_RuleCondition = base::clamp(m_RuleCondition, 0, static_cast<int>(pRule->m_vRules.size()) - 1);
+		m_Dirty = true;
+	}
+
+	void CEditor::ToggleRuleConditionMode(int Index)
+	{
+		rules::CIndexRule *pRule = SelectedIndexRule();
+		if(pRule == nullptr || Index < 0 || Index >= static_cast<int>(pRule->m_vRules.size()))
+			return;
+		rules::CPosRule &Pos = pRule->m_vRules[static_cast<std::size_t>(Index)];
+		// "is" -> "is not" -> "no constraint", the three states the engine
+		// understands, so one button walks the whole vocabulary
+		switch(Pos.m_Mode)
+		{
+		case rules::pos_rule_mode::index: Pos.m_Mode = rules::pos_rule_mode::not_index; break;
+		case rules::pos_rule_mode::not_index: Pos.m_Mode = rules::pos_rule_mode::none; break;
+		default: Pos.m_Mode = rules::pos_rule_mode::index; break;
+		}
+		m_RuleCondition = Index;
+		m_Dirty = true;
 	}
 
 	/*

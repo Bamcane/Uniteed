@@ -388,13 +388,22 @@ type is set, including bezier.
 
 ### The rules workspace
 
-`editor_draw.cpp`'s `DrawRulesWorkspace` is a browser on the left and an inspector
-on the right, because a rule set is a three level tree (configurations, runs, index
-rules) and the shape of the whole document has to stay visible while one rule is
-edited. Every field writes straight into the rule set, so `Apply` can never run
-something the user cannot see. The engine it drives is `game/rules`, and the layer
-it runs against is addressed by the engine slot of `rules.h`, which
+`editor_draw.cpp`'s `DrawRulesWorkspace` keeps the three level tree (configurations,
+runs, index rules) visible above a rendered picture of the selected rule: the tile it
+writes is drawn from the layer's art in the centre of a grid, the position conditions
+are drawn at the offsets they test and tinted by their sense, and the sheet page picks
+the written tile by its picture. The tree and the inspector scroll apart, so a long
+rule set and a long field list do not fight for the same wheel. Every field writes
+straight into the rule set, so `Apply` can never run something the user cannot see.
+The engine it drives is `game/rules`, and the layer it runs against is addressed by the engine slot of `rules.h`, which
 `CEditor::SlotForLayer` computes from the group and layer indices.
+
+The workspace is the **batch** automapper: a rule set is applied when the user asks. The
+**live** case - a tile layer that follows another one while it is painted - is a property of the
+layer and is edited in the layer panel instead (`DrawLiveTilesSection`), because it is a short
+source-to-output table rather than a document. Both read the same engine: the live pass is
+`CEditor::RefreshLiveTiles`, and a source tile with no mapping becomes empty, which is what
+keeps the result a function of the source.
 
 ### The tile and physics layers
 

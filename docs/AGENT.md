@@ -483,6 +483,19 @@ run can be repeated by applying the same seed again. `rules.export` writes the
 JSON document only: the DDRace `.rules` text is read by `rules.import` but not
 written yet, and asking for `format: "ddnet"` or `"text"` is refused.
 
+### live tiles
+
+| method | parameters and defaults | result |
+|---|---|---|
+| `live.get` - the live tiles of a layer | `group` and `layer` (the selection) | `group`, `layer`, `enabled`, `source_group`, `source_layer`, `maps` |
+| `live.set` - set a layer's live tiles and run the pass | `group` and `layer` (the selection), `enabled` (`true`), `source_group` (`-1`), `source_layer` (`-1`), `maps` | `changed`, `selection`, `dirty`, `live` |
+
+A live layer is a function of another tile layer: each `maps` entry is
+`{"source": n, "target": m, "flags": ...}`, and a source tile with no entry becomes
+empty. `live.set` stores the configuration and runs the pass over the dependents of
+`source_group`/`source_layer`, which is how the layer is rewritten without a second call.
+It is the same pass the panel runs while you paint.
+
 ### images and sounds
 
 | method | parameters and defaults | result |

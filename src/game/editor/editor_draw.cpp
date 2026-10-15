@@ -796,6 +796,28 @@ namespace game
 		}
 	}
 
+	// the marquee of a live source pick: the region of the source layer whose
+	// tiles will be taken
+	void CEditor::DrawLiveMarquee(ui::CPainter *pPainter)
+	{
+		if(!m_bLivePicking)
+			return;
+		const CLayer *pLive = SelectedLayer();
+		if(pLive == nullptr || !pLive->m_bLive)
+			return;
+		const CLayer *pSource = LayerAt(pLive->m_LiveSourceGroup, pLive->m_LiveSourceLayer);
+		if(pSource == nullptr || pSource->m_Width <= 0 || pSource->m_Height <= 0)
+			return;
+		const int X0 = base::clamp(std::min(m_LivePickStartTile.x, m_LivePickEndTile.x), 0, pSource->m_Width - 1);
+		const int Y0 = base::clamp(std::min(m_LivePickStartTile.y, m_LivePickEndTile.y), 0, pSource->m_Height - 1);
+		const int X1 = base::clamp(std::max(m_LivePickStartTile.x, m_LivePickEndTile.x), 0, pSource->m_Width - 1);
+		const int Y1 = base::clamp(std::max(m_LivePickStartTile.y, m_LivePickEndTile.y), 0, pSource->m_Height - 1);
+		const base::rect Rect(m_View.WorldToScreen(base::vec2(X0 * TileSize, Y0 * TileSize)),
+			m_View.WorldToScreen(base::vec2((X1 + 1) * TileSize, (Y1 + 1) * TileSize)));
+		ui::Rect(pPainter, Rect, ui::WithAlpha(ui::Theme.m_Accent, 0.18f));
+		ui::RectOutline(pPainter, Rect, ui::Theme.m_Accent, 2.0f);
+	}
+
 	// the marquee of a pick drag: the region that will become the brush
 	void CEditor::DrawPickMarquee(ui::CPainter *pPainter)
 	{
@@ -968,6 +990,7 @@ namespace game
 		{
 			DrawCursor(pPainter, Canvas);
 			DrawPickMarquee(pPainter);
+			DrawLiveMarquee(pPainter);
 		}
 
 		pPainter->Restore();
@@ -1385,6 +1408,9 @@ namespace game
 		y += 22.0f;
 		ui::Line(pPainter, base::vec2(Area.m_TopLeft.x + 8.0f, y), base::vec2(Area.m_BottomRight.x - 8.0f, y), ui::Theme.m_Border);
 		y += 10.0f;
+		DrawLiveTilesSection(pPainter, Area, y);
+		ui::Line(pPainter, base::vec2(Area.m_TopLeft.x + 8.0f, y), base::vec2(Area.m_BottomRight.x - 8.0f, y), ui::Theme.m_Border);
+		y += 10.0f;
 
 		const CLayer *pLayer = SelectedLayer();
 		if(pLayer != nullptr && pLayer->IsGameLayer())
@@ -1530,6 +1556,218 @@ namespace game
 				(pLayer->IsPhysicsLayer() ? Tr("physics payloads are read only") :
 				(pLayer->m_Image < 0 ? Tr("this layer has no image") : Tr("no texture for this image")))  );
 		}
+	}
+
+	/*
+		The live tiles of the selected layer. A live layer is the simple sibling
+		of the autorules workspace: a short source-to-output table instead of a
+		rule document, applied the moment its source layer is painted. It is a
+		property of the layer, so it is edited here rather than in the rules
+		panel, which stays the batch automapper.
+	*/
+	void CEditor::DrawLiveTilesSection(ui::CPainter *pPainter, const base::rect &Area, float &y)
+	{
+		engine::CInput &Input = this->Input();
+		CLayer *pLive = SelectedLayer();
+		if(pLive == nullptr || !pLive->IsTiles())
+			return;
+		// a scrub that ended between frames must not keep following the mouse
+		if(!Input.MouseDown(engine::CInput::mouse_button::left))
+			m_DragLiveField = -1;
+
+		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 12.0f), 13.0f, ui::Theme.m_Text, Tr("Live tiles") );
+		y += 20.0f;
+
+		const base::rect Toggle = base::rect::FromSize(base::vec2(Area.m_TopLeft.x + 12.0f, y), base::vec2(Area.Width() - 24.0f, 20.0f));
+		const base::rect Check = base::rect::FromSize(base::vec2(Toggle.m_TopLeft.x, y + 3.0f), base::vec2(14.0f, 14.0f));
+		bool bLive = pLive->m_bLive;
+		if(ui::Hovered(Input, Toggle))
+			Hint(Check, Tr("live tiles") , Tr("this layer is rewritten from a source layer as you paint it") );
+		if(ui::Checkbox(pPainter, Input, Check, bLive))
+		{
+			pLive->m_bLive = bLive;
+			m_Dirty = true;
+			if(bLive && pLive->m_LiveSourceGroup < 0)
+			{
+				// default to the first other tile layer, which is the common case
+				for(int g = 0; g < static_cast<int>(m_Map.m_vGroups.size()) && pLive->m_LiveSourceGroup < 0; g++)
+					for(int l = 0; l < static_cast<int>(m_Map.m_vGroups[static_cast<std::size_t>(g)].m_vLayers.size()); l++)
+					{
+						const CLayer &Other = m_Map.m_vGroups[static_cast<std::size_t>(g)].m_vLayers[static_cast<std::size_t>(l)];
+						if(Other.IsTiles() && &Other != pLive)
+						{
+							pLive->m_LiveSourceGroup = g;
+							pLive->m_LiveSourceLayer = l;
+							break;
+						}
+					}
+			}
+			if(bLive)
+				ApplyLiveTiles(m_SelectedGroup, m_SelectedLayer);
+		}
+		ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Toggle.m_TopLeft.x + 20.0f, y + 15.0f), 12.0f, ui::Theme.m_Text, Tr("follow another layer") );
+		y += 24.0f;
+
+		if(!pLive->m_bLive)
+		{
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 10.0f), 11.0f,
+				ui::Theme.m_TextDim, Tr("off: this layer is painted by hand"), Area.Width() - 24.0f);
+			y += 18.0f;
+			return;
+		}
+
+		// the source picker: one button that walks the other tile layers, the
+		// way the automap reference picker walks its list
+		std::vector<base::ivec2> Sources;
+		for(int g = 0; g < static_cast<int>(m_Map.m_vGroups.size()); g++)
+			for(int l = 0; l < static_cast<int>(m_Map.m_vGroups[static_cast<std::size_t>(g)].m_vLayers.size()); l++)
+			{
+				const CLayer &Other = m_Map.m_vGroups[static_cast<std::size_t>(g)].m_vLayers[static_cast<std::size_t>(l)];
+				if(Other.IsTiles() && &Other != pLive)
+					Sources.push_back(base::ivec2(g, l));
+			}
+		const auto SourceName = [&](int g, int l) -> std::string {
+			if(g < 0 || g >= static_cast<int>(m_Map.m_vGroups.size()))
+				return std::string(Tr("pick a layer"));
+			const std::vector<CLayer> &Layers = m_Map.m_vGroups[static_cast<std::size_t>(g)].m_vLayers;
+			if(l < 0 || l >= static_cast<int>(Layers.size()))
+				return std::string(Tr("pick a layer"));
+			return Layers[static_cast<std::size_t>(l)].m_Name.empty() ? std::string(Tr("layer")) : Layers[static_cast<std::size_t>(l)].m_Name;
+		};
+		const base::rect SourceBox = base::rect::FromSize(base::vec2(Area.m_TopLeft.x + 12.0f, y), base::vec2(Area.Width() - 24.0f, 22.0f));
+		if(ui::Hovered(Input, SourceBox))
+			Hint(SourceBox, Tr("source layer") , Tr("the layer this one reads; click to walk the other tile layers") );
+		if(ui::Button(pPainter, Input, m_pGraphics->Font(), SourceBox,
+			base::FormatRuntime(Tr("source: {}"), SourceName(pLive->m_LiveSourceGroup, pLive->m_LiveSourceLayer))))
+		{
+			int At = -1;
+			for(std::size_t i = 0; i < Sources.size(); i++)
+				if(Sources[i].x == pLive->m_LiveSourceGroup && Sources[i].y == pLive->m_LiveSourceLayer)
+					At = static_cast<int>(i);
+			if(!Sources.empty())
+			{
+				const int Next = (At + 1) % static_cast<int>(Sources.size());
+				pLive->m_LiveSourceGroup = Sources[static_cast<std::size_t>(Next)].x;
+				pLive->m_LiveSourceLayer = Sources[static_cast<std::size_t>(Next)].y;
+				m_Dirty = true;
+				ApplyLiveTiles(m_SelectedGroup, m_SelectedLayer);
+			}
+		}
+		y += 26.0f;
+
+		const auto LayerTexture = [&](const CLayer *pLayer) -> int {
+			if(pLayer == nullptr)
+				return 0;
+			if(pLayer->IsGameLayer())
+				return EntityTexture();
+			return pLayer->m_Image >= 0 ? TextureForImage(pLayer->m_Image) : 0;
+		};
+		const auto Swatch = [&](int Texture, int Index, int Flags, const base::rect &Box) {
+			ui::Rect(pPainter, Box, ui::Theme.m_PanelDark);
+			ui::RectOutline(pPainter, Box, ui::Theme.m_Border);
+			if(Texture <= 0)
+				return;
+			int TexW = 0, TexH = 0;
+			m_pGraphics->TextureSize(Texture, TexW, TexH);
+			DrawTile(pPainter, Texture, Index, Flags, Box.Center().x, Box.Center().y,
+				std::min(Box.Width(), Box.Height()) - 2.0f, TexW, TexH, 1.0f);
+		};
+		const CLayer *pSource = LayerAt(pLive->m_LiveSourceGroup, pLive->m_LiveSourceLayer);
+		const int TexSource = LayerTexture(pSource);
+		const int TexTarget = LayerTexture(pLive);
+
+		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 10.0f), 11.0f,
+			ui::Theme.m_TextDim, Tr("Shift drag the map: take the source tiles you frame"), Area.Width() - 24.0f);
+		y += 16.0f;
+
+		const int Shown = static_cast<int>(pLive->m_vLiveMaps.size());
+		constexpr int MaxRows = 5;
+		bool bRemoved = false;
+		for(int i = 0; i < Shown && i < MaxRows; i++)
+		{
+			CLiveMap &Map = pLive->m_vLiveMaps[static_cast<std::size_t>(i)];
+			const base::rect Row = base::rect::FromSize(base::vec2(Area.m_TopLeft.x + 12.0f, y), base::vec2(Area.Width() - 24.0f, 22.0f));
+			if(i == m_LiveMap)
+				ui::Rect(pPainter, Row, ui::Theme.m_Selection);
+			else if(ui::Hovered(Input, Row))
+				ui::Rect(pPainter, Row, ui::Theme.m_Hover);
+			if(ui::Hovered(Input, Row))
+				Hint(Row,   base::FormatRuntime(Tr("source {:d} becomes {:d}"), Map.m_Source, Map.m_Target)  , Tr("left click selects, right click removes this pair") );
+
+			const base::rect SrcSwatch = base::rect::FromSize(base::vec2(Row.m_TopLeft.x + 2.0f, Row.m_TopLeft.y + 2.0f), base::vec2(18.0f, 18.0f));
+			Swatch(TexSource, Map.m_Source, 0, SrcSwatch);
+			const base::rect SrcField = base::rect::FromSize(base::vec2(SrcSwatch.m_BottomRight.x + 3.0f, Row.m_TopLeft.y + 1.0f), base::vec2(46.0f, 20.0f));
+			const base::rect DstField = base::rect::FromSize(base::vec2(Row.m_BottomRight.x - 2.0f - 46.0f, Row.m_TopLeft.y + 1.0f), base::vec2(46.0f, 20.0f));
+			const base::rect DstSwatch = base::rect::FromSize(base::vec2(DstField.m_TopLeft.x - 21.0f, Row.m_TopLeft.y + 2.0f), base::vec2(18.0f, 18.0f));
+			// the arrow sits halfway between the two halves, so it reads as one
+			const float ArrowX = (SrcField.m_BottomRight.x + DstSwatch.m_TopLeft.x) * 0.5f;
+			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(ArrowX, Row.Center().y + 4.0f), 12.0f,
+				ui::Theme.m_TextDim, "->", ui::text_align::center);
+			Swatch(TexTarget, Map.m_Target, Map.m_Flags, DstSwatch);
+
+			bool bChanged = false;
+			{
+				bool bDrag = (m_DragLiveField == i * 2);
+				if(ui::IntField(pPainter, Input, m_pGraphics->Font(), SrcField, Map.m_Source, 0, 255, 1, bDrag))
+					bChanged = true;
+				if(bDrag)
+					m_DragLiveField = i * 2;
+				else if(m_DragLiveField == i * 2)
+					m_DragLiveField = -1;
+			}
+			{
+				bool bDrag = (m_DragLiveField == i * 2 + 1);
+				if(ui::IntField(pPainter, Input, m_pGraphics->Font(), DstField, Map.m_Target, 0, 255, 1, bDrag))
+					bChanged = true;
+				if(bDrag)
+					m_DragLiveField = i * 2 + 1;
+				else if(m_DragLiveField == i * 2 + 1)
+					m_DragLiveField = -1;
+			}
+			if(bChanged)
+			{
+				m_Dirty = true;
+				ApplyLiveTiles(m_SelectedGroup, m_SelectedLayer);
+			}
+			if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
+				m_LiveMap = i;
+			if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::right))
+			{
+				pLive->m_vLiveMaps.erase(pLive->m_vLiveMaps.begin() + i);
+				m_LiveMap = std::min(m_LiveMap, static_cast<int>(pLive->m_vLiveMaps.size()) - 1);
+				m_Dirty = true;
+				ApplyLiveTiles(m_SelectedGroup, m_SelectedLayer);
+				bRemoved = true;
+				break;
+			}
+			y += 24.0f;
+		}
+		if(bRemoved)
+			return;
+		if(Shown > MaxRows)
+		{
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 10.0f), 11.0f,
+				ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:d} more pairs"), Shown - MaxRows)  , Area.Width() - 24.0f);
+			y += 16.0f;
+		}
+		if(Shown == 0)
+		{
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Area.m_TopLeft.x + 12.0f, y + 10.0f), 11.0f,
+				ui::Theme.m_TextDim, Tr("no pairs yet: Shift drag the source layer"), Area.Width() - 24.0f);
+			y += 16.0f;
+		}
+		const base::rect AddBox = base::rect::FromSize(base::vec2(Area.m_TopLeft.x + 12.0f, y), base::vec2(78.0f, 20.0f));
+		if(ui::Hovered(Input, AddBox))
+			Hint(AddBox, Tr("+ pair") , Tr("add a source-to-output pair by hand") );
+		if(ui::Button(pPainter, Input, m_pGraphics->Font(), AddBox, Tr("+ pair")))
+		{
+			CLiveMap Map;
+			Map.m_Target = base::clamp(m_BrushTile, 0, 255);
+			pLive->m_vLiveMaps.push_back(Map);
+			m_LiveMap = static_cast<int>(pLive->m_vLiveMaps.size()) - 1;
+			m_Dirty = true;
+		}
+		y += 24.0f;
 	}
 
 	/*
@@ -2684,15 +2922,93 @@ namespace game
 	void CEditor::DrawRulesWorkspace(ui::CPainter *pPainter, const base::rect &Area)
 	{
 		engine::CInput &Input = this->Input();
+		// a scrub that ended between frames must not keep following the mouse
+		if(!Input.MouseDown(engine::CInput::mouse_button::left))
+			m_DragRuleField = -1;
 		ui::Rect(pPainter, Area, ui::Theme.m_Panel);
+
+		/*
+			The rule workspace is the visual editor for the project's autorules,
+			and it is built the way a material editor is: a tree of
+			configurations, runs and rules on top, a rendered picture of the
+			selected rule below, and the fields last. The picture is the point.
+			The tile a rule writes is drawn from the layer's own art in the
+			centre of a grid, and every position condition is drawn at the offset
+			it tests, so a rule reads as a shape rather than as a row of numbers.
+		*/
+		const CLayer *pPreviewLayer = SelectedLayer();
+		const bool bPreviewGame = pPreviewLayer != nullptr && pPreviewLayer->IsGameLayer();
+		int PreviewTexture = 0;
+		int PreviewTexW = 0;
+		int PreviewTexH = 0;
+		if(pPreviewLayer != nullptr)
+		{
+			if(bPreviewGame)
+				PreviewTexture = EntityTexture();
+			else if(pPreviewLayer->IsTiles() && pPreviewLayer->m_Image >= 0)
+				PreviewTexture = TextureForImage(pPreviewLayer->m_Image);
+			if(PreviewTexture > 0)
+				m_pGraphics->TextureSize(PreviewTexture, PreviewTexW, PreviewTexH);
+		}
+		// one cell of the picture: a game layer reads its entity sheet, a tile
+		// layer the mapres it names, so the editor draws what the map will
+		const auto DrawCell = [&](int Index, int Flags, float Cx, float Cy, float Size, float Alpha) {
+			if(bPreviewGame)
+				DrawSprite(pPainter, PreviewTexture, Index, Cx, Cy, Size, Alpha);
+			else
+				DrawTile(pPainter, PreviewTexture, Index, Flags, Cx, Cy, Size, PreviewTexW, PreviewTexH, Alpha);
+		};
+		const auto InfoIndex = [](const rules::CIndexInfo &Info) {
+			return Info.m_Role >= 0 ? rules::RoleTileIndex(static_cast<rules::tile_role>(Info.m_Role)) : Info.m_Tile;
+		};
+		const auto InfoLabel = [](const rules::CIndexInfo &Info) -> std::string {
+			if(Info.m_Role >= 0)
+				return std::string(Tr(rules::RoleName(static_cast<rules::tile_role>(Info.m_Role))));
+			if(Info.m_Tile == 0)
+				return std::string(Tr("empty"));
+			return base::FormatRuntime("{:d}", Info.m_Tile);
+		};
+		// the roles a rule can name instead of a raw index, in the order the
+		// role button walks them
+		static const rules::tile_role s_aRoles[] = {
+			rules::tile_role::custom, rules::tile_role::game_layer, rules::tile_role::hookable,
+			rules::tile_role::death, rules::tile_role::unhookable, rules::tile_role::freeze,
+			rules::tile_role::unfreeze, rules::tile_role::deep_freeze, rules::tile_role::deep_unfreeze,
+			rules::tile_role::live_freeze, rules::tile_role::live_unfreeze,
+		};
+		const auto RoleButton = [&](const base::rect &Box, int &Role, int &Tile) {
+			const std::string Label = Role >= 0 ? std::string(Tr(rules::RoleName(static_cast<rules::tile_role>(Role)))) : std::string(Tr("custom"));
+			if(ui::Button(pPainter, Input, m_pGraphics->Font(), Box, Label))
+			{
+				int At = 0;
+				for(std::size_t i = 0; i < std::size(s_aRoles); i++)
+					if(static_cast<int>(s_aRoles[i]) == Role)
+						At = static_cast<int>(i);
+				At = (At + 1) % static_cast<int>(std::size(s_aRoles));
+				Role = static_cast<int>(s_aRoles[At]);
+				if(s_aRoles[At] != rules::tile_role::custom)
+					Tile = rules::RoleTileIndex(s_aRoles[At]);
+				m_Dirty = true;
+			}
+		};
+		const auto NumberField = [&](int Id, const base::rect &Box, int &Value, int Min, int Max, int Step) {
+			bool bDragging = (m_DragRuleField == Id);
+			const bool bChanged = ui::IntField(pPainter, Input, m_pGraphics->Font(), Box, Value, Min, Max, Step, bDragging);
+			if(bDragging)
+				m_DragRuleField = Id;
+			else if(m_DragRuleField == Id)
+				m_DragRuleField = -1;
+			return bChanged;
+		};
 
 		// ------------------------------------------------------------------ head
 		const base::rect Head = base::rect::FromSize(Area.m_TopLeft, base::vec2(Area.Width(), 26.0f));
 		ui::Rect(pPainter, Head, ui::Theme.m_PanelDark);
 		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(Head.m_TopLeft.x + 8.0f, Head.Center().y + 4.5f), 12.5f,
-			ui::Theme.m_Text, Tr("Autorules") );
+			ui::Theme.m_Text, Tr("Autorules"));
 		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Head.m_BottomRight.x - 8.0f, Head.Center().y + 4.5f), 11.0f,
-			ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:d} configs / {:d} rules"), static_cast<int>(m_RuleSet.m_vConfigs.size()), m_RuleSet.RuleCount())  ,
+			ui::Theme.m_TextDim, base::FormatRuntime(Tr("{:d} configs / {:d} rules"),
+				static_cast<int>(m_RuleSet.m_vConfigs.size()), m_RuleSet.RuleCount()),
 			Head.Width() * 0.6f, ui::text_align::right);
 
 		float y = Head.m_BottomRight.y + 6.0f;
@@ -2701,37 +3017,38 @@ namespace game
 		const float RowHeight = 20.0f;
 
 		// ------------------------------------------------------------------ tree
-		/*
-			The tree takes the top half and the inspector the bottom, because a
-			rule set is read far more often than it is written: the shape of the
-			whole document has to be visible while one rule is edited.
-		*/
-		const float TreeHeight = std::max(Area.Height() * 0.42f, 90.0f);
+		const float TreeHeight = base::clamp(Area.Height() * 0.21f, 66.0f, 108.0f);
 		const base::rect Tree = base::rect::FromSize(base::vec2(X, y), base::vec2(Width, TreeHeight));
 		ui::Rect(pPainter, Tree, ui::Theme.m_PanelDark);
 		ui::RectOutline(pPainter, Tree, ui::Theme.m_Border);
 		pPainter->Save();
 		pPainter->Scissor(Tree.m_TopLeft.x, Tree.m_TopLeft.y, Tree.Width(), Tree.Height());
 
-		float ty = Tree.m_TopLeft.y + 2.0f;
+		if(ui::Hovered(Input, Tree) && Input.Scroll() != 0.0f)
+			m_RuleTreeScroll = std::max(0.0f, m_RuleTreeScroll - Input.Scroll() * RowHeight * 2.0f);
+
+		float ty = Tree.m_TopLeft.y + 2.0f - m_RuleTreeScroll;
 		if(m_RuleSet.m_vConfigs.empty())
 			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Tree.m_TopLeft.x + 8.0f, ty + 14.0f), 12.0f,
-				ui::Theme.m_TextDim, Tr("no rules yet: create a configuration to start") , Tree.Width() - 16.0f);
+				ui::Theme.m_TextDim, Tr("no rules yet: create a configuration to start"), Tree.Width() - 16.0f);
 		for(std::size_t c = 0; c < m_RuleSet.m_vConfigs.size(); c++)
 		{
 			const rules::CConfiguration &Config = m_RuleSet.m_vConfigs[c];
 			const base::rect Row = base::rect::FromSize(base::vec2(Tree.m_TopLeft.x + 2.0f, ty), base::vec2(Tree.Width() - 4.0f, RowHeight));
+			// the exact selection is the bright row; the configuration a deeper
+			// selection lives in stays dim, so delete always matches the bright
+			// row the user is looking at
 			if(static_cast<int>(c) == m_RuleConfig)
-				ui::Rect(pPainter, Row, ui::Theme.m_Selection);
+				ui::Rect(pPainter, Row, m_RuleLevel == static_cast<int>(rule_level::config) ? ui::Theme.m_Selection : ui::Theme.m_AccentDim);
 			else if(ui::Hovered(Input, Row))
 				ui::Rect(pPainter, Row, ui::Theme.m_Hover);
 			ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(Row.m_TopLeft.x + 6.0f, Row.Center().y + 4.5f), 12.0f,
-				ui::Theme.m_Text,  base::FormatRuntime(Tr("config {:d}  {}"), c + 1, Config.m_Name.c_str()) , Row.Width() - 12.0f);
+				ui::Theme.m_Text, base::FormatRuntime(Tr("config {:d}  {}"), static_cast<int>(c) + 1, Config.m_Name.c_str()), Row.Width() - 12.0f);
 			if(ui::Hovered(Input, Row))
-				Hint(Row,  base::FormatRuntime(Tr("config {:d}"), c + 1) , 
-					base::FormatRuntime(Tr("{}: a page of rules, applied to the layers it names"), Config.m_Name.c_str()) );
+				Hint(Row, base::FormatRuntime(Tr("config {:d}"), static_cast<int>(c) + 1),
+					base::FormatRuntime(Tr("{}: a page of rules, applied to the layers it names"), Config.m_Name.c_str()));
 			if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
-				SetRuleSelection(static_cast<int>(c), 0, 0);
+				SetRuleSelection(static_cast<int>(c), 0, 0, static_cast<int>(rule_level::config));
 			ty += RowHeight;
 
 			for(std::size_t r = 0; r < Config.m_vRuns.size(); r++)
@@ -2740,18 +3057,18 @@ namespace game
 				const base::rect RunRow = base::rect::FromSize(base::vec2(Tree.m_TopLeft.x + 16.0f, ty), base::vec2(Tree.Width() - 20.0f, RowHeight));
 				const bool bRunActive = static_cast<int>(c) == m_RuleConfig && static_cast<int>(r) == m_RuleRun;
 				if(bRunActive)
-					ui::Rect(pPainter, RunRow, ui::Theme.m_AccentDim);
+					ui::Rect(pPainter, RunRow, m_RuleLevel == static_cast<int>(rule_level::run) ? ui::Theme.m_Selection : ui::Theme.m_AccentDim);
 				else if(ui::Hovered(Input, RunRow))
 					ui::Rect(pPainter, RunRow, ui::Theme.m_Hover);
 				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(RunRow.m_TopLeft.x + 6.0f, RunRow.Center().y + 4.5f), 11.5f,
-					ui::Theme.m_Text,   base::FormatRuntime(Tr("{}  ->  {}  ({:d} rules)"), RuleSlotName(Run.m_ReadSlot), RuleSlotName(Run.m_TargetSlot),
-						static_cast<int>(Run.m_vIndexRules.size()))  ,
+					ui::Theme.m_Text, base::FormatRuntime(Tr("{}  ->  {}  ({:d} rules)"), RuleSlotName(Run.m_ReadSlot),
+						RuleSlotName(Run.m_TargetSlot), static_cast<int>(Run.m_vIndexRules.size())),
 					RunRow.Width() - 12.0f);
 				if(ui::Hovered(Input, RunRow))
-					Hint(RunRow, Tr("run") ,  base::FormatRuntime(Tr("reads '{}' and writes '{}', in one pass"),
-						RuleSlotName(Run.m_ReadSlot), RuleSlotName(Run.m_TargetSlot)) );
+					Hint(RunRow, Tr("run"), base::FormatRuntime(Tr("reads '{}' and writes '{}', in one pass"),
+						RuleSlotName(Run.m_ReadSlot), RuleSlotName(Run.m_TargetSlot)));
 				if(ui::Hovered(Input, RunRow) && Input.MousePressed(engine::CInput::mouse_button::left))
-					SetRuleSelection(static_cast<int>(c), static_cast<int>(r), 0);
+					SetRuleSelection(static_cast<int>(c), static_cast<int>(r), 0, static_cast<int>(rule_level::run));
 				ty += RowHeight;
 
 				if(static_cast<int>(c) != m_RuleConfig || static_cast<int>(r) != m_RuleRun)
@@ -2760,39 +3077,51 @@ namespace game
 				{
 					const rules::CIndexRule &Rule = Run.m_vIndexRules[i];
 					const base::rect RuleRow = base::rect::FromSize(base::vec2(Tree.m_TopLeft.x + 30.0f, ty), base::vec2(Tree.Width() - 34.0f, RowHeight));
-					if(static_cast<int>(i) == m_RuleIndex)
+					if(static_cast<int>(i) == m_RuleIndex && m_RuleLevel == static_cast<int>(rule_level::rule))
 						ui::Rect(pPainter, RuleRow, ui::Theme.m_Selection);
 					else if(ui::Hovered(Input, RuleRow))
 						ui::Rect(pPainter, RuleRow, ui::Theme.m_Hover);
-					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(RuleRow.m_TopLeft.x + 6.0f, RuleRow.Center().y + 4.5f), 11.0f,
-						ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{}  writes {:d}"), Rule.m_Name.c_str(), Rule.m_Tile)  , RuleRow.Width() - 12.0f);
+					// the picture of what the rule writes, which reads faster
+					// than the index it names
+					const int Written = Rule.m_Role >= 0 ? rules::RoleTileIndex(static_cast<rules::tile_role>(Rule.m_Role)) : Rule.m_Tile;
+					DrawCell(Written, Rule.m_Flag, RuleRow.m_TopLeft.x + 5.0f, RuleRow.Center().y - 7.0f, 14.0f, 1.0f);
+					const std::string Writes = Rule.m_Role >= 0 ? std::string(Tr(rules::RoleName(static_cast<rules::tile_role>(Rule.m_Role)))) : base::FormatRuntime("{:d}", Rule.m_Tile);
+					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(RuleRow.m_TopLeft.x + 24.0f, RuleRow.Center().y + 4.5f), 11.0f,
+						ui::Theme.m_Text, base::FormatRuntime(Tr("{}  writes {}"), Rule.m_Name.c_str(), Writes.c_str()), RuleRow.Width() - 30.0f);
 					if(ui::Hovered(Input, RuleRow))
-						Hint(RuleRow,   Rule.m_Name.empty() ? Tr("rule") : Rule.m_Name  , Tr("an index rule: where its conditions match, it writes its tile") );
+						Hint(RuleRow, Rule.m_Name.empty() ? Tr("rule") : Rule.m_Name,
+							Tr("an index rule: where its conditions match, it writes its tile"));
 					if(ui::Hovered(Input, RuleRow) && Input.MousePressed(engine::CInput::mouse_button::left))
-						SetRuleSelection(static_cast<int>(c), static_cast<int>(r), static_cast<int>(i));
+						SetRuleSelection(static_cast<int>(c), static_cast<int>(r), static_cast<int>(i), static_cast<int>(rule_level::rule));
 					ty += RowHeight;
 				}
 			}
 		}
 		pPainter->Restore();
+		{
+			const float Content = ty + m_RuleTreeScroll - Tree.m_TopLeft.y;
+			m_RuleTreeScroll = Content > Tree.Height() ? base::clamp(m_RuleTreeScroll, 0.0f, Content - Tree.Height()) : 0.0f;
+		}
 		y = Tree.m_BottomRight.y + 6.0f;
 
 		// the tree actions
 		const float ButtonWidth = (Width - 12.0f) / 4.0f;
-		const auto TreeButton = [&](int Slot, const char *pLabel, const std::string &Detail) {
+		const auto TreeButton = [&](int Slot, const char *pLabel, const std::string &Detail, bool Enabled = true) {
 			const base::rect Rect = base::rect::FromSize(
 				base::vec2(X + (ButtonWidth + 4.0f) * static_cast<float>(Slot), y), base::vec2(ButtonWidth, 22.0f));
 			if(ui::Hovered(Input, Rect))
-				Hint(Rect, pLabel, Detail);
-			return ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, pLabel);
+				Hint(Rect, pLabel, Enabled ? Detail : Tr("nothing to delete at the level the tree has selected"));
+			return ui::Button(pPainter, Input, m_pGraphics->Font(), Rect, pLabel, false, Enabled);
 		};
-		if(TreeButton(0, "config", "add a configuration: a page of runs"))
+		if(TreeButton(0, Tr("config"), Tr("add a configuration: a page of runs")))
 			AddRuleConfig();
-		if(TreeButton(1, "run", "add a run: it reads one layer and writes another"))
+		if(TreeButton(1, Tr("run"), Tr("add a run: it reads one layer and writes another")))
 			AddRuleRun();
-		if(TreeButton(2, "rule", "add an index rule to the selected run"))
+		if(TreeButton(2, Tr("rule"), Tr("add an index rule to the selected run")))
 			AddRule();
-		if(TreeButton(3, "delete", "delete whatever the tree has selected"))
+		if(TreeButton(3, Tr("delete"),
+			base::FormatRuntime(Tr("delete the selected {} from the rule set"), RuleLevelName()),
+			CanDeleteRuleSelection()))
 			DeleteRuleSelection();
 		y += 28.0f;
 
@@ -2800,25 +3129,24 @@ namespace game
 		const base::rect ApplyRow = base::rect::FromSize(base::vec2(X, y), base::vec2(Width, 24.0f));
 		const float HalfWidth = (Width - 6.0f) * 0.5f;
 		if(ui::Hovered(Input, ApplyRow))
-			Hint(ApplyRow, Tr("Apply") , Tr("run the rules over the selected tile layer, with one step of undo") );
+			Hint(ApplyRow, Tr("Apply"), Tr("run the rules over the selected tile layer, with one step of undo"));
 		if(ui::Button(pPainter, Input, m_pGraphics->FontBold(),
-			base::rect::FromSize(ApplyRow.m_TopLeft, base::vec2(HalfWidth, ApplyRow.Height())), Tr("Apply this configuration") ))
+			base::rect::FromSize(ApplyRow.m_TopLeft, base::vec2(HalfWidth, ApplyRow.Height())), Tr("Apply this configuration")))
 		{
 			std::string Error;
-			// the rule runs against the layer the workspace has selected
 			const int Slot = SlotForLayer(m_SelectedGroup, m_SelectedLayer);
 			if(Slot < 0)
-				SetStatus( Tr("select a tile layer to apply rules to") );
+				SetStatus(Tr("select a tile layer to apply rules to"));
 			else if(!ApplyRules(m_RuleConfig, Slot, 0, &Error))
 				LOG_WARN("editor", "autorules: {}", Error.c_str());
 		}
 		if(ui::Button(pPainter, Input, m_pGraphics->Font(),
-			base::rect::FromSize(base::vec2(ApplyRow.m_TopLeft.x + HalfWidth + 6.0f, ApplyRow.m_TopLeft.y), base::vec2(HalfWidth, ApplyRow.Height())), Tr("Apply all") ))
+			base::rect::FromSize(base::vec2(ApplyRow.m_TopLeft.x + HalfWidth + 6.0f, ApplyRow.m_TopLeft.y), base::vec2(HalfWidth, ApplyRow.Height())), Tr("Apply all")))
 		{
 			std::string Error;
 			const int Slot = SlotForLayer(m_SelectedGroup, m_SelectedLayer);
 			if(Slot < 0)
-				SetStatus( Tr("select a tile layer to apply rules to") );
+				SetStatus(Tr("select a tile layer to apply rules to"));
 			else if(!ApplyRules(-1, Slot, 0, &Error))
 				LOG_WARN("editor", "autorules: {}", Error.c_str());
 		}
@@ -2830,125 +3158,468 @@ namespace game
 		ui::RectOutline(pPainter, Inspector, ui::Theme.m_Border);
 		pPainter->Save();
 		pPainter->Scissor(Inspector.m_TopLeft.x, Inspector.m_TopLeft.y, Inspector.Width(), Inspector.Height());
+		if(ui::Hovered(Input, Inspector) && Input.Scroll() != 0.0f)
+			m_RuleScroll = std::max(0.0f, m_RuleScroll - Input.Scroll() * 42.0f);
 
-		float iy = Inspector.m_TopLeft.y + 6.0f;
+		float iy = Inspector.m_TopLeft.y + 6.0f - m_RuleScroll;
+		const float FieldX = Inspector.m_TopLeft.x + 6.0f;
 		const float FieldWidth = Inspector.Width() - 12.0f;
 		const auto Label = [&](const char *pText) {
-			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_TopLeft.x + 6.0f, iy + 10.0f), 11.0f, ui::Theme.m_TextDim, Tr(pText));
-			iy += 14.0f;
+			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 10.0f), 11.0f, ui::Theme.m_TextDim, Tr(pText));
+			iy += 15.0f;
 		};
 		const auto Field = [&](const base::rect &Box) { return Box; };
 
 		if(m_RuleConfig < 0 || m_RuleConfig >= static_cast<int>(m_RuleSet.m_vConfigs.size()))
 		{
-			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_TopLeft.x + 8.0f, iy + 12.0f), 12.0f,
-				ui::Theme.m_TextDim, Tr("nothing selected") , FieldWidth);
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(FieldX + 2.0f, iy + 12.0f), 12.0f,
+				ui::Theme.m_TextDim, Tr("nothing selected"), FieldWidth);
+			iy += 24.0f;
 		}
 		else
 		{
 			rules::CConfiguration &Config = m_RuleSet.m_vConfigs[static_cast<std::size_t>(m_RuleConfig)];
-			Label("configuration name");
-			TextField(pPainter, Input, m_pGraphics->Font(), Field(base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth, 20.0f))),
-				Config.m_Name, "unnamed");
-			iy += 24.0f;
+			const bool bHaveRun = m_RuleRun >= 0 && m_RuleRun < static_cast<int>(Config.m_vRuns.size());
+			rules::CRun *pRun = bHaveRun ? &Config.m_vRuns[static_cast<std::size_t>(m_RuleRun)] : nullptr;
+			const bool bHaveRule = pRun != nullptr && m_RuleIndex >= 0 && m_RuleIndex < static_cast<int>(pRun->m_vIndexRules.size());
+			rules::CIndexRule *pRule = bHaveRule ? &pRun->m_vIndexRules[static_cast<std::size_t>(m_RuleIndex)] : nullptr;
+			if(pRule != nullptr && m_RuleCondition < 0 && !pRule->m_vRules.empty())
+				m_RuleCondition = 0;
 
-			Label("region  x, y, width, height  (0 0 0 0 is the whole layer)");
-			const int aValues[4] = {Config.m_StartX, Config.m_StartY, Config.m_EndX - Config.m_StartX, Config.m_EndY - Config.m_StartY};
-			for(int i = 0; i < 4; i++)
+			if(pRule != nullptr)
 			{
-				const base::rect Box = base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f + i * (FieldWidth * 0.25f), iy), base::vec2(FieldWidth * 0.25f - 3.0f, 20.0f));
-				ui::Rect(pPainter, Box, ui::Theme.m_Panel);
-				ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Box.Center().x, Box.Center().y + 4.5f), 12.0f, ui::Theme.m_Text,
-					std::to_string(aValues[i]), ui::text_align::center);
+				/*
+					The rule in one line, before any control: what it writes and
+					the conditions it fires under. A picture says what a rule
+					does; a sentence says what to do with it.
+				*/
+				const std::string Writes = pRule->m_Role >= 0 ? std::string(Tr(rules::RoleName(static_cast<rules::tile_role>(pRule->m_Role)))) :
+					base::FormatRuntime("{:d}", pRule->m_Tile);
+				const auto ConditionWord = [&](const rules::CPosRule &Pos) -> std::string {
+					const std::string Value = Pos.m_vIndices.empty() ? std::string(Tr("any")) : InfoLabel(Pos.m_vIndices.front());
+					const char *pWord = Pos.m_Mode == rules::pos_rule_mode::not_index ? Tr("is not") :
+						(Pos.m_Mode == rules::pos_rule_mode::none ? Tr("guides") : Tr("is"));
+					return base::FormatRuntime(Tr("({:d}, {:d}) {} {}"), Pos.m_X, Pos.m_Y, pWord, Value);
+				};
+				std::string Sentence;
+				if(pRule->m_vRules.empty())
+					Sentence = base::FormatRuntime(Tr("writes {} at every position"), Writes.c_str());
+				else
+				{
+					std::string Conditions;
+					for(std::size_t i = 0; i < pRule->m_vRules.size(); i++)
+					{
+						if(i > 0)
+							Conditions += ", ";
+						Conditions += ConditionWord(pRule->m_vRules[i]);
+					}
+					Sentence = base::FormatRuntime(Tr("writes {} when {}"), Writes.c_str(), Conditions.c_str());
+				}
+				ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(FieldX, iy + 11.0f), 12.0f, ui::Theme.m_Text, Sentence, FieldWidth);
+				iy += 20.0f;
+
+				// the two pages an editor of pictures has: the shape of the
+				// rule, and the palette it is painted from
+				const float TabWidth = (FieldWidth - 4.0f) * 0.5f;
+				if(ui::Button(pPainter, Input, m_pGraphics->Font(),
+					base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(TabWidth, 20.0f)), Tr("conditions"), !m_bRuleSheet))
+					m_bRuleSheet = false;
+				if(ui::Button(pPainter, Input, m_pGraphics->Font(),
+					base::rect::FromSize(base::vec2(FieldX + TabWidth + 4.0f, iy), base::vec2(TabWidth, 20.0f)), Tr("tile sheet"), m_bRuleSheet))
+					m_bRuleSheet = true;
+				iy += 24.0f;
+
+				if(!m_bRuleSheet)
+				{
+					/*
+						A window of offsets around the tile the rule writes. The
+						centre is what the rule places; every other cell is a
+						position condition, drawn with the tile it names and
+						tinted green for "is", red for "is not" and amber for a
+						guide. Clicking an empty cell adds a condition there,
+						which is the whole editor.
+					*/
+					const int GridCells = 5;
+					const int GridCentre = GridCells / 2;
+					const float CellSize = base::clamp((FieldWidth - 4.0f) / static_cast<float>(GridCells), 18.0f, 26.0f);
+					const float GridSize = CellSize * static_cast<float>(GridCells);
+					const float GridLeft = FieldX + (FieldWidth - GridSize) * 0.5f;
+					const base::rect Grid = base::rect::FromSize(base::vec2(GridLeft, iy), base::vec2(GridSize, GridSize));
+					ui::Rect(pPainter, Grid, ui::Theme.m_Panel);
+
+					for(int gy = 0; gy < GridCells; gy++)
+					for(int gx = 0; gx < GridCells; gx++)
+					{
+						const int Ox = gx - GridCentre;
+						const int Oy = gy - GridCentre;
+						const base::rect Cell = base::rect::FromSize(
+							base::vec2(GridLeft + static_cast<float>(gx) * CellSize, iy + static_cast<float>(gy) * CellSize),
+							base::vec2(CellSize, CellSize));
+						const bool bCentre = Ox == 0 && Oy == 0;
+						const bool bHoverCell = ui::Hovered(Input, Cell);
+						ui::Rect(pPainter, Cell, ((gx + gy) & 1) ? ui::Theme.m_PanelDark : ui::Theme.m_Panel);
+
+						int At = -1;
+						for(std::size_t i = 0; i < pRule->m_vRules.size(); i++)
+							if(pRule->m_vRules[i].m_X == Ox && pRule->m_vRules[i].m_Y == Oy)
+							{
+								At = static_cast<int>(i);
+								break;
+							}
+
+						if(bCentre)
+						{
+							const int Written = pRule->m_Role >= 0 ? rules::RoleTileIndex(static_cast<rules::tile_role>(pRule->m_Role)) : pRule->m_Tile;
+							DrawCell(Written, pRule->m_Flag, Cell.m_TopLeft.x + 1.0f, Cell.m_TopLeft.y + 1.0f, CellSize - 2.0f, 1.0f);
+							if(Written == 0)
+								ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Cell.Center().x, Cell.Center().y + 4.0f), 10.0f,
+									ui::Theme.m_TextDim, Tr("empty"), ui::text_align::center);
+							if(At < 0)
+							{
+								ui::RectOutline(pPainter, Cell, ui::Theme.m_Accent, 2.0f);
+								if(bHoverCell)
+									Hint(Cell, Tr("the tile the rule writes"), Tr("this is what the rule places where its conditions match"));
+							}
+						}
+
+						if(At >= 0)
+						{
+							const rules::CPosRule &Pos = pRule->m_vRules[static_cast<std::size_t>(At)];
+							ui::CColor Tint = ui::Theme.m_Success;
+							if(Pos.m_Mode == rules::pos_rule_mode::not_index)
+								Tint = ui::Theme.m_Error;
+							else if(Pos.m_Mode == rules::pos_rule_mode::none)
+								Tint = ui::Theme.m_MapAccent;
+							if(!Pos.m_vIndices.empty())
+							{
+								const int Tile = InfoIndex(Pos.m_vIndices.front());
+								if(Tile > 0)
+									DrawCell(Tile, Pos.m_vIndices.front().m_Flag, Cell.m_TopLeft.x + 1.0f, Cell.m_TopLeft.y + 1.0f, CellSize - 2.0f, 0.8f);
+							}
+							ui::Rect(pPainter, Cell, ui::WithAlpha(Tint, 0.26f));
+							ui::RectOutline(pPainter, Cell, Tint, At == m_RuleCondition ? 2.5f : 1.5f);
+							const std::string Text = Pos.m_vIndices.empty() ? std::string(Tr("any")) : InfoLabel(Pos.m_vIndices.front());
+							ui::Rect(pPainter, base::rect::FromSize(base::vec2(Cell.m_TopLeft.x, Cell.m_BottomRight.y - 10.0f), base::vec2(CellSize, 10.0f)), ui::RGBA(0, 0, 0, 150));
+							ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Cell.Center().x, Cell.m_BottomRight.y - 1.5f), 8.5f,
+								Tint, Text, CellSize - 2.0f, ui::text_align::center);
+							if(bHoverCell)
+							{
+								Hint(Cell, base::FormatRuntime(Tr("condition at ({:d}, {:d})"), Ox, Oy),
+									Tr("left click selects, right click removes, middle click switches is / not"));
+								if(Input.MousePressed(engine::CInput::mouse_button::left))
+									m_RuleCondition = At;
+								else if(Input.MousePressed(engine::CInput::mouse_button::right))
+									DeleteRuleCondition(At);
+								else if(Input.MousePressed(engine::CInput::mouse_button::middle))
+									ToggleRuleConditionMode(At);
+							}
+						}
+						else if(!bCentre)
+						{
+							// an empty cell says what it is for with a plus
+							ui::RectOutline(pPainter, Cell, bHoverCell ? ui::Theme.m_Accent : ui::Theme.m_Border);
+							const float cx = Cell.Center().x;
+							const float cy = Cell.Center().y;
+							const float r = std::min(CellSize * 0.16f, 3.5f);
+							const ui::CColor Plus = bHoverCell ? ui::Theme.m_Accent : ui::Theme.m_Border;
+							ui::Line(pPainter, base::vec2(cx - r, cy), base::vec2(cx + r, cy), Plus);
+							ui::Line(pPainter, base::vec2(cx, cy - r), base::vec2(cx, cy + r), Plus);
+							if(bHoverCell)
+							{
+								Hint(Cell, Tr("add a condition"),
+									base::FormatRuntime(Tr("click to require a tile at ({:d}, {:d})"), Ox, Oy));
+								if(Input.MousePressed(engine::CInput::mouse_button::left))
+									AddRuleCondition(Ox, Oy);
+							}
+						}
+					}
+					ui::RectOutline(pPainter, Grid, ui::Theme.m_Border, 1.5f);
+					iy += GridSize + 4.0f;
+
+					// the two short lines that tell a first time user what to do
+					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 9.0f), 10.5f, ui::Theme.m_TextDim,
+						Tr("click + to add a condition"), FieldWidth);
+					iy += 13.0f;
+					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 9.0f), 10.5f, ui::Theme.m_TextDim,
+						Tr("left picks, right deletes, middle switches is / not"), FieldWidth);
+					iy += 15.0f;
+
+					// a condition can sit outside the window, and saying so is
+					// better than silently hiding it
+					int Outside = 0;
+					for(const rules::CPosRule &Pos : pRule->m_vRules)
+						if(Pos.m_X < -GridCentre || Pos.m_X > GridCentre || Pos.m_Y < -GridCentre || Pos.m_Y > GridCentre)
+							Outside++;
+					if(Outside > 0)
+					{
+						ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 9.0f), 10.5f, ui::Theme.m_TextDim,
+							base::FormatRuntime(Tr("{:d} conditions sit outside this window"), Outside), FieldWidth);
+						iy += 14.0f;
+					}
+				}
+				else
+				{
+					// the tile sheet of the layer the rules apply to: the cell
+					// *is* the index, so the picture is the picker
+					const float SheetSize = std::min(FieldWidth, std::max(Inspector.Height() - (iy - Inspector.m_TopLeft.y) - 12.0f, 0.0f));
+					if(SheetSize > 40.0f)
+					{
+						const base::rect Sheet = base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(SheetSize, SheetSize));
+						ui::Rect(pPainter, Sheet, ui::Theme.m_Panel);
+						const float Cell = SheetSize / 16.0f;
+						for(int Sy = 0; Sy < 16; Sy++)
+							for(int Sx = 0; Sx < 16; Sx++)
+							{
+								const int Tile = Sy * 16 + Sx;
+								DrawCell(Tile, 0, Sheet.m_TopLeft.x + static_cast<float>(Sx) * Cell + 1.0f,
+									Sheet.m_TopLeft.y + static_cast<float>(Sy) * Cell + 1.0f, Cell - 2.0f, 1.0f);
+							}
+						ui::RectOutline(pPainter, Sheet, ui::Theme.m_Border);
+						if(PreviewTexture <= 0)
+							ui::Text(pPainter, m_pGraphics->Font(), Sheet.Center(), 12.0f, ui::Theme.m_Warning, Tr("texture missing"), ui::text_align::center);
+						// the written tile is outlined, so the sheet shows what
+						// is chosen as well as what can be chosen
+						const int Written = pRule->m_Role >= 0 ? rules::RoleTileIndex(static_cast<rules::tile_role>(pRule->m_Role)) : pRule->m_Tile;
+						const int WCol = base::clamp(Written % 16, 0, 15);
+						const int WRow = base::clamp(Written / 16, 0, 15);
+						ui::RectOutline(pPainter, base::rect::FromSize(base::vec2(Sheet.m_TopLeft.x + static_cast<float>(WCol) * Cell,
+							Sheet.m_TopLeft.y + static_cast<float>(WRow) * Cell), base::vec2(Cell, Cell)), ui::Theme.m_Accent, 2.0f);
+						if(ui::Hovered(Input, Sheet))
+						{
+							const int Col = base::clamp(static_cast<int>((Input.MousePosition().x - Sheet.m_TopLeft.x) / Cell), 0, 15);
+							const int Row = base::clamp(static_cast<int>((Input.MousePosition().y - Sheet.m_TopLeft.y) / Cell), 0, 15);
+							const int Tile = Row * 16 + Col;
+							const base::rect CellRect = base::rect::FromSize(base::vec2(Sheet.m_TopLeft.x + static_cast<float>(Col) * Cell,
+								Sheet.m_TopLeft.y + static_cast<float>(Row) * Cell), base::vec2(Cell, Cell));
+							ui::RectOutline(pPainter, CellRect, ui::Theme.m_Text, 1.0f);
+							Hint(CellRect, base::FormatRuntime(Tr("tile {:d}"), Tile), Tr("click to write this tile"));
+							if(Input.MousePressed(engine::CInput::mouse_button::left))
+							{
+								pRule->m_Tile = Tile;
+								pRule->m_Role = -1;
+								m_Dirty = true;
+								SetStatus(base::FormatRuntime(Tr("rule writes tile {:d}"), Tile));
+							}
+						}
+						iy += SheetSize + 4.0f;
+					}
+					else
+					{
+						ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 10.0f), 11.0f, ui::Theme.m_TextDim,
+							Tr("this docker is too short for the sheet"), FieldWidth);
+						iy += 18.0f;
+					}
+				}
+
+				// the condition the grid has selected, in one row: its offset,
+				// its sense, and the tile it reads
+				if(m_RuleCondition >= 0 && m_RuleCondition < static_cast<int>(pRule->m_vRules.size()))
+				{
+					rules::CPosRule &Pos = pRule->m_vRules[static_cast<std::size_t>(m_RuleCondition)];
+					ui::Text(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 14.0f), 10.5f, ui::Theme.m_TextDim,
+						base::FormatRuntime("({:d},{:d})", Pos.m_X, Pos.m_Y));
+					float Rx = FieldX + 44.0f;
+					const float ModeWidth = 46.0f;
+					const char *pMode = Pos.m_Mode == rules::pos_rule_mode::index ? Tr("is") :
+						(Pos.m_Mode == rules::pos_rule_mode::not_index ? Tr("not") : Tr("guide"));
+					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
+						base::rect::FromSize(base::vec2(Rx, iy), base::vec2(ModeWidth, 20.0f)), pMode))
+						ToggleRuleConditionMode(m_RuleCondition);
+					Rx += ModeWidth + 4.0f;
+
+					const base::rect Swatch = base::rect::FromSize(base::vec2(Rx, iy), base::vec2(20.0f, 20.0f));
+					ui::Rect(pPainter, Swatch, ui::Theme.m_Panel);
+					if(!Pos.m_vIndices.empty())
+					{
+						const rules::CIndexInfo &Info = Pos.m_vIndices.front();
+						DrawCell(InfoIndex(Info), Info.m_Flag, Swatch.m_TopLeft.x + 1.0f, Swatch.m_TopLeft.y + 1.0f, 18.0f, 1.0f);
+					}
+					ui::RectOutline(pPainter, Swatch, ui::Theme.m_Border);
+					Rx += 24.0f;
+
+					if(!Pos.m_vIndices.empty())
+					{
+						rules::CIndexInfo &Info = Pos.m_vIndices.front();
+						if(NumberField(2, base::rect::FromSize(base::vec2(Rx, iy), base::vec2(52.0f, 20.0f)), Info.m_Tile, 0, 255, 1))
+						{
+							Info.m_Role = -1;
+							m_Dirty = true;
+						}
+						Rx += 56.0f;
+						RoleButton(base::rect::FromSize(base::vec2(Rx, iy), base::vec2(std::max(FieldX + FieldWidth - Rx, 24.0f), 20.0f)),
+							Info.m_Role, Info.m_Tile);
+					}
+					else
+					{
+						ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Rx, iy + 14.0f), 10.5f, ui::Theme.m_TextDim,
+							Tr("this is a guide: it constrains nothing"), FieldWidth - (Rx - FieldX));
+					}
+					iy += 24.0f;
+				}
 			}
+			else
+			{
+				ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 10.0f), 11.0f, ui::Theme.m_TextDim,
+					Tr("select a rule to see its conditions"), FieldWidth);
+				iy += 18.0f;
+			}
+
+			// the fields a mapmaker rarely touches stay folded away until asked
+			ui::Line(pPainter, base::vec2(FieldX, iy + 4.0f), base::vec2(FieldX + FieldWidth, iy + 4.0f), ui::Theme.m_Border);
+			iy += 10.0f;
+			if(ui::Button(pPainter, Input, m_pGraphics->Font(),
+				base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth, 20.0f)),
+				m_bRuleAdvanced ? Tr("fewer settings") : Tr("more settings"), m_bRuleAdvanced))
+				m_bRuleAdvanced = !m_bRuleAdvanced;
 			iy += 26.0f;
 
-			if(m_RuleRun >= 0 && m_RuleRun < static_cast<int>(Config.m_vRuns.size()))
+			if(m_bRuleAdvanced)
 			{
-				rules::CRun &Run = Config.m_vRuns[static_cast<std::size_t>(m_RuleRun)];
-				Label("run name");
-				TextField(pPainter, Input, m_pGraphics->Font(), Field(base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth, 20.0f))),
-					Run.m_Name, "unnamed");
-				iy += 24.0f;
-
-				Label("reads  /  writes");
-				const char *apSlots[] = {"game", "tele", "speedup", "front", "switch", "tune", "tiles"};
-				const int SlotCount = static_cast<int>(std::size(apSlots));
-				if(ui::Button(pPainter, Input, m_pGraphics->Font(),
-					base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth * 0.5f - 4.0f, 20.0f)),
-					RuleSlotName(Run.m_ReadSlot)))
-					Run.m_ReadSlot = (Run.m_ReadSlot + 1) % SlotCount;
-				if(ui::Button(pPainter, Input, m_pGraphics->Font(),
-					base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f + FieldWidth * 0.5f, iy), base::vec2(FieldWidth * 0.5f, 20.0f)),  
-					Run.m_TargetSlot < 0 ? Tr("this layer") : RuleSlotName(Run.m_TargetSlot)  ))
-					Run.m_TargetSlot = Run.m_TargetSlot + 1 >= SlotCount ? -1 : Run.m_TargetSlot + 1;
-				iy += 24.0f;
-
-				Label("automap reference");
-				if(ui::Button(pPainter, Input, m_pGraphics->Font(),
-					base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth, 20.0f)),
-					Tr(rules::AutomapReferenceName(Run.m_Reference))))
-					Run.m_Reference = (Run.m_Reference + 1) % rules::NumAutomapReferences;
-				iy += 24.0f;
-
-				// the result only says whether the box was clicked; the row
-				// advances either way, so the label cannot land on the next field
-				ui::Checkbox(pPainter, Input,
-					base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth, 18.0f)), Run.m_bCopy);
-				ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_TopLeft.x + 28.0f, iy + 12.0f), 11.5f,
-					ui::Theme.m_Text, Tr("copy the read layer before writing") );
-				iy += 22.0f;
-
-				if(m_RuleIndex >= 0 && m_RuleIndex < static_cast<int>(Run.m_vIndexRules.size()))
+				if(pRule != nullptr)
 				{
-					rules::CIndexRule &Rule = Run.m_vIndexRules[static_cast<std::size_t>(m_RuleIndex)];
 					Label("rule name  /  writes tile");
-					TextField(pPainter, Input, m_pGraphics->Font(),
-						Field(base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth * 0.62f - 3.0f, 20.0f))),
-						Rule.m_Name, "unnamed");
-					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
-						base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f + FieldWidth * 0.62f, iy), base::vec2(FieldWidth * 0.38f, 20.0f)),  
-						base::FormatRuntime(Tr("{:d}"), Rule.m_Tile)  ))
-						Rule.m_Tile = (Rule.m_Tile + 1) % 256;
+					{
+						const float NameW = FieldWidth * 0.40f - 2.0f;
+						TextField(pPainter, Input, m_pGraphics->Font(), Field(base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(NameW, 20.0f))),
+							pRule->m_Name, "unnamed");
+						float Wx = FieldX + NameW;
+						const base::rect Swatch = base::rect::FromSize(base::vec2(Wx, iy), base::vec2(20.0f, 20.0f));
+						ui::Rect(pPainter, Swatch, ui::Theme.m_Panel);
+						const int Written = pRule->m_Role >= 0 ? rules::RoleTileIndex(static_cast<rules::tile_role>(pRule->m_Role)) : pRule->m_Tile;
+						DrawCell(Written, pRule->m_Flag, Swatch.m_TopLeft.x + 1.0f, Swatch.m_TopLeft.y + 1.0f, 18.0f, 1.0f);
+						ui::RectOutline(pPainter, Swatch, ui::Theme.m_Border);
+						Wx += 24.0f;
+						const float NumberW = FieldWidth * 0.20f;
+						if(NumberField(1, base::rect::FromSize(base::vec2(Wx, iy), base::vec2(NumberW, 20.0f)), pRule->m_Tile, 0, 255, 1))
+						{
+							pRule->m_Role = -1;
+							m_Dirty = true;
+						}
+						Wx += NumberW + 4.0f;
+						RoleButton(base::rect::FromSize(base::vec2(Wx, iy), base::vec2(std::max(FieldX + FieldWidth - Wx, 24.0f), 20.0f)),
+							pRule->m_Role, pRule->m_Tile);
+					}
 					iy += 24.0f;
 
 					Label("flags");
-					const char *apFlags[] = {"hflip", "vflip", "rotate"};
-					const int aBits[] = {TILEFLAG_HFLIP, TILEFLAG_VFLIP, TILEFLAG_ROTATE};
-					for(int i = 0; i < 3; i++)
 					{
-						const base::rect Box = base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f + i * (FieldWidth / 3.0f), iy), base::vec2(FieldWidth / 3.0f - 4.0f, 20.0f));
-						if(ui::Button(pPainter, Input, m_pGraphics->Font(), Box, Tr(apFlags[i]), (Rule.m_Flag & aBits[i]) != 0))
-							Rule.m_Flag ^= aBits[i];
+						const char *apFlags[] = {"hflip", "vflip", "rotate"};
+						const int aBits[] = {TILEFLAG_HFLIP, TILEFLAG_VFLIP, TILEFLAG_ROTATE};
+						for(int i = 0; i < 3; i++)
+						{
+							const base::rect Box = base::rect::FromSize(base::vec2(FieldX + static_cast<float>(i) * (FieldWidth / 3.0f), iy),
+								base::vec2(FieldWidth / 3.0f - 4.0f, 20.0f));
+							if(ui::Button(pPainter, Input, m_pGraphics->Font(), Box, Tr(apFlags[i]), (pRule->m_Flag & aBits[i]) != 0))
+							{
+								pRule->m_Flag ^= aBits[i];
+								m_Dirty = true;
+							}
+						}
 					}
 					iy += 24.0f;
 
 					Label("conditions and randomness");
-					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_TopLeft.x + 6.0f, iy + 10.0f), 11.0f,
-						ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:d} position rules, {:d} modulo rules"), static_cast<int>(Rule.m_vRules.size()),
-							static_cast<int>(Rule.m_vModuloRules.size()))  , FieldWidth);
+					ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(FieldX, iy + 10.0f), 11.0f, ui::Theme.m_TextDim,
+						base::FormatRuntime(Tr("{:d} position rules, {:d} modulo rules"),
+							static_cast<int>(pRule->m_vRules.size()), static_cast<int>(pRule->m_vModuloRules.size())), FieldWidth);
 					iy += 16.0f;
-					float Random = Rule.m_RandomProbability;
-					if(ui::Slider(pPainter, Input, base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth - 44.0f, 16.0f)),
-						Random, 0.0f, 1.0f))
-						Rule.m_RandomProbability = Random;
-					ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_BottomRight.x - 6.0f, iy + 12.0f), 11.0f,
-						ui::Theme.m_TextDim,   base::FormatRuntime(Tr("{:.2f}"), Rule.m_RandomProbability)  , ui::text_align::right);
+					{
+						float Random = pRule->m_RandomProbability;
+						if(ui::Slider(pPainter, Input, base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth - 44.0f, 16.0f)), Random, 0.0f, 1.0f))
+						{
+							pRule->m_RandomProbability = Random;
+							m_Dirty = true;
+						}
+						ui::Text(pPainter, m_pGraphics->Font(), base::vec2(Inspector.m_BottomRight.x - 6.0f, iy + 12.0f), 11.0f,
+							ui::Theme.m_TextDim, base::FormatRuntime(Tr("{:.2f}"), pRule->m_RandomProbability), ui::text_align::right);
+					}
 					iy += 22.0f;
-
 					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
-						base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f, iy), base::vec2(FieldWidth * 0.5f - 3.0f, 20.0f)),  
-						Rule.m_bSkipEmpty ? Tr("skip empty: on") : Tr("skip empty: off")  ))
-						Rule.m_bSkipEmpty = !Rule.m_bSkipEmpty;
+						base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth * 0.5f - 3.0f, 20.0f)),
+						pRule->m_bSkipEmpty ? Tr("skip empty: on") : Tr("skip empty: off")))
+					{
+						pRule->m_bSkipEmpty = !pRule->m_bSkipEmpty;
+						m_Dirty = true;
+					}
 					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
-						base::rect::FromSize(base::vec2(Inspector.m_TopLeft.x + 6.0f + FieldWidth * 0.5f, iy), base::vec2(FieldWidth * 0.5f, 20.0f)),  
-						Rule.m_bSkipFull ? Tr("skip full: on") : Tr("skip full: off")  ))
-						Rule.m_bSkipFull = !Rule.m_bSkipFull;
-					iy += 24.0f;
+						base::rect::FromSize(base::vec2(FieldX + FieldWidth * 0.5f, iy), base::vec2(FieldWidth * 0.5f, 20.0f)),
+						pRule->m_bSkipFull ? Tr("skip full: on") : Tr("skip full: off")))
+					{
+						pRule->m_bSkipFull = !pRule->m_bSkipFull;
+						m_Dirty = true;
+					}
+					iy += 26.0f;
 				}
+
+				if(pRun != nullptr)
+				{
+					Label("run name");
+					TextField(pPainter, Input, m_pGraphics->Font(), Field(base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth, 20.0f))),
+						pRun->m_Name, "unnamed");
+					iy += 24.0f;
+
+					Label("reads  /  writes");
+					const char *apSlots[] = {"game", "tele", "speedup", "front", "switch", "tune", "tiles"};
+					const int SlotCount = static_cast<int>(std::size(apSlots));
+					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
+						base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth * 0.5f - 4.0f, 20.0f)), RuleSlotName(pRun->m_ReadSlot)))
+						pRun->m_ReadSlot = (pRun->m_ReadSlot + 1) % SlotCount;
+					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
+						base::rect::FromSize(base::vec2(FieldX + FieldWidth * 0.5f, iy), base::vec2(FieldWidth * 0.5f, 20.0f)),
+						pRun->m_TargetSlot < 0 ? Tr("this layer") : RuleSlotName(pRun->m_TargetSlot)))
+						pRun->m_TargetSlot = pRun->m_TargetSlot + 1 >= SlotCount ? -1 : pRun->m_TargetSlot + 1;
+					iy += 24.0f;
+
+					Label("automap reference");
+					if(ui::Button(pPainter, Input, m_pGraphics->Font(),
+						base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth, 20.0f)),
+						Tr(rules::AutomapReferenceName(pRun->m_Reference))))
+						pRun->m_Reference = (pRun->m_Reference + 1) % rules::NumAutomapReferences;
+					iy += 24.0f;
+
+					ui::Checkbox(pPainter, Input,
+						base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth, 18.0f)), pRun->m_bCopy);
+					ui::Text(pPainter, m_pGraphics->Font(), base::vec2(FieldX + 22.0f, iy + 12.0f), 11.5f,
+						ui::Theme.m_Text, Tr("copy the read layer before writing"));
+					iy += 22.0f;
+				}
+
+				Label("configuration name");
+				TextField(pPainter, Input, m_pGraphics->Font(), Field(base::rect::FromSize(base::vec2(FieldX, iy), base::vec2(FieldWidth, 20.0f))),
+					Config.m_Name, "unnamed");
+				iy += 24.0f;
+
+				Label("region  x, y, width, height  (0 0 0 0 is the whole layer)");
+				{
+					int RegionX = Config.m_StartX;
+					int RegionY = Config.m_StartY;
+					int RegionW = std::max(0, Config.m_EndX - Config.m_StartX);
+					int RegionH = std::max(0, Config.m_EndY - Config.m_StartY);
+					int *apValues[4] = {&RegionX, &RegionY, &RegionW, &RegionH};
+					for(int i = 0; i < 4; i++)
+					{
+						const float Rw = FieldWidth * 0.25f - 3.0f;
+						const base::rect Box = base::rect::FromSize(base::vec2(FieldX + static_cast<float>(i) * (FieldWidth * 0.25f), iy),
+							base::vec2(Rw, 20.0f));
+						const int Min = i < 2 ? -100000 : 0;
+						if(NumberField(10 + i, Box, *apValues[i], Min, 100000, 1))
+						{
+							Config.m_StartX = RegionX;
+							Config.m_StartY = RegionY;
+							Config.m_EndX = RegionX + RegionW;
+							Config.m_EndY = RegionY + RegionH;
+							m_Dirty = true;
+						}
+					}
+				}
+				iy += 26.0f;
 			}
 		}
 		pPainter->Restore();
+		{
+			const float Content = iy + m_RuleScroll - Inspector.m_TopLeft.y;
+			m_RuleScroll = Content > Inspector.Height() ? base::clamp(m_RuleScroll, 0.0f, Content - Inspector.Height()) : 0.0f;
+		}
 	}
 
 	// ------------------------------------------------------------------ render

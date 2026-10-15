@@ -1563,6 +1563,29 @@ namespace game::admin::ops
 			return Context.Ok(std::move(Result));
 		}
 
+		/*
+			Delete at a level: a whole configuration, a run, or one index rule.
+			The level is what the tree rows mean when they are clicked, so the
+			method and the button remove the same thing.
+		*/
+		bool RulesDelete(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			const std::string What = Context.Str("level", "rule");
+			const int Config = Context.Int("config", Editor.RuleConfig());
+			const int Run = Context.Int("run", Editor.RuleRun());
+			const int Rule = Context.Int("rule", Editor.RuleIndexInRun());
+			const int Level = What == "config" ? 0 : (What == "run" ? 1 : 2);
+			Editor.SelectRule(Config, Run, Rule, Level);
+			if(!Editor.CanDeleteRuleSelection())
+				return Context.Fail("there is nothing to delete at that level");
+			Editor.DeleteRuleSelectionOp();
+			base::json Result = Changed(Editor, "rules.delete");
+			Result["level"] = What;
+			Result["rules"] = rules::ToJson(Editor.RuleSet());
+			return Context.Ok(std::move(Result));
+		}
+
 		bool RulesApply(const CContext &Context)
 		{
 			CEditor &Editor = Context.m_Editor;
@@ -1603,6 +1626,88 @@ namespace game::admin::ops
 			base::json Result = base::json::object();
 			Result["path"] = Path;
 			Result["rules"] = rules::ToJson(Context.m_Editor.RuleSet());
+			return Context.Ok(std::move(Result));
+		}
+	} // namespace
+
+	// ------------------------------------------------------------ live tiles
+	namespace
+	{
+		base::json LiveToJson(const CLayer &Layer, int Group, int LayerIndex)
+		{
+			base::json Result = base::json::object();
+			Result["group"] = Group;
+			Result["layer"] = LayerIndex;
+			Result["enabled"] = Layer.m_bLive;
+			Result["source_group"] = Layer.m_LiveSourceGroup;
+			Result["source_layer"] = Layer.m_LiveSourceLayer;
+			base::json Maps = base::json::array();
+			for(const CLiveMap &Map : Layer.m_vLiveMaps)
+			{
+				base::json Entry = base::json::object();
+				Entry["source"] = Map.m_Source;
+				Entry["target"] = Map.m_Target;
+				Entry["flags"] = Map.m_Flags;
+				Maps.push_back(std::move(Entry));
+			}
+			Result["maps"] = std::move(Maps);
+			return Result;
+		}
+
+		bool LiveGet(const CContext &Context)
+		{
+			int Group = 0, Layer = 0;
+			std::string Error;
+			const CLayer *pLayer = TargetLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			return Context.Ok(LiveToJson(*pLayer, Group, Layer));
+		}
+
+		/*
+			The live tiles are a property of one layer, so this sets the whole
+			configuration in one call and runs the pass: enabled false turns it
+			off, and maps is the source-to-output table the panel edits.
+		*/
+		bool LiveSet(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			if(!pLayer->IsTiles())
+				return Context.Fail("live tiles need a tile layer");
+
+			Editor.PushUndoOpTiles(Group, Layer);
+			pLayer->m_bLive = Context.Bool("enabled", true);
+			pLayer->m_LiveSourceGroup = Context.Int("source_group", -1);
+			pLayer->m_LiveSourceLayer = Context.Int("source_layer", -1);
+			pLayer->m_vLiveMaps.clear();
+			const base::json &Maps = Context.Json("maps");
+			if(Maps.is_array())
+				for(std::size_t i = 0; i < Maps.size(); i++)
+				{
+					const base::json &Entry = Maps.at(i);
+					if(!Entry.is_object())
+						continue;
+					CLiveMap Map;
+					Map.m_Source = base::clamp<int>(static_cast<int>(Entry["source"].as_int(0)), 0, 255);
+					Map.m_Target = base::clamp<int>(static_cast<int>(Entry["target"].as_int(0)), 0, 255);
+					Map.m_Flags = FlagsFromJson(Entry["flags"]);
+					pLayer->m_vLiveMaps.push_back(Map);
+				}
+			Editor.MarkDirty();
+			// the pass writes the dependents of the chosen source, this layer
+			// among them
+			if(pLayer->m_bLive && pLayer->m_LiveSourceGroup >= 0 && pLayer->m_LiveSourceLayer >= 0)
+				Editor.ApplyLiveTiles(pLayer->m_LiveSourceGroup, pLayer->m_LiveSourceLayer);
+
+			const CLayer *pStored = Editor.Layer(Group, Layer);
+			base::json Result = Changed(Editor, "live.set");
+			if(pStored != nullptr)
+				Result["live"] = LiveToJson(*pStored, Group, Layer);
 			return Context.Ok(std::move(Result));
 		}
 	} // namespace
@@ -2325,9 +2430,15 @@ namespace game::admin::ops
 			{"rules.add_run", "config", "a new run in a configuration", RulesAddRun},
 			{"rules.add_rule", "config, run, tile, flags, name, when, modulo, random, skip_empty, skip_full",
 				"a new index rule, with its conditions, in one call", RulesAddRule},
+			{"rules.delete", "level, config, run, rule",
+				"delete a configuration, a run or an index rule; level is config, run or rule", RulesDelete},
 			{"rules.apply", "config, target, group, layer, all, seed",
 				"run the rules over a tile layer; target is an engine slot", RulesApply},
 			{"rules.export", "path, format", "write the rules to a file", RulesExport},
+
+			{"live.get", "group, layer", "the live tiles of a layer: its source layer and its source-to-output pairs", LiveGet},
+			{"live.set", "group, layer, enabled, source_group, source_layer, maps",
+				"set a layer's live tiles, a list of source, target, flags pairs, and run the pass", LiveSet},
 
 			{"export.map", "target, path, project", "write the map for a target; without a path, under the export directory", ExportMap},
 			{"export.all", "targets, project", "write the map for every target, or for the named ones", ExportAll},

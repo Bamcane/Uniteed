@@ -106,6 +106,27 @@ printf '%s\n' \
 	"$BIN" --agent >/dev/null
 shot "$OUT/editor-rules.png" "$WORK/rules.unitwp" --dock rules:tiles
 
+# the live tiles picture wants a layer that follows another one, so the demo
+# project is built the same way: a source layer with a few tiles, a live layer
+# over it, and the pairs that turn them into the art the canvas shows
+printf '%s\n' \
+	'{"id":1,"method":"project.create","params":{"name":"coast","target":"08","width":40,"height":30}}' \
+	'{"id":2,"method":"images.add","params":{"mapres":"grass_main","name":"grass"}}' \
+	'{"id":3,"method":"layers.add","params":{"group":0,"kind":"tiles","name":"source","width":40,"height":30,"image":1}}' \
+	'{"id":4,"method":"layers.add","params":{"group":0,"kind":"tiles","name":"live art","width":40,"height":30,"image":1}}' \
+	'{"id":5,"method":"tiles.set","params":{"group":0,"layer":1,"x":6,"y":8,"index":1}}' \
+	'{"id":6,"method":"tiles.set","params":{"group":0,"layer":1,"x":7,"y":8,"index":2}}' \
+	'{"id":7,"method":"tiles.set","params":{"group":0,"layer":1,"x":8,"y":8,"index":3}}' \
+	'{"id":8,"method":"tiles.set","params":{"group":0,"layer":1,"x":20,"y":14,"index":1}}' \
+	'{"id":9,"method":"tiles.set","params":{"group":0,"layer":1,"x":21,"y":14,"index":2}}' \
+	'{"id":10,"method":"live.set","params":{"group":0,"layer":2,"enabled":true,"source_group":0,"source_layer":1,"maps":[{"source":1,"target":5},{"source":2,"target":6},{"source":3,"target":7}]}}' \
+	'{"id":11,"method":"project.save","params":{"path":"'"$WORK"'/live.unitwp"}}' \
+	'{"method":"quit"}' |
+	"$BIN" --agent >/dev/null
+# the layer config panel, with the live layer selected: the source picker and
+# the three pairs the live pass turned into the tiles on the canvas
+shot "$OUT/editor-live.png" "$WORK/live.unitwp" --layer 0:2 --dock tiles:layers
+
 # ------------------------------------------------------------------- the rest
 # the Files menu of the title bar row, open, which is also the picture of what
 # the drawn title bar looks like

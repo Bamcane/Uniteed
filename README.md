@@ -509,7 +509,7 @@ reopen the last one, open the shortcut list) and the **shortcut list** (`?`, or 
 | docker | what it is for |
 |---|---|
 | **Layers** (lower) | the groups and layers, visibility and locks, add and delete |
-| **Tiles** (upper) | the tile sheet of the selected layer, or the entity palette of a game layer |
+| **Tiles** (upper) | the tile sheet and the live tiles of the selected layer, or the entity palette of a game layer |
 | **Assets** (upper) | the images and sounds the map carries, with thumbnails (see below) |
 | **Envelopes** (upper) | the curve editor (see below) |
 | **Rules** (upper) | the autorules workspace (see below) |
@@ -709,9 +709,8 @@ and generated.
 
 ![the autorules workspace](docs/screenshots/editor-rules.png)
 
-The workspace is a browser on the left and an inspector on the right, because a rule set
-is a three level tree — configurations, the runs of a configuration, and the index rules
-of a run:
+The workspace keeps that three level tree at the top — configurations, the runs of a
+configuration, and the index rules of a run:
 
 ```
 config 1  mountain
@@ -720,6 +719,22 @@ config 1  mountain
     rule 2  writes 3
     rule 3  writes 9
 ```
+
+Under the tree is the part a row of numbers cannot say: a picture of the selected rule.
+The tile the rule writes is drawn from the layer's own art in the centre of a grid, and
+every position condition is drawn at the offset it tests, with the tile it reads and a
+colour for its sense — green for *is*, red for *is not*, amber for a guide. Clicking an
+empty cell adds a condition there, a left click on a condition selects it, a right click
+removes it and the middle click switches *is* and *is not*; the fields under the grid
+edit the selected condition. The `tile sheet` page swaps the grid for the layer's sheet,
+so the tile a rule writes is picked by its picture rather than by its number.
+
+The rule is also stated in words above the picture — "writes 1 when (0,0) is death" —
+so a glance is enough to know what it does, and an empty grid cell carries a `+` with a
+one-line legend under the grid saying what each click does. The fields a mapmaker rarely
+touches (the rule name, flags and randomness, the run and its reference, the region)
+stay folded behind `more settings`, so the first screen is only the sentence, the
+picture and the condition being edited.
 
 A rule names the tile it writes, its flags, the conditions under which it fires (a tile
 at an offset that must, or must not, be one of a list), a modulo condition ("every third
@@ -736,6 +751,32 @@ has selected, and the whole run is undoable in one step. The same engine is what
 The rule set travels inside the project file, and `rules.import` reads a DDRaceNetwork
 `.rules` file as well, so the rule sets that ship with DDRace can be opened, edited and
 applied here.
+
+### Live tiles
+
+Live tiles are the simple sibling of the autorules workspace. Instead of a rule document that
+is applied when you ask, a **tile layer** can be told to follow another tile layer, and the
+cells it covers are rewritten from the source the moment the source is painted. It is a
+property of the layer, so it lives in the layer panel rather than in the Rules workspace, which
+stays the batch automapper.
+
+![the live tiles section of the layer panel](docs/screenshots/editor-live.png)
+
+The section is small on purpose:
+
+* **follow another layer** turns it on;
+* **source** walks the other tile layers of the map, and the whole layer is rewritten from the
+  one that is picked;
+* the **pairs** are the whole language: a source tile index on the left, the tile written here
+  on the right, each drawn with the layer's own art. A source tile with no pair becomes empty;
+* **Shift** drag on the map takes the source tiles the marquee covers and adds a pair for each,
+  which is how the tiles to watch are chosen by framing them instead of typing indices.
+
+The pass is a plain function, so there is no randomness in it: a rule that needs a probability
+belongs in the autorules workspace, where a rule carries a random weight. A project stores the
+configuration inside itself, so it survives a reopen - the `.map` format has no room for it,
+the project does. The same pass drives the `live.get` and `live.set` methods, so a script and
+the panel cannot disagree.
 
 ### DDRace, and what the targets gate
 
@@ -912,9 +953,13 @@ Working:
 * an **envelope editor**: a curve view with draggable keyframes, an editable curve type
   including bezier, a point list with the four fixed point values, and the preview clock
   (see [The envelope editor](#the-envelope-editor))
-* **autorules**: a JSON rule set, a visual browser and inspector for configurations,
-  runs and index rules, and one step undo of a rule run (see
+* **autorules**: a JSON rule set, a tree of configurations, runs and index rules above a
+  rendered picture of the selected rule, a tile sheet picker, and one step undo of a rule
+  run (see
   [The autorules workspace](#the-autorules-workspace))
+* **live tiles**: a tile layer that follows another one and is rewritten as the source is
+  painted, with a source tile to written tile table and a Shift drag that takes the source tiles
+  you frame (see [Live tiles](#live-tiles))
 * **assets**: the image and sound browser with real thumbnails, import, embed, free,
   replace, export, remove, and a sound preview that plays the map's own `.opus` files
   through SDL3 (see [The asset browser](#the-asset-browser))

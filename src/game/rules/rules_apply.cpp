@@ -83,15 +83,23 @@ namespace game::rules
 			CRuleLayer Layer() { return CRuleLayer{m_Tiles.data(), m_Flags.data(), m_Width, m_Height}; }
 		};
 
+		/*
+			The rectangle a configuration applies to, in tile coordinates and
+			with an exclusive end, so an all-zero region is the whole layer. The
+			conditions may still read outside it: only the write is clipped,
+			which is what lets a rule on the edge of a region look at its
+			neighbour and is how the DDRace editor reads the field too.
+		*/
 		void AutomapRun(CRuleLayer Target, CRuleLayer Read, const CRun &Run, std::size_t RunIndex,
-			bool bFilterable, int Seed, int SeedOffsetX, int SeedOffsetY, int &TilesWritten)
+			bool bFilterable, int Seed, int SeedOffsetX, int SeedOffsetY, int &TilesWritten,
+			int X0, int Y0, int X1, int Y1)
 		{
 			const int Width = Target.m_Width;
 			const int Height = Target.m_Height;
 
-			for(int y = 0; y < Height; y++)
+			for(int y = Y0; y < Y1; y++)
 			{
-				for(int x = 0; x < Width; x++)
+				for(int x = X0; x < X1; x++)
 				{
 					const int ReadIndex = Read.InBounds(x, y) ? Read.Index(x, y) : 0;
 
@@ -203,6 +211,8 @@ namespace game::rules
 			The tile a role stands for, per the DDRaceNetwork tile list. The
 			numbers are stable across every DDRace tileset, which is why a rule
 			can name a role instead of an index.
+
+			i18n:table - the editor draws these names through Tr(RoleName(...)).
 		*/
 		const CRoleEntry g_aRoles[] = {
 			{tile_role::game_layer, "game", 0},
@@ -245,9 +255,11 @@ namespace game::rules
 	const char *AutomapReferenceName(int Reference)
 	{
 		// the reference list of the DDRace editor, index 0 is the game layer
+		// i18n:table - the editor draws these names through Tr(AutomapReferenceName(...))
 		static const char *const s_apNames[] = {
 			"Game Layer", "Hookable", "Death", "Unhookable", "Freeze", "Unfreeze",
-			"Deep Freeze", "Deep Unfreeze", "Live Freeze", "Live Unfreeze"};
+			"Deep Freeze", "Deep Unfreeze", "Live Freeze", "Live Unfreeze"
+		};
 		if(Reference < 0 || Reference >= NumAutomapReferences)
 			return "Unknown";
 		return s_apNames[Reference];
@@ -320,6 +332,24 @@ namespace game::rules
 		if(Seed == 0)
 			Seed = RandomSeed();
 
+		/*
+			The rectangle the configuration applies to, clamped to the target.
+			An all-zero width and height means the whole layer, which is what
+			every rule set written before the region field existed expects.
+		*/
+		int X0 = 0, Y0 = 0, X1 = Target.m_Width, Y1 = Target.m_Height;
+		if(Config.HasRegion())
+		{
+			X0 = std::max(0, std::min(Config.m_StartX, Target.m_Width));
+			Y0 = std::max(0, std::min(Config.m_StartY, Target.m_Height));
+			X1 = std::max(0, std::min(Config.m_EndX, Target.m_Width));
+			Y1 = std::max(0, std::min(Config.m_EndY, Target.m_Height));
+			if(X1 < X0)
+				std::swap(X1, X0);
+			if(Y1 < Y0)
+				std::swap(Y1, Y0);
+		}
+
 		const auto ReadSlot = [&ReadLayers](int Slot) -> CRuleLayer {
 			if(Slot < 0 || Slot >= static_cast<int>(ReadLayers.size()))
 				return CRuleLayer{};
@@ -357,11 +387,13 @@ namespace game::rules
 							static_cast<std::uint8_t>(bKeep ? Read.Flags(x, y) : 0);
 					}
 				Read = Buffer.Layer();
-				AutomapRun(Target, Read, Run, RunIndex, bFilterable, Seed, SeedOffsetX, SeedOffsetY, Result.m_TilesWritten);
+				AutomapRun(Target, Read, Run, RunIndex, bFilterable, Seed, SeedOffsetX, SeedOffsetY, Result.m_TilesWritten,
+					X0, Y0, X1, Y1);
 			}
 			else
 			{
-				AutomapRun(Target, Read, Run, RunIndex, bFilterable, Seed, SeedOffsetX, SeedOffsetY, Result.m_TilesWritten);
+				AutomapRun(Target, Read, Run, RunIndex, bFilterable, Seed, SeedOffsetX, SeedOffsetY, Result.m_TilesWritten,
+					X0, Y0, X1, Y1);
 			}
 			Result.m_RunsApplied++;
 		}
