@@ -62,7 +62,7 @@ namespace game
 		m_SelectedLayer = static_cast<int>(pGroup->m_vLayers.size()) - 1;
 		m_Dirty = true;
 		const CLayer &Added = pGroup->m_vLayers.back();
-		SetStatus(base::Format("added a sound layer ({})", Added.m_Sound >= 0 ?
+		Notify(base::Format("added a sound layer ({})", Added.m_Sound >= 0 ?
 			m_Map.m_vSounds[static_cast<std::size_t>(Added.m_Sound)].m_Name.c_str() : "no sound chosen"));
 	}
 
@@ -141,13 +141,13 @@ namespace game
 		const std::optional<storage::path> File = FindSoundFile(Sound.m_Name);
 		if(!File.has_value())
 		{
-			SetStatus(base::Format("no audio/{}.opus in this version", Sound.m_Name.c_str()));
+			Notify(base::Format("no audio/{}.opus in this version", Sound.m_Name.c_str()));
 			return false;
 		}
 		return m_Audio.PlayFile(Sound.m_Name, File->string());
 #else
 		(void)Index;
-		SetStatus(Tr("this build has no sound preview"));
+		Notify(Tr("this build has no sound preview"));
 		return false;
 #endif
 	}

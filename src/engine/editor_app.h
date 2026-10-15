@@ -29,6 +29,13 @@ namespace engine
 		// -1 keeps whatever the editor picked by itself
 		int m_Group = -1;
 		int m_Layer = -1;
+		/*
+			`--layer G:` asks for the group row itself rather than one of its
+			layers, which is the selection that shows the group's properties.
+			A plain negative layer cannot say it, because that is what "pick
+			something sensible" is spelled as.
+		*/
+		bool m_bGroupSelected = false;
 		// which quad of a quad layer to select; -1 asks for the first one, and
 		// -2 for no selection at all
 		int m_Quad = -1;

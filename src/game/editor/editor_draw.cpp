@@ -1004,7 +1004,11 @@ namespace game
 			const base::rect Row = base::rect::FromSize(base::vec2(List.m_TopLeft.x + 4.0f, y), base::vec2(List.Width() - 8.0f, RowHeight));
 			if(Row.m_BottomRight.y > List.m_TopLeft.y && Row.m_TopLeft.y < List.m_BottomRight.y)
 			{
-				ui::Rect(pPainter, Row, ui::RGBA(255, 255, 255, 8));
+				const bool GroupRowSelected = (static_cast<int>(g) == m_SelectedGroup && m_SelectedLayer < 0);
+				if(GroupRowSelected)
+					ui::Rect(pPainter, Row, ui::Theme.m_Selection);
+				else
+					ui::Rect(pPainter, Row, ui::RGBA(255, 255, 255, 8));
 				const std::string Label = Group.m_Name.empty() ? base::FormatRuntime(Tr("group {:d}"), g) : Group.m_Name;
 				if(Renaming() && m_RenameGroup == static_cast<int>(g) && m_RenameLayer < 0)
 				{
@@ -1014,14 +1018,18 @@ namespace game
 				else
 					ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(Row.m_TopLeft.x + 8.0f, Row.m_TopLeft.y + 15.0f), 12.5f, ui::Theme.m_Text, Label, Row.Width() - 16.0f);
 				if(ui::Hovered(Input, Row))
-					Hint(Row, Label,  base::FormatRuntime(Tr("group {:d}: parallax {:d}%/{:d}%, {:d} layers - click to select it, double click to rename it"),
+					Hint(Row, Label,  base::FormatRuntime(Tr("group {:d}: parallax {:d}%/{:d}%, {:d} layers - click to edit the group, double click to rename it"),
 						static_cast<int>(g), Group.m_ParallaxX, Group.m_ParallaxY, Group.m_vLayers.size()) );
 				if(ui::Hovered(Input, Row) && Input.MouseDoubleClicked(engine::CInput::mouse_button::left))
 					BeginRename(static_cast<int>(g), -1);
 				else if(ui::Hovered(Input, Row) && Input.MousePressed(engine::CInput::mouse_button::left))
 				{
-					m_SelectedGroup = static_cast<int>(g);
-					m_SelectedLayer = 0;
+					// the group row is a selection of its own: the right panel
+					// then edits the group, not the layer underneath it
+					SetSelectedLayer(static_cast<int>(g), -1);
+					ClearQuadSelection();
+					SetStatus(  base::FormatRuntime(Tr("group '{}': {:d} layers - edit its parallax, offset and clip on the right"),
+						Group.m_Name.empty() ? Tr("group") : Group.m_Name.c_str(), Group.m_vLayers.size())  );
 				}
 			}
 			y += RowHeight;
@@ -1249,6 +1257,18 @@ namespace game
 
 		const CLayer *pLayer = SelectedLayer();
 		float y = Area.m_TopLeft.y + 10.0f;
+
+		/*
+			The group row of the layer tree is a selection of its own and it has
+			no canvas, so the panel shows the group's properties instead of the
+			"nothing selected" page. It comes first because a group's values are
+			what every layer under it is drawn through.
+		*/
+		if(GroupSelected() && SelectedGroup() != nullptr)
+		{
+			DrawGroupSection(pPainter, Area, y);
+			return;
+		}
 
 		if(Mode() == edit_mode::quads)
 		{
@@ -1513,6 +1533,161 @@ namespace game
 	}
 
 	/*
+		The group controls: the parallax a group scrolls at, the offset it is
+		drawn with, and the clip rectangle that cuts it off. These four pairs
+		are what the canvas draws every group through, so they belong beside
+		the tree that selects the group rather than only in the command line.
+		A field is a stepper: the arrows nudge it, dragging scrubs it.
+
+		The rows are a table rather than arguments scattered through the
+		drawing below, because the labels and their hints are drawn through
+		Tr() and the table is what tools/lang.py reads to keep the catalog in
+		step with the interface.
+	*/
+	namespace
+	{
+		struct CGroupFieldEntry
+		{
+			const char *m_pLabel;
+			const char *m_pHint;
+			// the signed range the value is clamped into, and the stepper step
+			int m_Min;
+			int m_Max;
+			int m_Step;
+		};
+
+		// i18n:table - every label and hint is drawn through Tr()
+		const CGroupFieldEntry g_aGroupFields[] = {
+			{"X %", "how fast the group scrolls sideways, as a percentage", -1000, 1000, 1},
+			{"Y %", "how fast the group scrolls vertically, as a percentage", -1000, 1000, 1},
+			{"X", "the group is drawn this many pixels to the right", -100000, 100000, 1},
+			{"Y", "the group is drawn this many pixels down", -100000, 100000, 1},
+			{"Clip X", "left edge of the clip rectangle", -100000, 100000, 1},
+			{"Clip Y", "top edge of the clip rectangle", -100000, 100000, 1},
+			{"Clip W", "width of the clip rectangle", 0, 100000, 1},
+			{"Clip H", "height of the clip rectangle", 0, 100000, 1},
+		};
+
+		// i18n:table
+		const char *const g_aGroupSections[] = {
+			"Parallax",
+			"Offset",
+		};
+
+		// i18n:table
+		const char *const g_aGroupHints[] = {
+			"Clipping",
+			"draw only the part of the group inside the clip rectangle",
+			"off: the whole group is drawn",
+			"{:d} layers - these apply to all of them",
+			"Group",
+			"group",
+		};
+	} // namespace
+
+	void CEditor::DrawGroupSection(ui::CPainter *pPainter, const base::rect &Area, float &y)
+	{
+		engine::CInput &Input = m_pGraphics->Input();
+		CGroup *pGroup = SelectedGroup();
+		if(pGroup == nullptr)
+			return;
+
+		const float Left = Area.m_TopLeft.x + 12.0f;
+		const float Width = std::max(Area.Width() - 24.0f, 80.0f);
+		// two fields to a row, which is what a pair of coordinates wants
+		const float Gap = 8.0f;
+		const float FieldWidth = (Width - Gap) * 0.5f;
+
+		/*
+			One field of the panel. FieldId is stable per property so the drag
+			that is live can be told from the one a new press starts, and the
+			undo step is taken on the first change of a drag rather than on
+			every frame of it, so one scrub is one undo.
+		*/
+		int FieldId = 0;
+		const auto Field = [&](const CGroupFieldEntry &Entry, int &Value, float x, float RowWidth) {
+			const int Id = FieldId++;
+			ui::Text(pPainter, m_pGraphics->Font(), base::vec2(x, y + 9.0f), 11.5f, ui::Theme.m_TextDim, Tr(Entry.m_pLabel));
+			const base::rect Box = base::rect::FromSize(base::vec2(x, y + 13.0f), base::vec2(RowWidth, 22.0f));
+			bool bDragging = (m_DragGroupField == Id);
+			if(ui::Hovered(Input, Box))
+				Hint(Box, Tr(Entry.m_pLabel), Tr(Entry.m_pHint));
+			const bool bChanged = ui::IntField(pPainter, Input, m_pGraphics->Font(), Box, Value,
+				Entry.m_Min, Entry.m_Max, Entry.m_Step, bDragging);
+			if(bDragging)
+			{
+				if(m_DragGroupField != Id)
+					PushUndoGroupProperties(m_SelectedGroup);
+				m_DragGroupField = Id;
+			}
+			else if(m_DragGroupField == Id)
+				m_DragGroupField = -1;
+			return bChanged;
+		};
+
+		// a label row for a pair, then the two fields under it
+		const auto Pair = [&](const char *pTitle, int &X, int &Y, const CGroupFieldEntry &XEntry,
+			const CGroupFieldEntry &YEntry) {
+			ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(Left, y + 12.0f), 12.5f, ui::Theme.m_Text, Tr(pTitle));
+			y += 20.0f;
+			bool bChanged = Field(XEntry, X, Left, FieldWidth);
+			bChanged = Field(YEntry, Y, Left + FieldWidth + Gap, FieldWidth) || bChanged;
+			y += 40.0f;
+			return bChanged;
+		};
+
+		const std::string Header = pGroup->m_Name.empty() ? Tr(g_aGroupHints[4]) : pGroup->m_Name;
+		ui::TextClipped(pPainter, m_pGraphics->FontBold(), base::vec2(Left, y + 12.0f), 14.0f, ui::Theme.m_Text, Header, Width);
+		y += 22.0f;
+		ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Left, y + 10.0f), 11.5f, ui::Theme.m_TextDim,
+			base::FormatRuntime(Tr(g_aGroupHints[3]), pGroup->m_vLayers.size()), Width);
+		y += 22.0f;
+
+		bool bChanged = false;
+		bChanged = Pair(g_aGroupSections[0], pGroup->m_ParallaxX, pGroup->m_ParallaxY,
+			g_aGroupFields[0], g_aGroupFields[1]) || bChanged;
+		bChanged = Pair(g_aGroupSections[1], pGroup->m_OffsetX, pGroup->m_OffsetY,
+			g_aGroupFields[2], g_aGroupFields[3]) || bChanged;
+
+		/*
+			Clipping is a switch plus the rectangle it cuts with. The switch is
+			its own undo step on the frame it flips, and the four numbers are
+			fields, so the whole thing stays one concept in the panel.
+		*/
+		bool bClipping = pGroup->m_UseClipping != 0;
+		const base::rect CheckBox = base::rect::FromSize(base::vec2(Left, y), base::vec2(13.0f, 13.0f));
+		if(ui::Hovered(Input, CheckBox))
+			Hint(CheckBox, Tr(g_aGroupHints[0]), Tr(g_aGroupHints[1]));
+		if(ui::Checkbox(pPainter, Input, CheckBox, bClipping))
+		{
+			PushUndoGroupProperties(m_SelectedGroup);
+			pGroup->m_UseClipping = bClipping ? 1 : 0;
+			bChanged = true;
+		}
+		ui::Text(pPainter, m_pGraphics->FontBold(), base::vec2(CheckBox.m_BottomRight.x + 6.0f, y + 11.0f), 12.5f,
+			bClipping ? ui::Theme.m_Text : ui::Theme.m_TextDim, Tr(g_aGroupHints[0]));
+		y += 20.0f;
+
+		if(!bClipping)
+		{
+			ui::TextClipped(pPainter, m_pGraphics->Font(), base::vec2(Left, y + 10.0f), 11.5f, ui::Theme.m_TextDim,
+				Tr(g_aGroupHints[2]), Width);
+			y += 22.0f;
+			return;
+		}
+
+		bChanged = Field(g_aGroupFields[4], pGroup->m_ClipX, Left, FieldWidth) || bChanged;
+		bChanged = Field(g_aGroupFields[5], pGroup->m_ClipY, Left + FieldWidth + Gap, FieldWidth) || bChanged;
+		y += 40.0f;
+		bChanged = Field(g_aGroupFields[6], pGroup->m_ClipW, Left, FieldWidth) || bChanged;
+		bChanged = Field(g_aGroupFields[7], pGroup->m_ClipH, Left + FieldWidth + Gap, FieldWidth) || bChanged;
+		y += 40.0f;
+
+		if(bChanged)
+			MarkDirty();
+	}
+
+	/*
 		The quad controls: which quad is being edited, its four corner colours
 		and the five points. A corner swatch aims the picker at that corner, so
 		a gradient can be built one corner at a time instead of all four at once.
@@ -1663,14 +1838,26 @@ namespace game
 		const int TileX = m_bCursorValid ? static_cast<int>(std::floor(m_CursorWorld.x / TileSize)) : -1;
 		const int TileY = m_bCursorValid ? static_cast<int>(std::floor(m_CursorWorld.y / TileSize)) : -1;
 		const edit_mode Mode = this->Mode();
-		const char *pMode = Mode == edit_mode::tiles ? Tr("tiles") : (Mode == edit_mode::quads ? Tr("quads") : Tr("read only"));
+		const CGroup *pGroup = SelectedGroup();
+		const char *pMode = GroupSelected() ? Tr("group") :
+			(Mode == edit_mode::tiles ? Tr("tiles") : (Mode == edit_mode::quads ? Tr("quads") : Tr("read only")));
+		/*
+			The last field names what is selected, and a group row is a
+			selection with no layer behind it, so it says which group rather
+			than "no layer", which would read as if nothing were selected.
+		*/
+		const char *pSelection = Tr("no layer");
+		if(pLayer != nullptr)
+			pSelection = pLayer->m_Name.empty() ? Tr("layer") : pLayer->m_Name.c_str();
+		else if(GroupSelected() && pGroup != nullptr)
+			pSelection = pGroup->m_Name.empty() ? Tr("group") : pGroup->m_Name.c_str();
 		std::string Info = base::FormatRuntime(Tr("v{:d}  {}  target {}  {}  tile {:d},{:d}  zoom {:.2f}  {}"),
 			m_Map.m_SourceDatafileVersion,
 			m_VersionId.c_str(),
 			GetTargetProfile(m_Target).m_pId,
 			pMode,
 			TileX, TileY, m_View.m_Zoom,
-			pLayer != nullptr ? (pLayer->m_Name.empty() ? Tr("layer") : pLayer->m_Name.c_str()) : Tr("no layer"));
+			pSelection);
 		if(Mode == edit_mode::quads && pLayer != nullptr)
 			Info += base::FormatRuntime(Tr("  quads {}"), m_vSelectedQuads.empty() ? Tr("none selected") :
 				base::FormatRuntime(Tr("{:d} selected"), static_cast<int>(m_vSelectedQuads.size())).c_str());

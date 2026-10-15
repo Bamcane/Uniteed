@@ -74,6 +74,10 @@ shot "$OUT/editor-tiles.png" "$MAPS/08/dm1.map" \
 # shows the layer level controls
 shot "$OUT/editor-quads.png" "$MAPS/08/dm1.map" --layer 0:0 --quad -2
 
+# a group row selected, which is what puts the group's parallax, offset and
+# clip rectangle in the right panel; "G:" is the row itself, not a layer
+shot "$OUT/editor-group.png" "$MAPS/08/dm1.map" --layer 0:
+
 # the same workspace in the other language the build ships, which is also the
 # picture of what a translated interface looks like
 shot "$OUT/editor-zh.png" "$MAPS/08/dm1.map" --language zh-Hans

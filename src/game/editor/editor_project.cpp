@@ -36,7 +36,7 @@ namespace game
 		std::string Error;
 		if(!Project.LoadFromFile(Path, &Error))
 		{
-			SetStatus(base::FormatRuntime(Tr("cannot open the project: {}"), Error));
+			Notify(base::FormatRuntime(Tr("cannot open the project: {}"), Error));
 			return false;
 		}
 
@@ -175,7 +175,7 @@ namespace game
 		}
 		ClampSelection();
 
-		SetStatus(  base::FormatRuntime(Tr("opened the project '{}' ({})"), m_Project.m_Meta.m_Name.c_str(),
+		Notify(  base::FormatRuntime(Tr("opened the project '{}' ({})"), m_Project.m_Meta.m_Name.c_str(),
 			storage::path(Path).filename().string().c_str())  );
 		return true;
 	}
@@ -279,13 +279,13 @@ namespace game
 		std::string Error;
 		if(!m_Project.SaveToFile(Path, &Error))
 		{
-			SetStatus(base::FormatRuntime(Tr("saving the project failed: {}"), Error));
+			Notify(base::FormatRuntime(Tr("saving the project failed: {}"), Error));
 			return false;
 		}
 		m_SourcePath = Path;
 		m_bSessionSeeded = true;
 		m_Dirty = false;
-		SetStatus(  base::FormatRuntime(Tr("saved the project '{}'"), storage::path(Path).filename().string().c_str())  );
+		Notify(  base::FormatRuntime(Tr("saved the project '{}'"), storage::path(Path).filename().string().c_str())  );
 		return true;
 	}
 
@@ -296,7 +296,7 @@ namespace game
 		std::string Error;
 		if(!rules::LoadFromFile(Rules, Path, &Error))
 		{
-			SetStatus(base::FormatRuntime(Tr("cannot load the rules: {}"), Error));
+			Notify(base::FormatRuntime(Tr("cannot load the rules: {}"), Error));
 			return false;
 		}
 		m_RuleSet = std::move(Rules);
@@ -304,7 +304,7 @@ namespace game
 		m_RuleRun = 0;
 		m_RuleIndex = 0;
 		m_Dirty = true;
-		SetStatus(  base::FormatRuntime(Tr("loaded {:d} configurations, {:d} rules from {}"),
+		Notify(  base::FormatRuntime(Tr("loaded {:d} configurations, {:d} rules from {}"),
 			static_cast<int>(m_RuleSet.m_vConfigs.size()), m_RuleSet.RuleCount(),
 			storage::path(Path).filename().string().c_str())  );
 		return true;
@@ -315,10 +315,10 @@ namespace game
 		std::string Error;
 		if(!rules::SaveToFile(m_RuleSet, Path, &Error))
 		{
-			SetStatus(base::FormatRuntime(Tr("saving the rules failed: {}"), Error));
+			Notify(base::FormatRuntime(Tr("saving the rules failed: {}"), Error));
 			return false;
 		}
-		SetStatus(  base::FormatRuntime(Tr("saved {:d} rules to {}"), m_RuleSet.RuleCount(),
+		Notify(  base::FormatRuntime(Tr("saved {:d} rules to {}"), m_RuleSet.RuleCount(),
 			storage::path(Path).filename().string().c_str())  );
 		return true;
 	}
@@ -468,7 +468,7 @@ namespace game
 		const auto Fail = [&](const std::string &Message) {
 			if(pError != nullptr)
 				*pError = Message;
-			SetStatus(base::FormatRuntime(Tr("rules: {}"), Message));
+			Notify(base::FormatRuntime(Tr("rules: {}"), Message));
 			return false;
 		};
 		if(m_RuleSet.m_vConfigs.empty())
@@ -541,7 +541,7 @@ namespace game
 		}
 		m_Dirty = true;
 		m_LastRuleSeed = Result.m_Seed;
-		SetStatus(  base::FormatRuntime(Tr("autorules wrote {:d} tiles over {:d} runs in {} (seed {:d})"),
+		Notify(  base::FormatRuntime(Tr("autorules wrote {:d} tiles over {:d} runs in {} (seed {:d})"),
 			Result.m_TilesWritten, Result.m_RunsApplied,
 			Target.m_Name.empty() ? Tr("the target layer") : Target.m_Name.c_str(), Result.m_Seed)  );
 		return true;
@@ -566,7 +566,7 @@ namespace game
 		for(const CLayer &Layer : pGroup->m_vLayers)
 			if(Layer.IsTiles() && (Layer.m_Flags & Flags) == Flags)
 			{
-				SetStatus( Tr("that physics layer already exists") );
+				Notify( Tr("that physics layer already exists") );
 				return;
 			}
 
@@ -611,7 +611,7 @@ namespace game
 		EnsureViewStates();
 		m_SelectedLayer = static_cast<int>(pGroup->m_vLayers.size()) - 1;
 		m_Dirty = true;
-		SetStatus(  base::FormatRuntime(Tr("added the {} physics layer"), pName)  );
+		Notify(  base::FormatRuntime(Tr("added the {} physics layer"), pName)  );
 	}
 
 	// ---------------------------------------------------------------- envelopes
@@ -707,7 +707,7 @@ namespace game
 		{
 			pLayer->m_ColorEnv = Index;
 		}
-		SetStatus(  base::FormatRuntime(Tr("added the envelope '{}'"), m_Map.m_vEnvelopes[static_cast<std::size_t>(Index)].m_Name.c_str())  );
+		Notify(  base::FormatRuntime(Tr("added the envelope '{}'"), m_Map.m_vEnvelopes[static_cast<std::size_t>(Index)].m_Name.c_str())  );
 		return Index;
 	}
 
@@ -774,7 +774,7 @@ namespace game
 		// an envelope needs at least one point to mean anything
 		if(pEnvelope->m_vPoints.size() <= 1)
 		{
-			SetStatus( Tr("an envelope keeps its last point") );
+			Notify( Tr("an envelope keeps its last point") );
 			return;
 		}
 		pEnvelope->m_vPoints.erase(pEnvelope->m_vPoints.begin() + PointIndex);

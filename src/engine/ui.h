@@ -58,6 +58,18 @@ namespace engine::ui
 	bool Checkbox(CPainter *pPainter, const CInput &Input, const base::rect &Area, bool &Value);
 	bool Slider(CPainter *pPainter, const CInput &Input, const base::rect &Area, float &Value, float Min, float Max);
 
+	/*
+		An integer field with a stepper: the two arrows at the right end add and
+		subtract Step, and dragging on the rest of the field scrubs the value,
+		which is how a number with a range too wide for a slider is edited. It
+		returns true on the frame the value changes. The caller owns the drag
+		state handed back through bDragging, because the value has to keep
+		following the mouse while the cursor is outside the field and only the
+		caller knows whether the drag it started is still the current one.
+	*/
+	bool IntField(CPainter *pPainter, const CInput &Input, int Font, const base::rect &Area, int &Value,
+		int Min, int Max, int Step, bool &bDragging);
+
 	// the mouse is inside the rect and no other widget grabbed the click
 	bool Hovered(const CInput &Input, const base::rect &Area);
 } // namespace engine::ui

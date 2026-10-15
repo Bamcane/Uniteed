@@ -221,7 +221,7 @@ namespace game
 			if(m_EnvelopeChannelBase >= Channels)
 				m_EnvelopeChannelBase = 0;
 			m_Dirty = true;
-			SetStatus(  base::FormatRuntime(Tr("the envelope now has {:d} channels"), Channels)  );
+			Notify(  base::FormatRuntime(Tr("the envelope now has {:d} channels"), Channels)  );
 		}
 		y += 26.0f;
 
@@ -627,7 +627,7 @@ namespace game
 				PushUndo(m_SelectedGroup, m_SelectedLayer, undo_scope::envelope);
 				Point.m_Curvetype = (Point.m_Curvetype + 1) % NUM_CURVETYPES;
 				m_Dirty = true;
-				SetStatus(  base::FormatRuntime(Tr("point {:d} is now '{}'"), m_SelectedEnvelopePoint, CurveName(Point.m_Curvetype).c_str())  );
+				Notify(  base::FormatRuntime(Tr("point {:d} is now '{}'"), m_SelectedEnvelopePoint, CurveName(Point.m_Curvetype).c_str())  );
 			}
 			/*
 				The tangents of a bezier point are packed into the point itself,
@@ -679,7 +679,7 @@ namespace game
 			m_EnvelopeChannelBase = m_EnvelopeChannelBase == 0 ? 2 : 0;
 			if(m_EnvelopeChannelBase >= ChannelCount)
 				m_EnvelopeChannelBase = 0;
-			SetStatus(  base::FormatRuntime(Tr("the curve view now plots channel {:d}"), m_EnvelopeChannelBase)  );
+			Notify(  base::FormatRuntime(Tr("the curve view now plots channel {:d}"), m_EnvelopeChannelBase)  );
 		}
 		if(!Shift && Input.KeyPressed(EnvelopeKeyGrid))
 		{

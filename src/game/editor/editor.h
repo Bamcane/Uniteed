@@ -292,6 +292,13 @@ namespace game
 		void SetSelectedEnvelope(int Index) { m_SelectedEnvelope = Index; }
 		void SetSelectedEnvelopePoint(int Index) { m_SelectedEnvelopePoint = Index; }
 		int SelectedLayerIndex() const { return m_SelectedLayer; }
+		/*
+			Whether the layer tree's group row is the selection rather than one
+			of its layers. A group has no canvas, so the right panel answers it
+			with the group's own properties - parallax, offset and the clip
+			rectangle - which is the only place those are editable.
+		*/
+		bool GroupSelected() const { return m_SelectedLayer < 0; }
 		int BrushTileIndex() const { return m_BrushTile; }
 		int BrushFlagsValue() const { return m_BrushFlags; }
 		float Zoom() const { return m_View.m_Zoom; }
@@ -321,6 +328,12 @@ namespace game
 		// defined beside the undo machinery
 		void PushUndoOpWhole(int Group, int Layer);
 		void PushUndoOpTiles(int Group, int Layer);
+		/*
+			A group's own properties are not a layer's, and the selection may be
+			the group row with no layer at all, so this captures the map the way
+			the whole scope does without needing a layer index.
+		*/
+		void PushUndoGroupProperties(int Group);
 		void UndoOp() { Undo(); }
 		void RedoOp() { Redo(); }
 		bool CanUndo() const { return !m_vUndo.empty(); }
@@ -467,6 +480,12 @@ namespace game
 		bool PollFileDialog();
 
 		void SetStatus(const std::string &Message);
+		/*
+			The same, for something that actually happened: the line is kept in
+			the log as well. Hovering a widget only calls SetStatus, because a
+			tooltip is not an event.
+		*/
+		void Notify(const std::string &Message);
 		const std::string &Status() const { return m_Status; }
 		bool Dirty() const { return m_Dirty; }
 		// whether this session has read a project or a map: an agent command
@@ -802,6 +821,14 @@ namespace game
 		void DrawPalettePanel(engine::painter::CPainter *pPainter, const base::rect &Area);
 		void DrawTileSection(engine::painter::CPainter *pPainter, const base::rect &Area, float &y);
 		void DrawQuadSection(engine::painter::CPainter *pPainter, const base::rect &Area, float &y);
+		/*
+			The properties of a group, shown when the layer tree's group row is
+			the selection: parallax, offset and the clip rectangle with the
+			switch that turns clipping on. These are the values a group is drawn
+			through, and until this panel existed only the command line and the
+			agent interface could set them.
+		*/
+		void DrawGroupSection(engine::painter::CPainter *pPainter, const base::rect &Area, float &y);
 		void DrawStatusBar(engine::painter::CPainter *pPainter, const base::rect &Area);
 		void DrawPopups(engine::painter::CPainter *pPainter);
 		void DrawOpenPopup(engine::painter::CPainter *pPainter);
@@ -1026,6 +1053,14 @@ namespace game
 		// the cursor is over a splitter, so the pointer should say so
 		bool m_bSplitterHover = false;
 		bool m_bSplitterHoverH = false;
+
+		/*
+			Which group property field is being scrubbed, or -1. The value has
+			to keep following the mouse while the drag is live, including
+			outside the field, so the drag belongs to the editor rather than to
+			the widget that started it.
+		*/
+		int m_DragGroupField = -1;
 
 		// the envelope workspace
 		int m_EnvelopeChannelBase = 0;

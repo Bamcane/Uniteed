@@ -52,7 +52,9 @@ int main(int argc, char **argv)
 			const std::string Value = Arguments[++i];
 			const std::size_t Colon = Value.find(':');
 			Setup.m_Group = std::atoi(Value.substr(0, Colon).c_str());
-			Setup.m_Layer = Colon == std::string::npos ? -1 : std::atoi(Value.substr(Colon + 1).c_str());
+			// "G:" with nothing after the colon is the group row itself
+			Setup.m_bGroupSelected = Colon != std::string::npos && Colon + 1 == Value.size();
+			Setup.m_Layer = (Colon == std::string::npos || Setup.m_bGroupSelected) ? -1 : std::atoi(Value.substr(Colon + 1).c_str());
 			continue;
 		}
 		if(Argument == "--quad" && i + 1 < Arguments.size())

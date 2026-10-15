@@ -128,8 +128,9 @@ and the `Fonts` registry key, macOS the system font directories, Linux `fc-match
 a path fallback list. Each face can be overridden from `config.cfg`.
 
 `CInput` collects the SDL events; `engine::ui` is the tiny widget set (rects, text,
-buttons, checkboxes, sliders, and the tooltip the chrome labels itself with) that draws
-through the painter. It has no icons and no fixed idea of what a picture is.
+buttons, checkboxes, sliders, integer fields, and the tooltip the chrome labels itself
+with) that draws through the painter. It has no icons and no fixed idea of what a
+picture is.
 
 Every panel labels its own controls: `CEditor::Hint(rect, title, detail)` puts the
 detail in the status bar and opens the tooltip under the widget, and `Render()` draws
@@ -138,6 +139,13 @@ describes. The tool strip is the one place that asks for the tip beside the butt
 instead of below it. This is where the interface explains itself rather than relying on
 a manual: the letters on the keys, the meaning of a dock tab, what a checkbox in the
 layer tree locks, and which entity a cell of the game layer's sheet is.
+
+**A hint is not an event, so it is not logged.** `SetStatus` only moves the status line;
+`Notify` moves it *and* writes a line. The split exists because `Hint` runs on every
+frame the cursor is over a widget, and logging that made a session print a tip per mouse
+move until the terminal was useless. Operations that actually happened - opening,
+saving, exporting, adding an asset, an undo - call `Notify`, and everything that only
+describes what a control would do calls `SetStatus`.
 
 * `svg.cpp` is the only place that knows about nanosvg. It owns the parsing and the
   rasterizing, and it does not touch SDL, so the *headless* build compiles it too and
@@ -292,6 +300,15 @@ unknown layer gives `edit_mode::none`. The toolbar, the layer panel and the righ
 panel all branch on that one function, which is why only the controls that apply to
 the selection are ever on screen. What follows from that is a short list of rules, and
 every one of them has bitten this code already:
+
+* **the group row of the tree is a selection of its own.** `m_SelectedLayer < 0` means
+  the group rather than one of its layers, which `ClampSelection` preserves instead of
+  clamping to 0. Every layer accessor already returns null for a negative index, so the
+  canvas reads as `edit_mode::none` for free, and the right panel answers the selection
+  with `DrawGroupSection` - the group's parallax, offset and clip rectangle, which the
+  command line and the agent interface could already set. A group's properties are
+  pushed onto the undo stack by `PushUndoGroupProperties`, which captures with the whole
+  scope because `PushUndo` otherwise needs a valid layer index and there is none to give.
 
 * **hit tests use the same points that are drawn.** `QuadPoints()` applies the
   position envelope, and both `DrawQuadLayer()` and `UpdateQuadHover()` go through it,

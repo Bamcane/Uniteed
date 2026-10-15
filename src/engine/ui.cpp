@@ -146,4 +146,93 @@ namespace engine::ui
 		}
 		return Changed;
 	}
+
+	bool IntField(CPainter *pPainter, const CInput &Input, int Font, const base::rect &Area, int &Value,
+		int Min, int Max, int Step, bool &bDragging)
+	{
+		const float ArrowWidth = std::min(17.0f, Area.Width() * 0.3f);
+		const base::rect Text = base::rect(Area.m_TopLeft,
+			base::vec2(Area.m_BottomRight.x - ArrowWidth * 2.0f, Area.m_BottomRight.y));
+		const base::rect Up = base::rect::FromSize(base::vec2(Text.m_BottomRight.x, Area.m_TopLeft.y),
+			base::vec2(ArrowWidth, Area.Height() * 0.5f));
+		const base::rect Down = base::rect::FromSize(base::vec2(Text.m_BottomRight.x, Area.m_TopLeft.y + Area.Height() * 0.5f),
+			base::vec2(ArrowWidth, Area.Height() - Area.Height() * 0.5f));
+
+		const bool bHoverUp = Hovered(Input, Up);
+		const bool bHoverDown = Hovered(Input, Down);
+		const bool bHoverText = Hovered(Input, Text);
+		const bool bHovered = bHoverUp || bHoverDown || bHoverText;
+
+		Rect(pPainter, Area, bHovered ? Theme.m_Hover : Theme.m_PanelDark);
+		RectOutline(pPainter, Area, bDragging ? Theme.m_Accent : Theme.m_Border);
+		/*
+			The two halves of the stepper are told apart by the direction of the
+			little triangle rather than by colour alone, so it still reads as a
+			stepper in a palette where the accent is close to the panel.
+		*/
+		const auto Arrow = [&](const base::rect &Half, bool bUpward, bool bHalfHovered) {
+			Rect(pPainter, Half, bHalfHovered ? Theme.m_AccentDim : Theme.m_Panel);
+			Line(pPainter, base::vec2(Half.m_TopLeft.x, Half.m_TopLeft.y),
+				base::vec2(Half.m_TopLeft.x, Half.m_BottomRight.y), Theme.m_Border);
+			const float cx = Half.Center().x;
+			const float cy = Half.Center().y;
+			const float r = 3.5f;
+			pPainter->BeginPath();
+			if(bUpward)
+			{
+				pPainter->MoveTo(cx, cy - r);
+				pPainter->LineTo(cx - r, cy + r * 0.6f);
+				pPainter->LineTo(cx + r, cy + r * 0.6f);
+			}
+			else
+			{
+				pPainter->MoveTo(cx, cy + r);
+				pPainter->LineTo(cx - r, cy - r * 0.6f);
+				pPainter->LineTo(cx + r, cy - r * 0.6f);
+			}
+			pPainter->ClosePath();
+			pPainter->FillColor(Theme.m_Text);
+			pPainter->Fill();
+		};
+		Arrow(Up, true, bHoverUp);
+		Arrow(Down, false, bHoverDown);
+
+		bool Changed = false;
+		const auto Apply = [&](int NewValue) {
+			const int Clamped = base::clamp(NewValue, Min, Max);
+			if(Clamped != Value)
+			{
+				Value = Clamped;
+				Changed = true;
+			}
+		};
+		if(bHoverUp && Input.MousePressed(CInput::mouse_button::left))
+			Apply(Value + Step);
+		else if(bHoverDown && Input.MousePressed(CInput::mouse_button::left))
+			Apply(Value - Step);
+		else if(bHoverText && Input.MousePressed(CInput::mouse_button::left))
+			bDragging = true;
+		else if(bDragging)
+		{
+			/*
+				A horizontal scrub: the whole width of the field is worth a span
+				of one step per pixel-ish, so a small drag is a small change and
+				a wide one is still bounded by Min and Max.
+			*/
+			const float Delta = Input.MouseDelta().x;
+			if(Delta != 0.0f)
+			{
+				const int Amount = static_cast<int>(Delta * static_cast<float>(Step));
+				if(Amount != 0)
+					Apply(Value + Amount);
+			}
+			if(Input.MouseReleased(CInput::mouse_button::left) || !Input.MouseDown(CInput::mouse_button::left))
+				bDragging = false;
+		}
+
+		// the value, centred in the part of the field the stepper does not own
+		TextClipped(pPainter, Font, base::vec2(Text.m_TopLeft.x + 4.0f, Text.Center().y + 4.5f), 12.0f,
+			Theme.m_Text, std::to_string(Value), std::max(Text.Width() - 8.0f, 1.0f));
+		return Changed;
+	}
 } // namespace engine::ui

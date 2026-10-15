@@ -78,8 +78,9 @@ namespace engine
 		int Layer = Setup.m_Layer;
 
 		// no explicit layer: take the first tile layer that has an image, which
-		// is the most representative state of a map
-		if(Group < 0 || Layer < 0)
+		// is the most representative state of a map. A group row was asked for
+		// by name, so it is not a missing answer and nothing is guessed.
+		if(!Setup.m_bGroupSelected && (Group < 0 || Layer < 0))
 		{
 			Group = 0;
 			Layer = 0;
@@ -112,7 +113,7 @@ namespace engine
 			}
 		}
 
-		Editor.SetSelectedLayer(Group, Layer);
+		Editor.SetSelectedLayer(Group, Setup.m_bGroupSelected ? -1 : Layer);
 		Editor.SetCursor(base::vec2(800.0f, 800.0f));
 		if(Setup.m_EnvelopeTime >= 0.0f)
 			Editor.SetEnvelopeTime(Setup.m_EnvelopeTime);

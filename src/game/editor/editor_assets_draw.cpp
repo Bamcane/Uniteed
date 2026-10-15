@@ -145,7 +145,7 @@ namespace game
 					else if(RemoveSound(m_SelectedSound, &Error))
 						m_SelectedSound = std::min(m_SelectedSound, SoundCount() - 1);
 					if(!Error.empty())
-						SetStatus(Error);
+						Notify(Error);
 				}
 			}
 			y += 28.0f;
@@ -236,10 +236,10 @@ namespace game
 				if(bEmbedded)
 				{
 					if(!ExternaliseImage(m_SelectedImage, &Error))
-						SetStatus(Error);
+						Notify(Error);
 				}
 				else if(!EmbedImage(m_SelectedImage, &Error))
-					SetStatus(Error);
+					Notify(Error);
 			}
 			if(AssetButton(Tr("Replace"), Tr("read new pixels into this image, keeping its name and the layers that use it")))
 			{

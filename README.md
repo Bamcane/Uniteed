@@ -469,6 +469,16 @@ a click anywhere else keeps what was typed and `Escape` leaves the name as it wa
 the field is open it owns the keyboard, so a name is never also a shortcut, and the
 rename is one step of the undo history like any other edit.
 
+**Clicking a group row selects the group itself**, and the right panel then shows the
+properties every layer under it is drawn through rather than a layer's tools: the
+**parallax** it scrolls at, the **offset** it is drawn with and the **clip rectangle**
+that cuts it off. A value is a small stepper - the arrows nudge it, dragging on the
+field scrubs it - so a percentage and a coordinate are edited the same way, and one
+scrub is one step of the undo history. The clip fields fold away while clipping is
+switched off:
+
+![a group row selected, editing its parallax, offset and clip](docs/screenshots/editor-group.png)
+
 Two panels are **floating** rather than docked, because they are about the session
 rather than about the map: the **welcome page** (new map, open a project or a map,
 reopen the last one, open the shortcut list) and the **shortcut list** (`?`, or the

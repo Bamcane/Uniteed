@@ -478,7 +478,7 @@ namespace game
 				{
 					// the status line answers in the language that was just
 					// chosen: it is the check that the switch took
-					SetStatus(base::FormatRuntime(Tr("the interface language is now {}"), Row.m_pLabel));
+					Notify(base::FormatRuntime(Tr("the interface language is now {}"), Row.m_pLabel));
 				}
 				break;
 			case menu_action::none: break;
@@ -579,9 +579,9 @@ namespace game
 				// says out loud what it will cost
 				const std::vector<std::string> Warnings = m_Map.CompatibilityWarnings(Target);
 				if(Warnings.empty())
-					SetStatus(  base::FormatRuntime(Tr("target {}"), Profile.m_pName)  );
+					Notify(  base::FormatRuntime(Tr("target {}"), Profile.m_pName)  );
 				else
-					SetStatus(  base::FormatRuntime(Tr("target {}: {}"), Profile.m_pName, Warnings.front().c_str())  );
+					Notify(  base::FormatRuntime(Tr("target {}: {}"), Profile.m_pName, Warnings.front().c_str())  );
 			}
 		}
 		// the DDRace features keep their own switch beside the targets, so a

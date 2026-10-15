@@ -545,7 +545,15 @@ namespace game
 		}
 		m_SelectedGroup = base::clamp(m_SelectedGroup, 0, static_cast<int>(m_Map.m_vGroups.size()) - 1);
 		const int Layers = static_cast<int>(m_Map.m_vGroups[static_cast<std::size_t>(m_SelectedGroup)].m_vLayers.size());
-		m_SelectedLayer = Layers > 0 ? base::clamp(m_SelectedLayer, 0, Layers - 1) : 0;
+		/*
+			A negative layer is the group row itself, which is a selection the
+			right panel answers with the group's own properties; everything
+			else clamps into the layers that exist.
+		*/
+		if(m_SelectedLayer >= 0 || Layers == 0)
+			m_SelectedLayer = Layers > 0 ? base::clamp(m_SelectedLayer, 0, Layers - 1) : 0;
+		else
+			m_SelectedLayer = -1;
 
 		/*
 			The quad selection lives here rather than in the layer, so it has to
@@ -638,7 +646,7 @@ namespace game
 		m_vUndo.clear();
 		m_vRedo.clear();
 		FitToMap();
-		SetStatus( Tr("new map") );
+		Notify( Tr("new map") );
 	}
 
 	bool CEditor::OpenFile(const std::string &Path)
@@ -655,7 +663,7 @@ namespace game
 		const std::optional<storage::byte_vector> Bytes = storage::read(Path);
 		if(!Bytes.has_value())
 		{
-			SetStatus(base::FormatRuntime(Tr("cannot read {}"), Path));
+			Notify(base::FormatRuntime(Tr("cannot read {}"), Path));
 			return false;
 		}
 
@@ -664,7 +672,7 @@ namespace game
 			CUnitwpPackage Package;
 			if(!Package.Deserialise(*Bytes, &Error))
 			{
-				SetStatus(base::FormatRuntime(Tr("package error: {}"), Error));
+				Notify(base::FormatRuntime(Tr("package error: {}"), Error));
 				return false;
 			}
 			m_Package = Package;
@@ -676,7 +684,7 @@ namespace game
 			CMap Map;
 			if(!Map.LoadFromBytes(*Bytes, &Error))
 			{
-				SetStatus(base::FormatRuntime(Tr("map error: {}"), Error));
+				Notify(base::FormatRuntime(Tr("map error: {}"), Error));
 				return false;
 			}
 			m_Map = Map;
@@ -705,7 +713,7 @@ namespace game
 		FitToMap();
 
 		const CMapStatistics Stats = m_Map.Statistics();
-		SetStatus(  base::FormatRuntime(Tr("opened {} (v{:d}, {:d} groups, {:d} layers, {:d} images)"),
+		Notify(  base::FormatRuntime(Tr("opened {} (v{:d}, {:d} groups, {:d} layers, {:d} images)"),
 			storage::path(Path).filename().string().c_str(), m_Map.m_SourceDatafileVersion,
 			Stats.m_Groups, Stats.m_Layers, Stats.m_Images)  );
 		return true;
@@ -741,14 +749,14 @@ namespace game
 
 		if(!Package.SaveToFile(Path, &Error))
 		{
-			SetStatus(base::FormatRuntime(Tr("save failed: {}"), Error));
+			Notify(base::FormatRuntime(Tr("save failed: {}"), Error));
 			return false;
 		}
 		m_Package = Package;
 		m_bPackageLoaded = true;
 		m_SourcePath = Path;
 		m_Dirty = false;
-		SetStatus(  base::FormatRuntime(Tr("saved {} ({:d} resources)"), storage::path(Path).filename().string().c_str(), Package.m_vResources.size())  );
+		Notify(  base::FormatRuntime(Tr("saved {} ({:d} resources)"), storage::path(Path).filename().string().c_str(), Package.m_vResources.size())  );
 		return true;
 	}
 
@@ -759,20 +767,37 @@ namespace game
 			LOG_WARN("editor", "{}", Warning.c_str());
 		if(!m_Map.SaveToFile(Path, Target, &Error))
 		{
-			SetStatus(base::FormatRuntime(Tr("export failed: {}"), Error));
+			Notify(base::FormatRuntime(Tr("export failed: {}"), Error));
 			return false;
 		}
 		m_Target = Target;
 		const CMapTargetProfile &Profile = GetTargetProfile(Target);
-		SetStatus(  base::FormatRuntime(Tr("exported {} for {} (datafile v{:d})"),
+		Notify(  base::FormatRuntime(Tr("exported {} for {} (datafile v{:d})"),
 			storage::path(Path).filename().string().c_str(), Profile.m_pName, Profile.m_DatafileVersion)  );
 		return true;
 	}
 
+	/*
+		The status line is what the window says about the thing under the
+		cursor or the operation that just ran, and it changes on every mouse
+		move because hovering a widget reports what the widget does. Writing
+		it to the log as well turned a session into a wall of tips, so the
+		log is left to Notify(), which the operations that are worth a line
+		call themselves.
+	*/
 	void CEditor::SetStatus(const std::string &Message)
 	{
 		m_Status = Message;
 		m_StatusTime = base::Now();
+	}
+
+	/*
+		An operation that ran: the status line says so and the log keeps a
+		record of it, which is what a script driving the editor reads back.
+	*/
+	void CEditor::Notify(const std::string &Message)
+	{
+		SetStatus(Message);
 		LOG_INFO("editor", "{}", Message.c_str());
 	}
 
@@ -786,6 +811,12 @@ namespace game
 	{
 		m_SelectedGroup = Group;
 		m_SelectedLayer = Layer;
+		/*
+			A scrub belongs to the group it started on: another group's field
+			has the same id, so leaving the drag live would carry the numbers
+			across the two.
+		*/
+		m_DragGroupField = -1;
 		ClampSelection();
 	}
 
@@ -822,7 +853,7 @@ namespace game
 		m_RenameLayer = -1;
 		m_RenameText.clear();
 		m_bRenameAll = true;
-		SetStatus( Tr("the name is unchanged") );
+		Notify( Tr("the name is unchanged") );
 	}
 
 	void CEditor::CommitRename()
@@ -854,7 +885,7 @@ namespace game
 		Current = std::move(Name);
 		MarkDirty();
 		LOG_TRACE("editor", "renamed group {:d} layer {:d} to '{}'", Group, Layer, Current.c_str());
-		SetStatus(  base::FormatRuntime(Tr("renamed to '{}'"), Current.empty() ? Tr("(no name)") : Current.c_str())  );
+		Notify(  base::FormatRuntime(Tr("renamed to '{}'"), Current.empty() ? Tr("(no name)") : Current.c_str())  );
 	}
 
 	void CEditor::HandleRenameInput()
@@ -1331,7 +1362,7 @@ namespace game
 	{
 		if(m_vUndo.empty())
 		{
-			SetStatus( Tr("nothing to undo") );
+			Notify( Tr("nothing to undo") );
 			return;
 		}
 		CUndoState State = std::move(m_vUndo.back());
@@ -1343,14 +1374,14 @@ namespace game
 			return;
 		ApplyUndoState(State, m_vRedo);
 		m_Dirty = true;
-		SetStatus( Tr("undo") );
+		Notify( Tr("undo") );
 	}
 
 	void CEditor::Redo()
 	{
 		if(m_vRedo.empty())
 		{
-			SetStatus( Tr("nothing to redo") );
+			Notify( Tr("nothing to redo") );
 			return;
 		}
 		CUndoState State = std::move(m_vRedo.back());
@@ -1364,7 +1395,7 @@ namespace game
 		// redo stack instead would lose the step that was just restored
 		ApplyUndoState(State, m_vUndo);
 		m_Dirty = true;
-		SetStatus( Tr("redo") );
+		Notify( Tr("redo") );
 	}
 
 	// puts the current state of the layer on the other stack, then restores the
@@ -1511,7 +1542,7 @@ namespace game
 		if(!m_bPainting)
 			return;
 		m_bPainting = false;
-		SetStatus(base::FormatRuntime(Tr("edited {}"), ToolName(m_Tool)));
+		Notify(base::FormatRuntime(Tr("edited {}"), ToolName(m_Tool)));
 	}
 
 	void CEditor::PaintAt(base::vec2 World)
@@ -1659,13 +1690,13 @@ namespace game
 		{
 			CLayer &Layer = m_Map.NewQuadLayer(*pGroup, -1);
 			Layer.m_Name = "Quad layer";
-			SetStatus( Tr("added a quad layer, colour and points are editable") );
+			Notify( Tr("added a quad layer, colour and points are editable") );
 		}
 		else
 		{
 			CLayer &Layer = m_Map.NewTileLayer(*pGroup, Width, Height, -1);
 			Layer.m_Name = "Tile layer";
-			SetStatus( Tr("added a tile layer") );
+			Notify( Tr("added a tile layer") );
 		}
 
 		m_vViewStates.clear();
@@ -1686,7 +1717,7 @@ namespace game
 		m_SelectedLayer = 0;
 		ClearQuadSelection();
 		m_Dirty = true;
-		SetStatus( Tr("added a group") );
+		Notify( Tr("added a group") );
 	}
 
 	void CEditor::DeleteSelected(bool bWholeGroup)
@@ -1708,7 +1739,7 @@ namespace game
 			ClampSelection();
 			ClearQuadSelection();
 			m_Dirty = true;
-			SetStatus( Tr("deleted the group") );
+			Notify( Tr("deleted the group") );
 			return;
 		}
 
@@ -1732,7 +1763,7 @@ namespace game
 		ClampSelection();
 		ClearQuadSelection();
 		m_Dirty = true;
-		SetStatus( Tr("deleted the layer") );
+		Notify( Tr("deleted the layer") );
 	}
 
 	void CEditor::SetTool(editor_tool Tool)
@@ -1761,12 +1792,12 @@ namespace game
 		if(m_Tool == editor_tool::erase)
 		{
 			SetTool(m_ToolBeforeErase);
-			SetStatus(  base::FormatRuntime(Tr("back to the {}"), ToolName(m_Tool))  );
+			Notify(  base::FormatRuntime(Tr("back to the {}"), ToolName(m_Tool))  );
 		}
 		else
 		{
 			SetTool(editor_tool::erase);
-			SetStatus(  base::FormatRuntime(Tr("eraser: press E again for the {}"), ToolName(m_ToolBeforeErase))  );
+			Notify(  base::FormatRuntime(Tr("eraser: press E again for the {}"), ToolName(m_ToolBeforeErase))  );
 		}
 	}
 
@@ -1911,7 +1942,7 @@ namespace game
 							}
 						}
 						m_Dirty = true;
-						SetStatus( Tr("filled the layer") );
+						Notify( Tr("filled the layer") );
 					}
 			}
 		}
@@ -2071,7 +2102,7 @@ namespace game
 						if(!Cells.empty())
 						{
 							SetBrushRegion(Width, Height, Cells, Cells.front().m_Index);
-							SetStatus(  base::FormatRuntime(Tr("brush {:d}x{:d} taken from {:d},{:d}"), Width, Height, X0, Y0)  );
+							Notify(  base::FormatRuntime(Tr("brush {:d}x{:d} taken from {:d},{:d}"), Width, Height, X0, Y0)  );
 						}
 					}
 				}
@@ -2105,6 +2136,22 @@ namespace game
 
 	void CEditor::PushUndoOpWhole(int Group, int Layer) { PushUndo(Group, Layer, undo_scope::whole); }
 	void CEditor::PushUndoOpTiles(int Group, int Layer) { PushUndo(Group, Layer, undo_scope::tiles); }
+
+	void CEditor::PushUndoGroupProperties(int Group)
+	{
+		if(Group < 0 || Group >= static_cast<int>(m_Map.m_vGroups.size()))
+			return;
+		/*
+			The layer index is only there to say which layer a scoped snapshot
+			is about; a group's own properties need none, and the selection can
+			be the group row, where there is no layer to name. An empty layer
+			stands in, and the whole scope is what carries the groups.
+		*/
+		m_vUndo.push_back(CaptureLayer(CLayer(), Group, 0, undo_scope::whole));
+		if(m_vUndo.size() > 32)
+			m_vUndo.erase(m_vUndo.begin());
+		m_vRedo.clear();
+	}
 
 	void CEditor::AddQuadSelection(int Index)
 	{
@@ -2261,7 +2308,7 @@ namespace game
 			if(!bHeld)
 			{
 				if(m_bQuadMoved)
-					SetStatus(  m_vQuadMove.size() == 1 ? Tr("moved quad") :
+					Notify(  m_vQuadMove.size() == 1 ? Tr("moved quad") :
 						base::FormatRuntime(Tr("moved {:d} quads"), m_vQuadMove.size())  );
 				m_bQuadMoving = false;
 				m_bQuadMoved = false;
@@ -2305,7 +2352,7 @@ namespace game
 			if(!bHeld)
 			{
 				if(m_bQuadDragged)
-					SetStatus( Tr("moved quad point") );
+					Notify( Tr("moved quad point") );
 				m_DragQuad = -1;
 				m_DragPoint = -1;
 				m_bQuadDragged = false;
@@ -2518,7 +2565,7 @@ namespace game
 			}
 		}
 		SetBrushRegion(Width, Height, Cells, Cells.front().m_Index);
-		SetStatus(  base::FormatRuntime(Tr("brush {:d}x{:d} taken from {:d},{:d}"), Width, Height, X0, Y0)  );
+		Notify(  base::FormatRuntime(Tr("brush {:d}x{:d} taken from {:d},{:d}"), Width, Height, X0, Y0)  );
 	}
 
 	bool CEditor::PickRect(int &X0, int &Y0, int &X1, int &Y1) const
