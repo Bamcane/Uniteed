@@ -6,11 +6,26 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One entry per platform. Both build the windowed editor and the headless
+# command line, because the headless build is what the format tools and the
+# agent interface run on and it must not rot: the same sources compile twice
+# with UNITEED_GUI toggled, and --selftest is the regression test of both.
+#
+# Linux takes every dependency from the distribution. Windows uses MSYS2
+# (UCRT64), which is how the reference teeworlds checkout builds there: the
+# package manager provides SDL3, FreeType, HarfBuzz, zlib, zstd, OpenSSL and
+# opusfile as a consistent UCRT toolchain, so nothing has to be compiled by
+# hand. The Windows job additionally proves that the editor finds its fonts on
+# a real Windows install, which is what font_find.cpp exists for.
 jobs:
-  # the reference build, with the system SDL3, FreeType and HarfBuzz
+  # Pinned to 26.04 rather than ubuntu-latest so the image changes under us on
+  # GitHub's schedule: ubuntu-latest moved from 24.04 to 26.04 between October
+  # and November 2026, and the two disagree about several dev package names.
+  # 26.04 is also the first LTS that packages SDL3 (libsdl3-dev), which is the
+  # only reason the Linux job no longer has to build it by hand.
   linux:
     name: linux
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,8 +36,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential cmake ninja-build pkg-config \
-            libsdl3-dev libfreetype-dev libharfbuzz-dev \
-            zlib1g-dev libzstd-dev libssl-dev \
+            libsdl3-dev libzstd-dev libssl-dev libopusfile-dev \
+            freetype-dev harfbuzz-dev zlib-dev \
             fonts-dejavu-core fonts-noto-cjk
 
       - name: configure
@@ -31,6 +46,9 @@ jobs:
       - name: build
         run: cmake --build build
 
+      - name: test
+        run: ./build/uniteed --selftest
+
       # the headless configuration has to keep building too
       - name: configure (headless)
         run: cmake -S . -B build-headless -G Ninja -DCMAKE_BUILD_TYPE=Release -DUNITEED_GUI=OFF
@@ -38,66 +56,93 @@ jobs:
       - name: build (headless)
         run: cmake --build build-headless
 
-  # the platform the font lookup was written for
+      - name: test (headless)
+        run: ./build-headless/uniteed --selftest
+
   windows:
     name: windows
-    runs-on: windows-2022
+    runs-on: windows-latest
+    # every run: step of this job is a bash script inside the MSYS2 environment
+    defaults:
+      run:
+        shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: install dependencies
-        shell: pwsh
-        run: |
-          # vcpkg ships on the runner image and is the simplest source of these
-          vcpkg install sdl3:x64-windows freetype:x64-windows harfbuzz:x64-windows `
-            zlib:x64-windows zstd:x64-windows openssl:x64-windows
+      # UCRT64 is the current, recommended MSYS2 environment: UCRT instead of
+      # the old msvcrt, and a single consistent toolchain. pacboy maps a
+      # pkg-config name to the right package of the environment, which is why
+      # the names below are pkg-config's rather than MSYS2's
+      # (mingw-w64-ucrt-x86_64-sdl3 and friends).
+      - name: prepare MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            ninja:p
+            zlib:p
+            zstd:p
+            sdl3:p
+            freetype:p
+            harfbuzz:p
+            opus:p
+            opusfile:p
+            openssl:p
 
       - name: configure
-        shell: pwsh
-        run: |
-          cmake -S . -B build -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DUNITEED_WERROR=ON `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUNITEED_WERROR=ON
 
       - name: build
-        shell: pwsh
         run: cmake --build build
 
-      # the editor must find its three faces on a Windows install; the hidden
-      # window means no desktop is needed
+      - name: test
+        run: ./build/uniteed.exe --selftest
+
+      - name: configure (headless)
+        run: cmake -S . -B build-headless -G Ninja -DCMAKE_BUILD_TYPE=Release -DUNITEED_GUI=OFF
+
+      - name: build (headless)
+        run: cmake --build build-headless
+
+      - name: test (headless)
+        run: ./build-headless/uniteed.exe --selftest
+
+      # The editor must find its three faces on a Windows install; the hidden
+      # window means no desktop is needed. Without an interface font the editor
+      # cannot start, so a regression in font_find.cpp shows up here.
       - name: check the font lookup
-        shell: pwsh
         run: |
-          $log = & .\build\uniteed.exe --screenshot "$env:RUNNER_TEMP\uniteed.png" --map data\maps\08\ctf1.map 2>&1
-          $log | Write-Host
-          if ($LASTEXITCODE -ne 0) { throw "the editor exited with $LASTEXITCODE" }
-          $found = $log | Select-String -Pattern 'fonts\s+interface font:'
-          if (-not $found) { throw 'no interface font was resolved' }
-          if (-not (Test-Path "$env:RUNNER_TEMP\uniteed.png")) { throw 'no screenshot was written' }
+          log="$RUNNER_TEMP/uniteed.log"
+          ./build/uniteed.exe --screenshot "$RUNNER_TEMP/uniteed.png" --map data/maps/08/ctf1.map > "$log" 2>&1 || {
+            cat "$log"; echo "the editor exited with $?"; exit 1; }
+          cat "$log"
+          grep -q 'fonts\s*interface font:' "$log" || { echo "no interface font was resolved"; exit 1; }
+          test -f "$RUNNER_TEMP/uniteed.png" || { echo "no screenshot was written"; exit 1; }
 
-      # a font is loaded from its bytes, so a non ASCII path still opens; the
-      # happy path above would not catch a regression here
+      # A font is loaded from its bytes, so a non ASCII path still opens; the
+      # happy path above would not catch a regression here. The config sits in
+      # the app data directory, which Windows derives from LOCALAPPDATA; the
+      # path is converted to the MSYS2 form so the shell writes where the
+      # native editor looks, not into MSYS2's own home.
       - name: check a non ASCII font path
-        shell: pwsh
         run: |
-          $dir = Join-Path $env:RUNNER_TEMP '字体 目录'
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          Copy-Item C:\Windows\Fonts\tahoma.ttf (Join-Path $dir '界面.ttf')
+          dir="$RUNNER_TEMP/字体 目录"
+          mkdir -p "$dir"
+          cp /c/Windows/Fonts/tahoma.ttf "$dir/界面.ttf"
+          cfg="$(cygpath -u "$LOCALAPPDATA")/uniteed"
+          mkdir -p "$cfg"
+          printf 'uniteed_font %s\n' "$dir/界面.ttf" > "$cfg/config.cfg"
+          log="$RUNNER_TEMP/uniteed-cjk-path.log"
+          ./build/uniteed.exe --screenshot "$RUNNER_TEMP/uniteed-cjk-path.png" --map data/maps/08/ctf1.map > "$log" 2>&1 || {
+            cat "$log"; echo "the editor exited with $?"; exit 1; }
+          cat "$log"
+          grep -q '界面\.ttf' "$log" || { echo "the configured font was not used"; exit 1; }
+          if grep -q 'failed to read the font\|failed to open the font' "$log"; then
+            echo "the font could not be opened"; exit 1
+          fi
 
-          # the config sits in the app data directory, derived from LOCALAPPDATA
-          $cfgDir = Join-Path $env:LOCALAPPDATA 'uniteed'
-          New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
-          "uniteed_font $dir\界面.ttf" | Set-Content -Encoding UTF8 (Join-Path $cfgDir 'config.cfg')
-
-          $log = & .\build\uniteed.exe --screenshot "$env:RUNNER_TEMP\uniteed-cjk-path.png" --map data\maps\08\ctf1.map 2>&1
-          $log | Write-Host
-          if ($LASTEXITCODE -ne 0) { throw "the editor exited with $LASTEXITCODE" }
-          if (-not ($log | Select-String -Pattern '界面\.ttf')) {
-            throw 'the configured font was not used'
-          }
-          if ($log | Select-String -Pattern 'failed to read the font|failed to open the font') {
-            throw 'the font could not be opened'
-          }
