@@ -939,6 +939,16 @@ namespace game
 		// the sound preview, opened with the editor rather than at start up so
 		// a run that never plays a sound never takes an audio device
 		bool m_bAudioInit = false;
+		/*
+			Where the editor and the agent interface disagree about this file is
+			the window, not the audio: the member has to exist in both builds so
+			that every translation unit sees the same CEditor, and a build that
+			does not link the player simply leaves it unused. Gating it on
+			UNITEED_AUDIO - a define CMake only sets for the target, not for
+			every unit that includes this header - is what made a TU compiled
+			without it compute a different offset for everything after it, which
+			crashed the moment two differently compiled objects met.
+		*/
 #if UNITEED_GUI
 		engine::CAudio m_Audio;
 		/*

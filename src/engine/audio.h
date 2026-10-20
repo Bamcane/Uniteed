@@ -63,7 +63,16 @@ namespace engine
 		float m_Duration = 0.0f;
 		bool m_Available = false;
 
-#if defined(UNITEED_AUDIO)
+		/*
+			The decoder lives behind UNITEED_GUI, not behind UNITEED_AUDIO: the
+			second is a define CMake sets for the executable only, so a unit
+			that includes this header without it would lay out CAudio - and with
+			it every CEditor member after its m_Audio - differently from the
+			objects it gets linked against. A headless build that does not link
+			a decoder never calls these members, so leaving them out by the
+			window switch is both safe and enough.
+		*/
+#if UNITEED_GUI
 		// SDL decodes on its own thread, so the callback and the public methods
 		// share everything below through this lock
 		mutable std::mutex m_Lock;

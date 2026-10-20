@@ -1600,9 +1600,15 @@ namespace game
 			CEditor Editor;
 			Editor.InitHeadless();
 			bool bOk = true;
+			std::string EditorFailure;
+			const auto CheckEditor = [&bOk, &EditorFailure](bool Value, const char *pWhat) {
+				if(!Value && EditorFailure.empty())
+					EditorFailure = pWhat;
+				bOk = bOk && Value;
+			};
 
 			// the toolbox has to know which tools the canvas can use
-			bOk = bOk && Editor.Mode() == edit_mode::tiles;
+			CheckEditor(Editor.Mode() == edit_mode::tiles, "step 1");
 
 			/*
 				The target decides which mapres set the map is read with, so
@@ -1618,30 +1624,30 @@ namespace game
 				Windows, where a path's native string is wide.
 			*/
 			Editor.SetTarget(map_target::tee06);
-			bOk = bOk && Editor.VersionId() == "06" && Editor.VersionForSave() == "06";
+			CheckEditor(Editor.VersionId() == "06" && Editor.VersionForSave() == "06", "step 2");
 			Editor.SetTarget(map_target::ddnet07);
-			bOk = bOk && Editor.VersionId() == "ddnet" && Editor.VersionForSave() == "ddnet";
+			CheckEditor(Editor.VersionId() == "ddnet" && Editor.VersionForSave() == "ddnet", "step 3");
 			Editor.SetTarget(map_target::tee08);
-			bOk = bOk && Editor.VersionId() == "07" && Editor.VersionForSave() == "07";
+			CheckEditor(Editor.VersionId() == "07" && Editor.VersionForSave() == "07", "step 4");
 			// and when the version's directory is there, it is searched first
 			if(storage::exists(storage::GetDataDirectory() / "versions" / "06" / "mapres"))
 			{
 				Editor.SetTarget(map_target::tee06);
-				bOk = bOk && !storage::ResourcePaths().empty() &&
-					storage::path_text(storage::ResourcePaths().front()).find("versions/06") != std::string::npos;
+				CheckEditor(!storage::ResourcePaths().empty() &&
+					storage::path_text(storage::ResourcePaths().front()).find("versions/06") != std::string::npos, "paths");
 			}
 
 			// the drag order of a dock is state, so reordering it must stick
 			std::vector<CEditor::dock_panel> Order = Editor.Tabs(dock_slot::right_upper);
-			bOk = bOk && Order.size() >= 2 && Order[0] == CEditor::dock_panel::tiles;
+			CheckEditor(Order.size() >= 2 && Order[0] == CEditor::dock_panel::tiles, "step 5");
 			std::swap(Order[0], Order[1]);
 			Editor.Tabs(dock_slot::right_upper) = Order;
-			bOk = bOk && Editor.Tabs(dock_slot::right_upper)[1] == CEditor::dock_panel::tiles;
+			CheckEditor(Editor.Tabs(dock_slot::right_upper)[1] == CEditor::dock_panel::tiles, "step 6");
 			// the layer tree is the lower docker, which is where Krita keeps its
 			// layer stack, and nothing else lives there by default
 			const std::vector<CEditor::dock_panel> &Lower = Editor.Tabs(dock_slot::right_lower);
-			bOk = bOk && Lower.size() == 1 && Lower[0] == CEditor::dock_panel::layers;
-			bOk = bOk && Editor.DockPanel(dock_slot::right_lower) == CEditor::dock_panel::layers;
+			CheckEditor(Lower.size() == 1 && Lower[0] == CEditor::dock_panel::layers, "step 7");
+			CheckEditor(Editor.DockPanel(dock_slot::right_lower) == CEditor::dock_panel::layers, "step 8");
 
 			/*
 				The panel buttons of the top row work the same state the tabs
@@ -1649,28 +1655,28 @@ namespace game
 				is hidden comes back to the docker it belongs to. It is checked
 				here because it is state, not drawing.
 			*/
-			bOk = bOk && Editor.PanelShown(CEditor::dock_panel::layers) &&
-				Editor.PanelShown(CEditor::dock_panel::tiles) && !Editor.PanelShown(CEditor::dock_panel::rules);
+			CheckEditor(Editor.PanelShown(CEditor::dock_panel::layers) &&
+				Editor.PanelShown(CEditor::dock_panel::tiles) && !Editor.PanelShown(CEditor::dock_panel::rules), "step 9");
 			Editor.TogglePanel(CEditor::dock_panel::layers);
-			bOk = bOk && !Editor.PanelShown(CEditor::dock_panel::layers) &&
-				Editor.DockPanel(dock_slot::right_lower) == CEditor::dock_panel::layers;
+			CheckEditor(!Editor.PanelShown(CEditor::dock_panel::layers) &&
+				Editor.DockPanel(dock_slot::right_lower) == CEditor::dock_panel::layers, "step 10");
 			Editor.TogglePanel(CEditor::dock_panel::layers);
-			bOk = bOk && Editor.PanelShown(CEditor::dock_panel::layers);
+			CheckEditor(Editor.PanelShown(CEditor::dock_panel::layers), "step 11");
 			Editor.TogglePanel(CEditor::dock_panel::rules);
-			bOk = bOk && Editor.PanelShown(CEditor::dock_panel::rules) &&
+			CheckEditor(Editor.PanelShown(CEditor::dock_panel::rules) &&
 				Editor.DockPanel(dock_slot::right_upper) == CEditor::dock_panel::rules &&
-				!Editor.PanelShown(CEditor::dock_panel::tiles);
+				!Editor.PanelShown(CEditor::dock_panel::tiles), "step 12");
 			// the one that is showing folds away where it is, rather than
 			// being moved back to the docker it started in
 			Editor.TogglePanel(CEditor::dock_panel::rules);
-			bOk = bOk && !Editor.PanelShown(CEditor::dock_panel::rules) &&
-				Editor.DockPanel(dock_slot::right_upper) == CEditor::dock_panel::rules;
-			bOk = bOk && CEditor::HomeSlot(CEditor::dock_panel::layers) == dock_slot::right_lower &&
-				CEditor::HomeSlot(CEditor::dock_panel::rules) == dock_slot::right_upper;
+			CheckEditor(!Editor.PanelShown(CEditor::dock_panel::rules) &&
+				Editor.DockPanel(dock_slot::right_upper) == CEditor::dock_panel::rules, "step 13");
+			CheckEditor(CEditor::HomeSlot(CEditor::dock_panel::layers) == dock_slot::right_lower &&
+				CEditor::HomeSlot(CEditor::dock_panel::rules) == dock_slot::right_upper, "step 14");
 			// and the tool strip can be folded away with them
-			bOk = bOk && Editor.ToolBoxShown();
+			CheckEditor(Editor.ToolBoxShown(), "step 15");
 			Editor.ToggleToolBox();
-			bOk = bOk && !Editor.ToolBoxShown();
+			CheckEditor(!Editor.ToolBoxShown(), "step 16");
 			Editor.ToggleToolBox();
 
 			/*
@@ -1679,9 +1685,9 @@ namespace game
 				the state is the editor's and not the drawing code's: the
 				offscreen mode opens a menu through exactly this.
 			*/
-			bOk = bOk && Editor.Menu() == CEditor::menu_id::none;
+			CheckEditor(Editor.Menu() == CEditor::menu_id::none, "step 17");
 			Editor.OpenMenu(CEditor::menu_id::files);
-			bOk = bOk && Editor.Menu() == CEditor::menu_id::files;
+			CheckEditor(Editor.Menu() == CEditor::menu_id::files, "step 18");
 			Editor.OpenMenu(CEditor::menu_id::none);
 
 			/*
@@ -1705,19 +1711,19 @@ namespace game
 				Editor.BeginRename(0, 0);
 				// the name that was there comes up selected, so the first
 				// letter typed replaces it instead of being appended
-				bOk = bOk && Editor.Renaming() && Editor.RenameText() == Original && Editor.RenameAllSelected();
+				CheckEditor(Editor.Renaming() && Editor.RenameText() == Original && Editor.RenameAllSelected(), "rename start");
 				Frame("renamed", 0);
-				bOk = bOk && Editor.RenameText() == "renamed" && !Editor.RenameAllSelected();
+				CheckEditor(Editor.RenameText() == "renamed" && !Editor.RenameAllSelected(), "rename typed");
 				Frame(nullptr, engine::keys::Return);
-				bOk = bOk && !Editor.Renaming() && Editor.Layer(0, 0)->m_Name == "renamed";
+				CheckEditor(!Editor.Renaming() && Editor.Layer(0, 0)->m_Name == "renamed", "rename committed");
 				// and it is a step of the undo history like any other edit
-				bOk = bOk && Editor.CanUndo();
+				CheckEditor(Editor.CanUndo(), "rename undoable");
 				Editor.UndoOp();
-				bOk = bOk && Editor.Layer(0, 0)->m_Name == Original;
+				CheckEditor(Editor.Layer(0, 0)->m_Name == Original, "rename undone");
 				// Escape leaves the name exactly as it was
 				Editor.BeginRename(0, 0);
 				Frame("nope", engine::keys::Escape);
-				bOk = bOk && !Editor.Renaming() && Editor.Layer(0, 0)->m_Name == Original;
+				CheckEditor(!Editor.Renaming() && Editor.Layer(0, 0)->m_Name == Original, "rename escaped");
 			}
 
 			// the image and sound operations are part of the model, so they run
@@ -1726,17 +1732,19 @@ namespace game
 			// an image renumbers the layers that referenced it
 			std::string Error;
 			const int Added = Editor.AddImageRGBA("probe", 2, 2, byte_vector(16, std::byte{0xff}), &Error);
-			bOk = bOk && Added == 1 && Editor.ImageCount() == 2 && Error.empty();
-			bOk = bOk && Editor.FindImage("probe") == 1;
+			CheckEditor(Added == 1 && Editor.ImageCount() == 2 && Error.empty(), "step 19");
+			CheckEditor(Editor.FindImage("probe") == 1, "step 20");
 			const int Bad = Editor.AddImageFromMapres("there_is_no_such_tileset", &Error);
-			bOk = bOk && Bad == -1 && !Error.empty();
-			bOk = bOk && Editor.RemoveImage(0, &Error) && Editor.ImageCount() == 1 &&
-				Editor.FindImage("probe") == 0;
+			CheckEditor(Bad == -1 && !Error.empty(), "step 21");
+			CheckEditor(Editor.RemoveImage(0, &Error) && Editor.ImageCount() == 1 &&
+				Editor.FindImage("probe") == 0, "step 22");
 			// a layer that used the removed image has no image rather than a
 			// stale index into the list that shifted
+			bool bImagesClean = true;
 			for(const CGroup &Group : Editor.Map().m_vGroups)
 				for(const CLayer &Layer : Group.m_vLayers)
-					bOk = bOk && Layer.m_Image <= 0;
+					bImagesClean = bImagesClean && Layer.m_Image <= 0;
+			CheckEditor(bImagesClean, "images renumbered");
 
 			/*
 				The live tiles: a layer that is a function of another one. The
@@ -1793,20 +1801,26 @@ namespace game
 				}
 			}
 
-			// a sound is embedded by definition, and its layer names it
+			/*
+				A sound layer. What a selection means has to be asked of the
+				editor rather than assumed: the selection is the editor's state,
+				and this check runs after a handful of operations that legitimately
+				move it, so the layer is selected explicitly first.
+			*/
+			Editor.SetSelectedLayer(0, 0);
 			const int Sound = Editor.AddSoundData("probe", byte_vector(64, std::byte{0}), true, &Error);
-			bOk = bOk && Sound == 0 && Editor.SoundCount() == 1 && Editor.SoundReferenceCount(0) == 0;
+			CheckEditor(Sound == 0 && Editor.SoundCount() == 1 && Editor.SoundReferenceCount(0) == 0, "step 23");
 			Editor.AddSoundLayerOp(0);
-			bOk = bOk && Editor.SoundLayerIndex() == 0 && Editor.SoundSourceCount() == 0;
-			bOk = bOk && Editor.AddSoundSource(100.0f, 200.0f) == 0 && Editor.SoundSourceCount() == 1;
-			bOk = bOk && Editor.SoundReferenceCount(0) == 1;
-			bOk = bOk && Editor.RemoveSound(0, &Error) && Editor.SoundCount() == 0;
+			CheckEditor(Editor.SoundLayerIndex() == 0 && Editor.SoundSourceCount() == 0, "step 24");
+			CheckEditor(Editor.AddSoundSource(100.0f, 200.0f) == 0 && Editor.SoundSourceCount() == 1, "step 25");
+			CheckEditor(Editor.SoundReferenceCount(0) == 1, "step 26");
+			CheckEditor(Editor.RemoveSound(0, &Error) && Editor.SoundCount() == 0, "step 27");
 
 			if(bOk)
 				std::cout << "  ok   editor  the toolbox, the dock order and the asset model work without a window\n";
 			else
 			{
-				std::cout << "  FAIL editor  a model operation did not behave\n";
+				std::cout << "  FAIL editor  a model operation did not behave (" << EditorFailure << ")\n";
 				Failures++;
 			}
 		}
