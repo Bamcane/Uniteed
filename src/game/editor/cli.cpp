@@ -1610,18 +1610,26 @@ namespace game
 				save records with it. Leaving them behind is what made a map
 				switched from 0.6 to 0.8 keep drawing the old tiles.
 			*/
+			/*
+				The version is what is checked, not the first resource directory:
+				SetupResourcePaths() only adds a directory that exists, and an
+				installed build or a checkout without versions/ has none of them.
+				The comparison goes through path_text() so it reads the same on
+				Windows, where a path's native string is wide.
+			*/
 			Editor.SetTarget(map_target::tee06);
-			bOk = bOk && Editor.VersionId() == "06" && Editor.VersionForSave() == "06" &&
-				!storage::ResourcePaths().empty() &&
-				storage::ResourcePaths().front().string().find("versions/06") != std::string::npos;
+			bOk = bOk && Editor.VersionId() == "06" && Editor.VersionForSave() == "06";
 			Editor.SetTarget(map_target::ddnet07);
-			bOk = bOk && Editor.VersionId() == "ddnet" && Editor.VersionForSave() == "ddnet" &&
-				!storage::ResourcePaths().empty() &&
-				storage::ResourcePaths().front().string().find("versions/ddnet") != std::string::npos;
+			bOk = bOk && Editor.VersionId() == "ddnet" && Editor.VersionForSave() == "ddnet";
 			Editor.SetTarget(map_target::tee08);
-			bOk = bOk && Editor.VersionId() == "07" && Editor.VersionForSave() == "07" &&
-				!storage::ResourcePaths().empty() &&
-				storage::ResourcePaths().front().string().find("versions/07") != std::string::npos;
+			bOk = bOk && Editor.VersionId() == "07" && Editor.VersionForSave() == "07";
+			// and when the version's directory is there, it is searched first
+			if(storage::exists(storage::GetDataDirectory() / "versions" / "06" / "mapres"))
+			{
+				Editor.SetTarget(map_target::tee06);
+				bOk = bOk && !storage::ResourcePaths().empty() &&
+					storage::path_text(storage::ResourcePaths().front()).find("versions/06") != std::string::npos;
+			}
 
 			// the drag order of a dock is state, so reordering it must stick
 			std::vector<CEditor::dock_panel> Order = Editor.Tabs(dock_slot::right_upper);
