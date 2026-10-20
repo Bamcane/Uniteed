@@ -405,10 +405,11 @@ namespace engine
 			const int FramebufferHeight = static_cast<int>(Framebuffer.y);
 			if(!SaveFramebuffer(Graphics.Renderer(), ScreenshotPath, FramebufferWidth, FramebufferHeight))
 			{
-				LOG_ERROR("editor", "failed to write the screenshot '{}'", ScreenshotPath.c_str());
+				LOG_ERROR("editor", "failed to write the screenshot '{}'", storage::path_text(ScreenshotPath));
 				return 1;
 			}
-			LOG_INFO("editor", "screenshot written to '{}' ({:d}x{:d})", ScreenshotPath.c_str(), FramebufferWidth, FramebufferHeight);
+			LOG_INFO("editor", "screenshot written to '{}' ({:d}x{:d})", storage::path_text(ScreenshotPath),
+				FramebufferWidth, FramebufferHeight);
 			// the audio device has to be closed before SDL_Quit(), which
 			// Graphics.Close() calls: SDL_Quit would tear the audio subsystem
 			// down underneath a live stream
@@ -499,7 +500,7 @@ namespace engine
 
 		if(!MapPath.empty() && !Editor.OpenFile(MapPath))
 		{
-			LOG_ERROR("editor", "could not open '{}'", MapPath.c_str());
+			LOG_ERROR("editor", "could not open '{}'", storage::path_text(MapPath));
 			Graphics.Close();
 			return 1;
 		}
@@ -574,12 +575,13 @@ namespace engine
 		const int FramebufferHeight = static_cast<int>(Framebuffer.y);
 		if(!SaveFramebuffer(Graphics.Renderer(), ScreenshotPath, FramebufferWidth, FramebufferHeight))
 		{
-			LOG_ERROR("editor", "failed to write the screenshot '{}'", ScreenshotPath.c_str());
+			LOG_ERROR("editor", "failed to write the screenshot '{}'", storage::path_text(ScreenshotPath));
 			Editor.ShutdownSoundPreview();
 			Graphics.Close();
 			return 1;
 		}
-		LOG_INFO("editor", "script of {:d} steps written to '{}' ({:d}x{:d})", Steps.size(), ScreenshotPath.c_str(), FramebufferWidth, FramebufferHeight);
+		LOG_INFO("editor", "script of {:d} steps written to '{}' ({:d}x{:d})", Steps.size(),
+			storage::path_text(ScreenshotPath), FramebufferWidth, FramebufferHeight);
 		Editor.ShutdownSoundPreview();
 		Graphics.Close();
 		return 0;

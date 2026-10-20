@@ -3268,8 +3268,11 @@ namespace game::admin::ops
 				const std::string Name = Editor.ProjectName().empty() ? "untitled" : Editor.ProjectName();
 				Path = (storage::GetExportDirectory() / (storage::SanitiseName(Name) + ".render.png")).string();
 			}
+			// Path is a std::string here, but storage::path_text() keeps one
+			// spelling for a path and a string and never narrows a wide native
+			// path on Windows
 			if(!base::WritePng(storage::path(Path), Options.m_Width, Options.m_Height, Pixels))
-				return Context.Fail(base::Format("could not write '{}'", Path.c_str()));
+				return Context.Fail(base::Format("could not write '{}'", storage::path_text(Path)));
 
 			base::json Result = base::json::object();
 			Result["path"] = Path;

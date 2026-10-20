@@ -258,7 +258,14 @@ namespace storage
 		}
 		catch(const std::runtime_error &Error)
 		{
-			LOG_ERROR("storage", "failed to write '{}': {}", target.c_str(), Error.what());
+			/*
+				u8string(), not string(): a filesystem::path's native string type
+				is wchar_t on Windows, so `target.c_str()` there is a const wchar_t*
+				and std::format has no formatter for it. The UTF-8 form is a
+				std::string on every platform, so this logs the same path
+				everywhere and one spelling compiles everywhere.
+			*/
+			LOG_ERROR("storage", "failed to write '{}': {}", path_text(target), Error.what());
 			return false;
 		}
 	}

@@ -86,7 +86,10 @@ namespace engine
 		const std::optional<storage::byte_vector> Bytes = storage::read(Path);
 		if(!Bytes.has_value() || Bytes->empty())
 		{
-			LOG_WARN("text", "failed to read the font '{}'", Path.c_str());
+			// Path is a std::string here, but the read above treats it as a path;
+			// path_text() keeps one spelling for both and never narrows a wide
+			// native path on Windows
+			LOG_WARN("text", "failed to read the font '{}'", storage::path_text(Path));
 			return false;
 		}
 		Face.m_FontData = *Bytes;
@@ -94,7 +97,7 @@ namespace engine
 		if(FT_New_Memory_Face(m_pLibrary, reinterpret_cast<const FT_Byte *>(Face.m_FontData.data()),
 			   static_cast<FT_Long>(Face.m_FontData.size()), 0, &Face.m_Face) != 0)
 		{
-			LOG_WARN("text", "failed to open the font '{}'", Path.c_str());
+			LOG_WARN("text", "failed to open the font '{}'", storage::path_text(Path));
 			Face.m_FontData.clear();
 			Face.m_Face = nullptr;
 			return false;

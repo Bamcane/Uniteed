@@ -307,7 +307,7 @@ namespace engine
 		if(!Opus.has_value())
 		{
 			// storage::read already told why it could not read the file
-			LOG_WARN(TAG, "cannot read sound '{}' from '{}'", std::string(Name).c_str(), Path.c_str());
+			LOG_WARN(TAG, "cannot read sound '{}' from '{}'", storage::path_text(Name), storage::path_text(Path));
 			return false;
 		}
 		return Play(Name, *Opus);

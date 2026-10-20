@@ -31,6 +31,22 @@ namespace storage
 	using byte_vector = std::vector<std::byte>;
 
 	/*
+		A path as the UTF-8 text a log line or a message wants. A path's native
+		string type is wchar_t on Windows, so path::c_str() there is a
+		const wchar_t* that std::format has no formatter for; u8string() is a
+		plain std::string on every platform, so this one spelling compiles and
+		prints the same everywhere.
+	*/
+	inline std::string path_text(const path &Path)
+	{
+		const std::u8string Text = Path.u8string();
+		return std::string(Text.begin(), Text.end());
+	}
+	// the same for a path that was already turned into a std::string, so a log
+	// line can take either spelling without the caller having to care
+	inline const std::string &path_text(const std::string &Path) { return Path; }
+
+	/*
 	method GetAppDataDirectory
 	returns AppData directory path;
 	on Linux: ~/.local/share/uniteed

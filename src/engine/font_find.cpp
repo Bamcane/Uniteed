@@ -316,7 +316,9 @@ namespace engine::fonts
 			if(Path.empty())
 				LOG_WARN("fonts", "no {} font found", pLabel);
 			else
-				LOG_INFO("fonts", "{} font: {}", pLabel, Path.c_str());
+				// Path is how the face was found, which may be a wide native path
+				// on Windows; path_text() is the UTF-8 form std::format accepts
+				LOG_INFO("fonts", "{} font: {}", pLabel, storage::path_text(Path));
 			return Path;
 		};
 
