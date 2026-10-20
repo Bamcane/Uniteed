@@ -29,6 +29,36 @@ namespace game
 	void QuadColorsAt(const CMap &Map, const CQuad &Quad, float Time, CColor *paColors);
 	void QuadPointsAt(const CMap &Map, const CQuad &Quad, float Time, base::vec2 *paPoints);
 
+	/*
+		The quad operations the canvas and the JSON interface share, so a quad
+		an agent builds is built by the same arithmetic the mouse uses.
+
+		Coordinates are 22.10 fixed point, and a point is addressed the way a
+		script sees it: a float in map pixels, x to the right and y downwards.
+	*/
+	// one coordinate in pixels, written in fixed point
+	int QuadFixedFromUnits(double Units);
+	double QuadUnitsFromFixed(int Value);
+
+	/*
+		Rounds every coordinate of a quad to a step of `Step` pixels, the same
+		step in both axes; the reference editor snaps a dropped quad to the 32
+		unit tile grid the same way. A step of zero leaves the quad alone.
+	*/
+	void SnapQuad(CMap &Map, const CQuad &Quad, int Step);
+
+	// the four corners of a quad as the map stores them, clockwise from the
+	// top left: x, y, width and height in pixels
+	void QuadGuessCorners(base::vec2 TopLeft, base::vec2 Size, base::vec2 *paCorners);
+
+	// which quad of the layer covers a point, topmost last so the newest wins,
+	// or -1. `Time` is the envelope clock the shape is tested at.
+	int QuadIndexAt(const CMap &Map, const CLayer &Layer, float Time, base::vec2 Point);
+
+	// the pivot a quad is turned around: the centre of its four corners, in
+	// pixels
+	base::vec2 QuadCentroid(const CQuad &Quad);
+
 	struct CMapRenderOptions
 	{
 		// the size of the picture in pixels

@@ -363,7 +363,39 @@ namespace game
 
 		if(Size <= 0)
 		{
-			Data.m_Compressed.clear();
+			/*
+				An empty block still has to occupy a byte of the data section.
+				A Teeworlds client walks the data table and refuses a map whose
+				offset is not greater than the previous one ("data offset not
+				greater than previous"), so two adjacent empty blocks with no
+				bytes between them make the whole map unplayable - and an empty
+				block is not rare: the reference editor writes one for every
+				empty quad or sound layer, and a preserved DDRace item can point
+				at a run of them.
+
+				The placeholder is the compressed form of an empty input, which
+				is why the offset moves by one byte or more while the
+				uncompressed size stays zero. The reader sees the zero size and
+				never inflates the block, so what it hands out is still empty.
+			*/
+			Data.m_UncompressedSize = 0;
+			if(m_Version >= 5)
+			{
+#if defined(UNITEED_ZSTD)
+				if(!ZstdCompress("", 0, m_CompressLevel, Data.m_Compressed))
+				{
+					LOG_ERROR("datafile", "zstd compression failed");
+					return -1;
+				}
+#else
+				return -1;
+#endif
+			}
+			else if(!Deflate("", 0, m_CompressLevel, Data.m_Compressed))
+			{
+				LOG_ERROR("datafile", "zlib compression failed");
+				return -1;
+			}
 		}
 		else if(m_Version >= 5)
 		{

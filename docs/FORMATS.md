@@ -50,6 +50,15 @@ Notes that cost time to find:
   the compressed item frame, not after `item size` bytes (that is the uncompressed
   size, not a file offset).
 * Version 3 stores its data blocks **uncompressed**, there is no zlib there.
+* **An empty data block still occupies bytes.** A client walks the data offset table
+  and refuses the whole map with `datafile: invalid file information: data offset not
+  greater than previous` when an offset is not strictly greater than the one before
+  it, so two blocks with no bytes between them make a map unplayable before it loads.
+  The reference editor writes one empty block for every empty quad or sound layer and
+  keeps zero-length blocks that preserved DDRace items point at, so this is not a
+  corner case. The uncompressed size of such a block stays 0 - a reader never inflates
+  it - but the stored form is the compressed frame of an empty input (a 2 byte zlib
+  stream, a 9 byte zstd frame), which is what makes the offset move.
 * There is no security token, no "MAP" wrapper and no varint packing in any version.
   `SHA256`/`CRC32` exist in the reference reader for archiving only.
 
@@ -285,6 +294,14 @@ so those indices have to survive:
 
 The first save may therefore renumber nothing but drop unreachable blocks; from the
 second save on the layout is fixed, which is what `--selftest` checks.
+
+"Block that nothing references becomes empty placeholder" is where a subtle corruption
+used to come from: a preserved item can point at a run of zero-length blocks (the
+Connector map of the LastDay workspace has one such run of three), and writing those
+as *no bytes at all* repeats a data offset, which a client rejects with `data offset
+not greater than previous`. Every block now occupies at least its empty compressed
+frame, so the offsets stay strictly increasing; `--selftest` asserts that property on
+each target's own export before it compares anything else.
 
 One limit is worth stating because it is observable: the preserved items are
 written only for a profile with the `ext_extras` bit, so exporting to `06`, `07`

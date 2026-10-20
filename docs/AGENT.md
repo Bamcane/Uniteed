@@ -66,7 +66,7 @@ error's context — goes to stderr.
 
 ```
 $ ./build/uniteed --agent project.create --name demo --target 08 --width 16 --height 16
-Uniteed 0.1.0-mvp agent: 78 methods, one JSON request per line
+Uniteed 0.1.0-mvp agent: 89 methods, one JSON request per line
 send {"method":"agent.describe"} for the list, or {"method":"quit"} to stop
 {"id":1,"method":"tiles.set","ok":true,"result":{"index":1,"flags":1,...}}
 ```
@@ -389,6 +389,50 @@ is a DDRace one or the extensions switch is on. `layers.set` with `pos_env` sets
 the position envelope of *every* quad in the layer; `color_env` sets the layer's
 own colour envelope.
 
+### quads
+
+A quad is a freeform patch: four corners, a pivot its position envelope turns
+it around, four corner colours and four texture coordinates. The corners are
+stored in the order the format writes them - `0` and `1` are the top edge,
+`2` and `3` the bottom one - which is not the order the outline is walked, so
+anything that does not want to think in those terms says `at` and `size`
+instead. Points are map pixels, the same unit the camera and `render.map` use.
+
+| method | parameters and defaults | result |
+|---|---|---|
+| `quads.list` — every quad of a quad layer | `group`, `layer` (the selection) | `group`, `layer`, `image`, `count`, `selected`, `bounds` (`[x0, y0, x1, y1]` of every point) and `quads` |
+| `quads.get` — one quad | `group`, `layer`, `quad` (required) | the quad, with `points` (five `[x, y]`), `colors` (four `[r, g, b, a]`), `pos_env`, `pos_env_offset`, `color_env`, `color_env_offset`, `corners` (the four corners as the canvas draws them) and `centroid` |
+| `quads.add` — a new quad | `group`, `layer`; either `at` (`[x, y]`, the top left) or `center` (`[x, y]`, the middle), `size` (`[w, h]`, `128` by `128`), `color` (one `[r, g, b, a]` for all four corners, white when absent), `colors` (one per corner), `pivot`, `pos_env`, `color_env`, `pos_env_offset`, `color_env_offset`, `tex_size` (`32`, one tile), `texcoords` (four `[u, v]`), `snap` (`0`); or `points` (five `[x, y]`) instead of the rectangle | `changed`, `selection`, `dirty`, `group`, `layer`, `quad` (its index), `count`, `entry` (the quad as `quads.get` reports it) |
+| `quads.move` — move quads | `group`, `layer`, `quad` or `quads` (a list) or `all`, `move` (`[dx, dy]`) or `at` (`[x, y]` for the first corner; one quad only), `snap` (`0`) | `changed`, `selection`, `dirty`, `moved` |
+| `quads.set_point` — one point | `group`, `layer`, `quad`/`quads`/`all`, `point` (`0` to `4`, or `"pivot"`; `4` is the pivot), `at` (required), `snap` (`0`) | `changed`, `selection`, `dirty`, `point`, `at` (where it was stored), `updated` |
+| `quads.set_points` — the whole shape | `group`, `layer`, `quad`/`quads`/`all`, `points` (four corners, and the pivot as a fifth when given), `snap` (`0`) | `changed`, `selection`, `dirty`, `updated` |
+| `quads.set_color` — the corner colours | `group`, `layer`, `quad`/`quads`/`all`, `color` (`[r, g, b, a]`), `colors` (one per corner), `corner` (`0` to `3`; with it, `color` is that corner only) | `changed`, `selection`, `dirty`, `updated` |
+| `quads.set_texture` — the picture of the quads | `group`, `layer`, `image` (the layer's image, `-1` for none), `quad`/`quads`/`all`, `texcoords` (four `[u, v]`), `tex_size` | `changed`, `selection`, `dirty`, `image` |
+| `quads.set_envelope` — the curves of the quads | `group`, `layer`, `quad`/`quads`/`all`, `pos_env` and `color_env` (`-1` or `null` for none), `pos_env_offset`, `color_env_offset` | `changed`, `selection`, `dirty`, `updated` |
+| `quads.snap` — round quads to a grid | `group`, `layer`, `quad`/`quads`/`all`, `step` (`32` pixels) | `changed`, `selection`, `dirty`, `step`, `updated` |
+| `quads.duplicate` — copy quads | `group`, `layer`, `quad`/`quads`/`all`, `move` (`[dx, dy]`, `[0, 0]`), `to_group` and `to_layer` (the source layer) | `changed`, `selection`, `dirty`, `group`, `layer`, `quads` (the new indices), `count` |
+| `quads.delete` — remove quads | `group`, `layer`, `quad`/`quads`/`all` | `changed`, `selection`, `dirty`, `deleted`, `deleted_indices`, `count` |
+| `quads.pick` — the quad under a point | `group`, `layer`, `at` (required), `time` (the envelope clock, the selection's own when absent), `select` (`true`) | `group`, `layer`, `quad` (`-1` for none), `found`, `time`, and the new `selection` when one was picked |
+
+`quads.add` takes the quad as a rectangle, which is what a background, a panel
+or a decorative shape is, or as five points, which is what a quad lifted out of
+another layer is. Without `at`, `center` or `points` it is a 128 by 128 square
+in the middle of the map, so the call always produces something visible. The
+new quad becomes the selection, and the layer it went into becomes the selected
+layer, because a quad selection only means something inside the layer that
+holds the quads.
+
+Points are written the way the canvas shows them. When a position envelope has
+moved or turned the quad, `quads.set_point`, `quads.set_points` and the `at`
+form of `quads.move` undo that transform before storing, so a corner read from
+`quads.get` and written back lands on the same pixel instead of drifting by the
+envelope's offset. `corners` in the result is the animated shape and `points`
+the stored one; they are the same numbers when the quad has no position
+envelope.
+
+Every write is one undo step, and the whole batch of a `quads` list or `all`
+is one step too.
+
 ### tiles
 
 | method | parameters and defaults | result |
@@ -577,6 +621,33 @@ $ printf '%s\n' \
 `flags: ["hflip"]` becomes the bit mask `1`, and the response says where the
 tile landed rather than only that it worked.
 
+### Build a quad layer from nothing
+
+A quad layer added with `layers.add` is empty, and a quad is what makes a map
+look like something: a sky, a panel, a gradient behind the level. This builds
+one, colours it, moves it, and checks where it ended up:
+
+```
+$ printf '%s\n' \
+    '{"id":1,"method":"layers.add","params":{"group":1,"kind":"quads","name":"Sky"}}' \
+    '{"id":2,"method":"quads.add","params":{"group":1,"layer":1,"at":[0,0],"size":[512,256],"color":[20,30,60,255]}}' \
+    '{"id":3,"method":"quads.set_color","params":{"group":1,"layer":1,"quad":0,"corner":2,"color":[60,90,160,255]}}' \
+    '{"id":4,"method":"quads.move","params":{"group":1,"layer":1,"quad":0,"move":[32,0]}}' \
+    '{"id":5,"method":"quads.pick","params":{"group":1,"layer":1,"at":[100,100]}}' \
+    '{"method":"quit"}' \
+  | ./build/uniteed --agent project.create --name quad --target ddnet07 --width 32 --height 16
+{"id":1,"method":"layers.add","ok":true,"result":{"changed":"layers.add","selection":{…},"dirty":true,"group":1,"layer":1}}
+{"id":2,"method":"quads.add","ok":true,"result":{"changed":"quads.add","selection":{…},"dirty":true,"group":1,"layer":1,"quad":0,"count":1,"entry":{…}}}
+{"id":3,"method":"quads.set_color","ok":true,"result":{"changed":"quads.set_color","selection":{…},"dirty":true,"updated":[0]}}
+{"id":4,"method":"quads.move","ok":true,"result":{"changed":"quads.move","selection":{…},"dirty":true,"moved":[0]}}
+{"id":5,"method":"quads.pick","ok":true,"result":{"group":1,"layer":1,"quad":0,"found":true,"time":0.0,"selection":{…}}}
+{"ok":true,"method":"quit","result":{}}
+```
+
+The quad is at `[32, 0]` after the move, so a point at `[100, 100]` is inside it
+and the pick finds it. `entry` in the answer to `quads.add` is the whole quad
+in the shape `quads.get` returns, so a caller does not have to read it back.
+
 ### Apply an autorule
 
 A rule reads one layer and writes into another. Here the plain tile layer (slot
@@ -686,14 +757,13 @@ root (the mapres and editor sprites) and `UNITEED_LOG` sets the log level
 The list is honest and short, and everything on it is a missing method rather
 than a hidden limitation:
 
-* **Quads cannot be edited.** There is no method to create, delete, move or
-  re-colour a quad. `layers.get` reports a quad layer's quads and
-  `envelopes.attach` can point at one, but a quad layer added with `layers.add`
-  stays empty, and the five points and four corner colours are read-only through
-  the interface.
-* **Rules can be added or replaced but not deleted one at a time.** There is no
-  `rules.delete_rule`, `rules.delete_run` or `rules.delete_config`; removing one
-  means writing the whole document back with `rules.set`.
+* **A quad cannot be drawn corner by corner from the canvas.** The `quads.*`
+  methods create, reshape, colour, copy and remove a quad, and a quad's points
+  are draggable, but there is no tool that clicks out a new shape in the window;
+  a script builds it with `quads.add` and `quads.set_points` instead.
+* **Rules can be added, replaced or deleted one at a time**, but not moved: a
+  rule, a run or a configuration is removed with `rules.delete` and there is no
+  method to reorder them other than writing the document back with `rules.set`.
 * **The DDRace `.rules` text is read but not written.** `rules.import` accepts
   it, `rules.export` writes JSON only, and a request for the text format is
   refused.

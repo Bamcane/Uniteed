@@ -280,7 +280,12 @@ of every group into a plain RGBA buffer, through the same `LayerColorAt`,
 `QuadColorsAt` and `QuadPointsAt` helpers the canvas calls, so a render and the
 window cannot disagree about a layer colour or an animated quad. Being model
 code it compiles into the headless build too, and `--render` and the
-`render.map` method are the one implementation.
+`render.map` method are the one implementation. It also holds the quad
+arithmetic that has to mean the same thing in both places: `QuadIndexAt` is the
+hit test `quads.pick` and the canvas share, `QuadGuessCorners` turns a
+rectangle into the four stored corners, `SnapQuad` rounds to a grid and
+`QuadCentroid` is where a pivot goes, which is why an agent can build a quad
+with no graphics layer behind it.
 
 `admin_ops.cpp` holds one table: a row per administrative method with its name, a
 one line parameter list, a description and the function that runs it. The

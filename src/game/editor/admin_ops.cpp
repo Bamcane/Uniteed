@@ -1410,6 +1410,952 @@ namespace game::admin::ops
 		}
 	} // namespace
 
+	// ------------------------------------------------------------------ quads
+	/*
+		A quad is five points and four colours: the four corners of a shape and
+		the pivot its position envelope turns it around, and one colour per
+		corner, so a quad can be a gradient. The points are stored as 22.10
+		fixed point, the coordinate unit a map uses; the interface speaks
+		pixels, and QuadFixedFromUnits() is the one place the two meet.
+
+		The corner order is the order the format stores rather than the order
+		the outline is walked: 0 and 1 are the top edge and 2 and 3 the bottom
+		one. A caller that does not think in those terms builds a quad with
+		`at` and `size` and never has to.
+	*/
+	namespace
+	{
+		// the size of one tile in pixels, the step a quad is snapped to
+		constexpr int QuadGridStep = 32;
+
+		// the middle of the map's tiles, in pixels: where a quad goes when a
+		// request does not say
+		base::vec2 MapCentre(const CEditor &Editor)
+		{
+			for(const CGroup &Group : Editor.Map().m_vGroups)
+				for(const CLayer &Layer : Group.m_vLayers)
+					if(Layer.IsTiles() && Layer.m_Width > 0 && Layer.m_Height > 0)
+						return base::vec2(Layer.m_Width * 16.0f, Layer.m_Height * 16.0f);
+			return base::vec2(800.0f, 600.0f);
+		}
+
+		// a quad layer, or an error
+		CLayer *QuadLayer(CEditor &Editor, int Group, int Layer, std::string &Error)
+		{
+			CLayer *pLayer = Editor.Layer(Group, Layer);
+			if(pLayer == nullptr)
+			{
+				Error = base::Format("there is no layer {:d} of group {:d}", Layer, Group);
+				return nullptr;
+			}
+			if(!pLayer->IsQuads())
+			{
+				Error = base::Format("layer {:d} of group {:d} is not a quad layer", Layer, Group);
+				return nullptr;
+			}
+			return pLayer;
+		}
+
+		// the layer a quad method works on, from the parameters or the selection
+		CLayer *TargetQuadLayer(const CContext &Context, int &Group, int &Layer, std::string &Error)
+		{
+			Group = Context.Int("group", Context.m_Editor.SelectedGroupIndex());
+			Layer = Context.Int("layer", Context.m_Editor.SelectedLayerIndex());
+			return QuadLayer(Context.m_Editor, Group, Layer, Error);
+		}
+
+		bool IsPoint(const base::json &Value) { return Value.is_array() && Value.size() >= 2; }
+
+		base::vec2 PointFromJson(const base::json &Value, base::vec2 Fallback = base::vec2())
+		{
+			if(!IsPoint(Value))
+				return Fallback;
+			return base::vec2(static_cast<float>(Value.at(0).as_double()), static_cast<float>(Value.at(1).as_double()));
+		}
+
+		base::json PointToJson(CPoint Point)
+		{
+			base::json Result = base::json::array();
+			Result.push_back(QuadUnitsFromFixed(Point.x));
+			Result.push_back(QuadUnitsFromFixed(Point.y));
+			return Result;
+		}
+
+		base::json ColorToJson(const CColor &Color)
+		{
+			base::json Result = base::json::array();
+			Result.push_back(Color.r);
+			Result.push_back(Color.g);
+			Result.push_back(Color.b);
+			Result.push_back(Color.a);
+			return Result;
+		}
+
+		/*
+			One colour is one key, so a quad's fill can be a single `color`
+			for all four corners or a `colors` list with one each; both land on
+			the same four stored entries.
+		*/
+		bool ColorFromJson(const base::json &Value, CColor &Color)
+		{
+			if(!Value.is_array() || Value.size() < 3)
+				return false;
+			Color.r = base::clamp(static_cast<int>(Value.at(0).as_int()), 0, 255);
+			Color.g = base::clamp(static_cast<int>(Value.at(1).as_int()), 0, 255);
+			Color.b = base::clamp(static_cast<int>(Value.at(2).as_int()), 0, 255);
+			if(Value.size() >= 4)
+				Color.a = base::clamp(static_cast<int>(Value.at(3).as_int()), 0, 255);
+			return true;
+		}
+
+		// writes the colours the request names onto the quad; true when any was
+		bool ApplyQuadColors(const CContext &Context, CQuad &Quad)
+		{
+			bool bTouched = false;
+			CColor Color;
+			/*
+				`corner` is the picker's own granularity - one colour for the
+				corner the right click landed on - so it narrows `color`
+				rather than being applied after it: a request with both means
+				"this colour on that corner", not "all four, then one again".
+			*/
+			const int Corner = Context.Int("corner", -1);
+			const bool bOneCorner = Corner >= 0 && Corner < 4;
+			if(ColorFromJson(Context.Json("color"), Color))
+			{
+				if(bOneCorner)
+					Quad.m_aColors[Corner] = Color;
+				else
+					for(int i = 0; i < 4; i++)
+						Quad.m_aColors[i] = Color;
+				bTouched = true;
+			}
+			const base::json &Colors = Context.Json("colors");
+			if(Colors.is_array())
+				for(std::size_t i = 0; i < Colors.size() && i < 4; i++)
+					if(ColorFromJson(Colors.at(i), Color))
+					{
+						Quad.m_aColors[i] = Color;
+						bTouched = true;
+					}
+			return bTouched;
+		}
+
+		/*
+			The quad itself, in the shape layers.get reports it, plus the two
+			things a caller cannot compute from the stored points alone: the
+			corners as the canvas draws them (through the position envelope) and
+			the centroid the pivot is kept at.
+		*/
+		base::json QuadToJson(const CMap &Map, const CQuad &Quad, int Index, float Time)
+		{
+			base::json Result = base::json::object();
+			Result["index"] = Index;
+			Result["points"] = base::json::array();
+			for(int i = 0; i < 5; i++)
+				Result["points"].push_back(PointToJson(Quad.m_aPoints[i]));
+			Result["colors"] = base::json::array();
+			for(int i = 0; i < 4; i++)
+				Result["colors"].push_back(ColorToJson(Quad.m_aColors[i]));
+			Result["pos_env"] = Quad.m_PosEnv;
+			Result["pos_env_offset"] = Quad.m_PosEnvOffset;
+			Result["color_env"] = Quad.m_ColorEnv;
+			Result["color_env_offset"] = Quad.m_ColorEnvOffset;
+
+			base::vec2 aCorners[4];
+			QuadPointsAt(Map, Quad, Time, aCorners);
+			Result["corners"] = base::json::array();
+			for(int i = 0; i < 4; i++)
+			{
+				base::json Point = base::json::array();
+				Point.push_back(static_cast<double>(aCorners[i].x));
+				Point.push_back(static_cast<double>(aCorners[i].y));
+				Result["corners"].push_back(std::move(Point));
+			}
+			const base::vec2 Centre = QuadCentroid(Quad);
+			Result["centroid"] = base::json::array();
+			Result["centroid"].push_back(static_cast<double>(Centre.x));
+			Result["centroid"].push_back(static_cast<double>(Centre.y));
+			return Result;
+		}
+
+		// one or more quads of the layer, from "quad", "quads" or "all"
+		bool QuadIndicesFromParams(const CContext &Context, int Count, std::vector<int> &Out, std::string &Error)
+		{
+			Out.clear();
+			const base::json &List = Context.Json("quads");
+			if(List.is_array())
+			{
+				for(std::size_t i = 0; i < List.size(); i++)
+				{
+					const int Index = static_cast<int>(List.at(i).as_int(-1));
+					if(Index < 0 || Index >= Count)
+					{
+						Error = base::Format("quad {:d} does not exist; this layer has {:d}", Index, Count);
+						return false;
+					}
+					if(std::find(Out.begin(), Out.end(), Index) == Out.end())
+						Out.push_back(Index);
+				}
+				if(Out.empty())
+				{
+					Error = "\"quads\" is an empty list";
+					return false;
+				}
+				return true;
+			}
+			if(Context.Bool("all", false))
+			{
+				if(Count <= 0)
+				{
+					Error = "this layer has no quads";
+					return false;
+				}
+				Out.resize(static_cast<std::size_t>(Count));
+				for(int i = 0; i < Count; i++)
+					Out[static_cast<std::size_t>(i)] = i;
+				return true;
+			}
+			const int Index = Context.Int("quad", -1);
+			if(Index < 0 || Index >= Count)
+			{
+				Error = base::Format("quad {:d} does not exist; this layer has {:d}", Index, Count);
+				return false;
+			}
+			Out.push_back(Index);
+			return true;
+		}
+
+		/*
+			The translation and rotation a quad's position envelope adds at a
+			time. Every point edit is undone through it: the canvas shows the
+			animated shape, so a script that reads a corner from quads.get and
+			writes it straight back has to store the un-animated point or the
+			quad drifts with every round trip.
+		*/
+		void QuadTransformAt(const CMap &Map, const CQuad &Quad, float Time, base::vec2 &Offset, float &Rotation)
+		{
+			CEnvelopeSample Position;
+			Position[0] = Position[1] = Position[2] = 0.0f;
+			if(Quad.m_PosEnv >= 0 && Quad.m_PosEnv < static_cast<int>(Map.m_vEnvelopes.size()))
+				EvaluateEnvelope(Map.m_vEnvelopes[static_cast<std::size_t>(Quad.m_PosEnv)],
+					Time + Quad.m_PosEnvOffset / 1000.0f, Position, 3);
+			Offset = base::vec2(Position[0], Position[1]);
+			Rotation = Position[2] / 180.0f * base::Pi;
+		}
+
+		// a point as the canvas shows it, to the fixed point the map stores
+		CPoint QuadStoredPoint(const CMap &Map, const CQuad &Quad, float Time, base::vec2 Visible)
+		{
+			base::vec2 Offset;
+			float Rotation = 0.0f;
+			QuadTransformAt(Map, Quad, Time, Offset, Rotation);
+			base::vec2 Target = Visible - Offset;
+			if(Rotation != 0.0f)
+			{
+				const base::vec2 Pivot(base::FixedToFloat(Quad.m_aPoints[4].x), base::FixedToFloat(Quad.m_aPoints[4].y));
+				const base::vec2 Relative = Target - Pivot;
+				const float Cos = std::cos(-Rotation);
+				const float Sin = std::sin(-Rotation);
+				Target = base::vec2(Relative.x * Cos - Relative.y * Sin, Relative.x * Sin + Relative.y * Cos) + Pivot;
+			}
+			CPoint Point;
+			Point.x = QuadFixedFromUnits(Target.x);
+			Point.y = QuadFixedFromUnits(Target.y);
+			return Point;
+		}
+
+		// the envelope a request names, with null and -1 both meaning "none"
+		bool EnvelopeFromParam(const CMap &Map, const base::json &Value, int &Out, std::string &Error)
+		{
+			if(Value.is_null())
+			{
+				Out = -1;
+				return true;
+			}
+			const int Index = static_cast<int>(Value.as_int(-2));
+			if(Index < -1 || Index >= static_cast<int>(Map.m_vEnvelopes.size()))
+			{
+				Error = base::Format("there is no envelope {:d}", Index);
+				return false;
+			}
+			Out = Index;
+			return true;
+		}
+
+		bool QuadsList(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+
+			base::json Result = base::json::object();
+			Result["group"] = Group;
+			Result["layer"] = Layer;
+			Result["image"] = pLayer->m_Image;
+			Result["count"] = static_cast<int>(pLayer->m_vQuads.size());
+			Result["selected"] = base::json::array();
+			for(const int Quad : Editor.SelectedQuads())
+				Result["selected"].push_back(Quad);
+			// the bounding box of the ten points of every quad, which is how a
+			// caller finds out where the quads it just asked about are
+			Result["bounds"] = base::json::array();
+			bool bFirst = true;
+			double MinX = 0.0, MinY = 0.0, MaxX = 0.0, MaxY = 0.0;
+			for(const CQuad &Quad : pLayer->m_vQuads)
+				for(int i = 0; i < 5; i++)
+				{
+					const double X = QuadUnitsFromFixed(Quad.m_aPoints[i].x);
+					const double Y = QuadUnitsFromFixed(Quad.m_aPoints[i].y);
+					MinX = bFirst ? X : std::min(MinX, X);
+					MinY = bFirst ? Y : std::min(MinY, Y);
+					MaxX = bFirst ? X : std::max(MaxX, X);
+					MaxY = bFirst ? Y : std::max(MaxY, Y);
+					bFirst = false;
+				}
+			if(!bFirst)
+			{
+				Result["bounds"].push_back(MinX);
+				Result["bounds"].push_back(MinY);
+				Result["bounds"].push_back(MaxX);
+				Result["bounds"].push_back(MaxY);
+			}
+			base::json Quads = base::json::array();
+			for(std::size_t i = 0; i < pLayer->m_vQuads.size(); i++)
+				Quads.push_back(QuadToJson(Editor.Map(), pLayer->m_vQuads[i], static_cast<int>(i), Editor.EnvelopeTime()));
+			Result["quads"] = std::move(Quads);
+			return Context.Ok(std::move(Result));
+		}
+
+		bool QuadsGet(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			const int Index = Context.Int("quad", -1);
+			if(Index < 0 || Index >= static_cast<int>(pLayer->m_vQuads.size()))
+				return Context.Fail(base::Format("quad {:d} does not exist; this layer has {:d}", Index,
+					static_cast<int>(pLayer->m_vQuads.size())));
+			base::json Result = QuadToJson(Editor.Map(), pLayer->m_vQuads[static_cast<std::size_t>(Index)], Index, Editor.EnvelopeTime());
+			Result["group"] = Group;
+			Result["layer"] = Layer;
+			return Context.Ok(std::move(Result));
+		}
+
+		/*
+			A new quad. There are two ways to say where it goes:
+
+			  * `at` (a corner, or the middle with `center`), `size` and the
+			    `color`/`colors` keys - a pixel rectangle turned into the four
+			    stored corners and a pivot in the middle, which is what a caller
+			    drawing a background or a panel wants;
+			  * `points` and `colors` - a whole quad in the shape quads.get
+			    reports, so a quad lifted from one layer can be dropped into
+			    another unchanged.
+
+			Without either, the quad is a 128 by 128 square in the middle of the
+			map, so "add a quad" does something visible.
+		*/
+		bool QuadsAdd(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+
+			const base::json &SizeJson = Context.Json("size");
+			base::vec2 Size = base::vec2(128.0f, 128.0f);
+			if(IsPoint(SizeJson))
+			{
+				Size = PointFromJson(SizeJson);
+				if(Size.x <= 0.0f || Size.y <= 0.0f)
+					return Context.Fail("quads.add needs a positive \"size\"");
+			}
+			base::vec2 TopLeft = IsPoint(Context.Json("at")) ? PointFromJson(Context.Json("at")) : MapCentre(Editor);
+			// a centre is a position, not a corner: the quad is moved so that
+			// its middle lands there
+			if(IsPoint(Context.Json("center")))
+				TopLeft = PointFromJson(Context.Json("center")) - base::vec2(Size.x * 0.5f, Size.y * 0.5f);
+
+			CQuad Quad;
+			const base::json &Points = Context.Json("points");
+			if(Points.is_array() && Points.size() >= 5)
+			{
+				for(int i = 0; i < 5; i++)
+				{
+					if(!IsPoint(Points.at(static_cast<std::size_t>(i))))
+						return Context.Fail("\"points\" needs five [x, y] pairs: four corners and the pivot");
+					Quad.m_aPoints[i].x = QuadFixedFromUnits(Points.at(static_cast<std::size_t>(i)).at(0).as_double());
+					Quad.m_aPoints[i].y = QuadFixedFromUnits(Points.at(static_cast<std::size_t>(i)).at(1).as_double());
+				}
+			}
+			else
+			{
+				base::vec2 aCorners[4];
+				QuadGuessCorners(TopLeft, Size, aCorners);
+				for(int i = 0; i < 4; i++)
+				{
+					Quad.m_aPoints[i].x = QuadFixedFromUnits(aCorners[i].x);
+					Quad.m_aPoints[i].y = QuadFixedFromUnits(aCorners[i].y);
+				}
+				const base::vec2 Pivot = IsPoint(Context.Json("pivot")) ? PointFromJson(Context.Json("pivot")) :
+					base::vec2(TopLeft.x + Size.x * 0.5f, TopLeft.y + Size.y * 0.5f);
+				Quad.m_aPoints[4].x = QuadFixedFromUnits(Pivot.x);
+				Quad.m_aPoints[4].y = QuadFixedFromUnits(Pivot.y);
+			}
+
+			// what is drawn without an image is the colours, so a quad with no
+			// colour is white: a shape that can be seen and coloured later
+			CColor Color{255, 255, 255, 255};
+			ColorFromJson(Context.Json("color"), Color);
+			for(int i = 0; i < 4; i++)
+				Quad.m_aColors[i] = Color;
+			ApplyQuadColors(Context, Quad);
+
+			if(Context.Has("pos_env") && !EnvelopeFromParam(Editor.Map(), Context.Json("pos_env"), Quad.m_PosEnv, Error))
+				return Context.Fail(Error);
+			if(Context.Has("color_env") && !EnvelopeFromParam(Editor.Map(), Context.Json("color_env"), Quad.m_ColorEnv, Error))
+				return Context.Fail(Error);
+			Quad.m_PosEnvOffset = Context.Int("pos_env_offset", 0);
+			Quad.m_ColorEnvOffset = Context.Int("color_env_offset", 0);
+
+			/*
+				The texture coordinates are what stretches the layer's image
+				over the quad: 32 pixels of it by default, one tile, in the
+				corner order the colours use.
+			*/
+			const base::json &Texcoords = Context.Json("texcoords");
+			const float TexSize = static_cast<float>(Context.Json("tex_size").as_double(32.0));
+			for(int i = 0; i < 4; i++)
+			{
+				const base::vec2 Tex = IsPoint(Texcoords) && Texcoords.size() >= 4 ?
+					PointFromJson(Texcoords.at(static_cast<std::size_t>(i))) :
+					base::vec2(CQuad::s_aCornerAt[i / 2][i % 2] * TexSize, (i / 2) * TexSize);
+				Quad.m_aTexcoords[i].x = QuadFixedFromUnits(Tex.x);
+				Quad.m_aTexcoords[i].y = QuadFixedFromUnits(Tex.y);
+			}
+
+			// `snap` is a step in pixels; SnapQuad() scales it to fixed point
+			const int Snap = Context.Int("snap", 0);
+			if(Snap > 0)
+				SnapQuad(Editor.Map(), Quad, Snap);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			pLayer->m_vQuads.push_back(Quad);
+			const int Added = static_cast<int>(pLayer->m_vQuads.size()) - 1;
+			/*
+				The new quad becomes the selection, because that is what makes it
+				editable: the handles, the picker and the envelope panel all read
+				the selection, so a quad an agent adds is the one the window
+				highlights when the same editor is drawn. The layer comes with
+				it, because a quad selection only means something inside the
+				layer that holds the quads.
+			*/
+			Editor.SetSelectedLayer(Group, Layer);
+			Editor.SelectQuad(Added);
+			Editor.MarkDirty();
+
+			base::json Result = Changed(Editor, "quads.add");
+			Result["group"] = Group;
+			Result["layer"] = Layer;
+			Result["quad"] = Added;
+			Result["count"] = static_cast<int>(pLayer->m_vQuads.size());
+			Result["entry"] = QuadToJson(Editor.Map(), pLayer->m_vQuads.back(), Added, Editor.EnvelopeTime());
+			return Context.Ok(std::move(Result));
+		}
+
+		/*
+			Moving quads. `move` is a delta in pixels and applies to the whole
+			quad including its pivot, so the shape keeps its place relative to
+			the point it turns around; `at` moves the first corner there
+			instead, keeping the quad's size and orientation, which is the way
+			to put a quad somewhere exact.
+		*/
+		bool QuadsMove(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+
+			const bool bAt = IsPoint(Context.Json("at"));
+			const base::vec2 Delta = IsPoint(Context.Json("move")) ? PointFromJson(Context.Json("move")) : base::vec2();
+			if(!bAt && Delta.x == 0.0f && Delta.y == 0.0f)
+				return Context.Fail("quads.move needs a \"move\" [dx, dy] or an \"at\" [x, y]");
+			// "at" is one place, so it names one quad: two quads cannot both put
+			// their first corner on the same point and stay where they were
+			if(bAt && Indices.size() > 1)
+				return Context.Fail("quads.move with \"at\" takes one quad; use \"move\" for several");
+			const int Snap = Context.Int("snap", 0);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			for(const int Index : Indices)
+			{
+				CQuad &Quad = pLayer->m_vQuads[static_cast<std::size_t>(Index)];
+				if(bAt)
+				{
+					/*
+						The corner is the one the canvas shows, so a quad that a
+						position envelope has moved is put where the caller can
+						see it rather than where it is stored.
+					*/
+					base::vec2 aCorners[4];
+					QuadPointsAt(Editor.Map(), Quad, Editor.EnvelopeTime(), aCorners);
+					const base::vec2 Target = PointFromJson(Context.Json("at"));
+					const int Fx = QuadFixedFromUnits(Target.x - aCorners[0].x);
+					const int Fy = QuadFixedFromUnits(Target.y - aCorners[0].y);
+					for(CPoint &Point : Quad.m_aPoints)
+					{
+						Point.x += Fx;
+						Point.y += Fy;
+					}
+				}
+				else
+				{
+					const int Fx = QuadFixedFromUnits(Delta.x);
+					const int Fy = QuadFixedFromUnits(Delta.y);
+					for(CPoint &Point : Quad.m_aPoints)
+					{
+						Point.x += Fx;
+						Point.y += Fy;
+					}
+				}
+				if(Snap > 0)
+					SnapQuad(Editor.Map(), Quad, Snap);
+			}
+			Editor.MarkDirty();
+			base::json Result = Changed(Editor, "quads.move");
+			Result["moved"] = base::json::array();
+			for(const int Index : Indices)
+				Result["moved"].push_back(Index);
+			return Context.Ok(std::move(Result));
+		}
+
+		/*
+			One point where the canvas shows it. Point 4 is the pivot and points
+			0 to 3 the corners, and the write is undone through the position
+			envelope so that the point lands where the caller asked even when the
+			quad is animated.
+		*/
+		bool QuadsSetPoint(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			// a corner may be named as a number or as the string the picker uses
+			int Point = -1;
+			if(Context.Str("point") == "pivot")
+				Point = 4;
+			else if(!Context.Has("point") || Context.Int("point", -1) < 0 || Context.Int("point", -1) > 4)
+				return Context.Fail("quads.set_point needs a \"point\" from 0 to 4 (or \"pivot\")");
+			else
+				Point = Context.Int("point");
+			const base::json &At = Context.Json("at");
+			if(!IsPoint(At))
+				return Context.Fail("quads.set_point needs an \"at\" [x, y]");
+			const base::vec2 Visible = PointFromJson(At);
+			const int Snap = Context.Int("snap", 0);
+
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			for(const int Index : Indices)
+			{
+				CQuad &Quad = pLayer->m_vQuads[static_cast<std::size_t>(Index)];
+				// the pivot is stored as it is; a corner is stored without the
+				// envelope's offset and rotation, which the canvas adds back
+				CPoint Stored = Point == 4 ? CPoint{QuadFixedFromUnits(Visible.x), QuadFixedFromUnits(Visible.y)} :
+					QuadStoredPoint(Editor.Map(), Quad, Editor.EnvelopeTime(), Visible);
+				if(Snap > 0)
+				{
+					const int FixedStep = Snap * FixedPointScale;
+					Stored.x = base::SnapToStep(Stored.x, FixedStep);
+					Stored.y = base::SnapToStep(Stored.y, FixedStep);
+				}
+				Quad.m_aPoints[Point] = Stored;
+			}
+			Editor.MarkDirty();
+
+			base::json Result = Changed(Editor, "quads.set_point");
+			Result["point"] = Point;
+			Result["at"] = PointToJson(pLayer->m_vQuads[static_cast<std::size_t>(Indices.front())].m_aPoints[Point]);
+			Result["updated"] = base::json::array();
+			for(const int Index : Indices)
+				Result["updated"].push_back(Index);
+			return Context.Ok(std::move(Result));
+		}
+
+		/*
+			The whole shape of a quad at once: four corners in storage order and,
+			optionally, the pivot. This is what reshaping a quad is - a freeform
+			patch is four corners, not a rectangle - and the points are given as
+			the canvas shows them.
+		*/
+		bool QuadsSetPoints(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			const base::json &Points = Context.Json("points");
+			if(!Points.is_array() || Points.size() < 4)
+				return Context.Fail("quads.set_points needs a \"points\" array of four corners, and optionally the pivot");
+			if(Points.size() > 5)
+				return Context.Fail("a quad has four corners and one pivot");
+			for(std::size_t i = 0; i < Points.size(); i++)
+				if(!IsPoint(Points.at(i)))
+					return Context.Fail("every entry of \"points\" is an [x, y] pair");
+
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+			const int Snap = Context.Int("snap", 0);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			for(const int Index : Indices)
+			{
+				CQuad &Quad = pLayer->m_vQuads[static_cast<std::size_t>(Index)];
+				for(std::size_t i = 0; i < Points.size(); i++)
+				{
+					const base::vec2 Visible = PointFromJson(Points.at(i));
+					const CPoint Stored = i == 4 ? CPoint{QuadFixedFromUnits(Visible.x), QuadFixedFromUnits(Visible.y)} :
+						QuadStoredPoint(Editor.Map(), Quad, Editor.EnvelopeTime(), Visible);
+					Quad.m_aPoints[i] = Stored;
+				}
+				if(Snap > 0)
+					SnapQuad(Editor.Map(), Quad, Snap);
+			}
+			Editor.MarkDirty();
+			base::json Result = Changed(Editor, "quads.set_points");
+			Result["updated"] = base::json::array();
+			for(const int Index : Indices)
+				Result["updated"].push_back(Index);
+			return Context.Ok(std::move(Result));
+		}
+
+		// the four corner colours, or one of them
+		bool QuadsSetColor(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			if(!Context.Has("color") && !Context.Has("colors"))
+				return Context.Fail("quads.set_color needs a \"color\" [r, g, b, a] or a \"colors\" list");
+			const int Corner = Context.Int("corner", -1);
+			if(Context.Has("corner") && (Corner < 0 || Corner > 3))
+				return Context.Fail("\"corner\" is 0 to 3; a state without it colours all four");
+
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			for(const int Index : Indices)
+				ApplyQuadColors(Context, pLayer->m_vQuads[static_cast<std::size_t>(Index)]);
+			Editor.MarkDirty();
+			base::json Result = Changed(Editor, "quads.set_color");
+			Result["updated"] = base::json::array();
+			for(const int Index : Indices)
+				Result["updated"].push_back(Index);
+			return Context.Ok(std::move(Result));
+		}
+
+		/*
+			The layer's image and the texture coordinates together, because a
+			quad that shows a picture needs both: the image names which picture,
+			the coordinates say which part of it. `image` on the request is the
+			layer's image, exactly as layers.set takes it.
+		*/
+		bool QuadsSetTexture(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			if(!Context.Has("image") && !Context.Has("texcoords") && !Context.Has("tex_size"))
+				return Context.Fail("quads.set_texture needs an \"image\", \"texcoords\" or \"tex_size\"");
+
+			const int Image = Context.Int("image", -1);
+			if(Context.Has("image") && Image >= static_cast<int>(Editor.Map().m_vImages.size()))
+				return Context.Fail(base::Format("there is no image {:d}", Image));
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			if(Context.Has("image"))
+				pLayer->m_Image = Image;
+
+			const base::json &Texcoords = Context.Json("texcoords");
+			if(Context.Has("tex_size") || (Texcoords.is_array() && Texcoords.size() >= 4))
+			{
+				std::vector<int> Indices;
+				if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+					return Context.Fail(Error);
+				const float TexSize = static_cast<float>(Context.Json("tex_size").as_double(32.0));
+				for(const int Index : Indices)
+				{
+					CQuad &Quad = pLayer->m_vQuads[static_cast<std::size_t>(Index)];
+					for(int i = 0; i < 4; i++)
+					{
+						const base::vec2 Tex = Texcoords.is_array() && Texcoords.size() >= 4 ?
+							PointFromJson(Texcoords.at(static_cast<std::size_t>(i))) :
+							base::vec2(CQuad::s_aCornerAt[i / 2][i % 2] * TexSize, (i / 2) * TexSize);
+						Quad.m_aTexcoords[i].x = QuadFixedFromUnits(Tex.x);
+						Quad.m_aTexcoords[i].y = QuadFixedFromUnits(Tex.y);
+					}
+				}
+			}
+			Editor.MarkDirty();
+			base::json Result = Changed(Editor, "quads.set_texture");
+			Result["image"] = pLayer->m_Image;
+			return Context.Ok(std::move(Result));
+		}
+
+		// the envelopes of one or more quads
+		bool QuadsSetEnvelope(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			if(!Context.Has("pos_env") && !Context.Has("color_env"))
+				return Context.Fail("quads.set_envelope needs a \"pos_env\" or a \"color_env\", -1 or null for none");
+
+			int PosEnv = -1, ColorEnv = -1;
+			if(Context.Has("pos_env") && !EnvelopeFromParam(Editor.Map(), Context.Json("pos_env"), PosEnv, Error))
+				return Context.Fail(Error);
+			if(Context.Has("color_env") && !EnvelopeFromParam(Editor.Map(), Context.Json("color_env"), ColorEnv, Error))
+				return Context.Fail(Error);
+
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			for(const int Index : Indices)
+			{
+				CQuad &Quad = pLayer->m_vQuads[static_cast<std::size_t>(Index)];
+				if(Context.Has("pos_env"))
+				{
+					Quad.m_PosEnv = PosEnv;
+					if(Context.Has("pos_env_offset"))
+						Quad.m_PosEnvOffset = Context.Int("pos_env_offset", 0);
+				}
+				if(Context.Has("color_env"))
+				{
+					Quad.m_ColorEnv = ColorEnv;
+					if(Context.Has("color_env_offset"))
+						Quad.m_ColorEnvOffset = Context.Int("color_env_offset", 0);
+				}
+			}
+			Editor.MarkDirty();
+			base::json Result = Changed(Editor, "quads.set_envelope");
+			Result["updated"] = base::json::array();
+			for(const int Index : Indices)
+				Result["updated"].push_back(Index);
+			return Context.Ok(std::move(Result));
+		}
+
+		/*
+			Rounding a quad to a step, in both axes and for the texture
+			coordinates with it. The reference editor does this with the tile
+			grid when a quad is dropped, and it is what makes a hand drawn quad
+			line up with the tiles around it.
+		*/
+		bool QuadsSnap(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			const int Step = Context.Int("step", QuadGridStep);
+			if(Step <= 0)
+				return Context.Fail("quads.snap needs a positive \"step\"");
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			for(const int Index : Indices)
+				SnapQuad(Editor.Map(), pLayer->m_vQuads[static_cast<std::size_t>(Index)], Step);
+			Editor.MarkDirty();
+			base::json Result = Changed(Editor, "quads.snap");
+			Result["step"] = Step;
+			Result["updated"] = base::json::array();
+			for(const int Index : Indices)
+				Result["updated"].push_back(Index);
+			return Context.Ok(std::move(Result));
+		}
+
+		// copies quads into the same layer or another one, at the end, so the
+		// copies are the quads with the highest indices
+		bool QuadsDuplicate(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+
+			// the target layer defaults to the source one
+			int IntoGroup = Group, IntoLayer = Layer;
+			CLayer *pInto = pLayer;
+			if(Context.Has("to_group") || Context.Has("to_layer"))
+			{
+				IntoGroup = Context.Int("to_group", Group);
+				IntoLayer = Context.Int("to_layer", Layer);
+				pInto = QuadLayer(Editor, IntoGroup, IntoLayer, Error);
+				if(pInto == nullptr)
+					return Context.Fail(Error);
+			}
+			const base::vec2 Delta = IsPoint(Context.Json("move")) ? PointFromJson(Context.Json("move")) : base::vec2();
+
+			Editor.PushUndoOpWhole(IntoGroup, IntoLayer);
+			base::json Copies = base::json::array();
+			for(const int Index : Indices)
+			{
+				CQuad Copy = pLayer->m_vQuads[static_cast<std::size_t>(Index)];
+				for(CPoint &Point : Copy.m_aPoints)
+				{
+					Point.x += QuadFixedFromUnits(Delta.x);
+					Point.y += QuadFixedFromUnits(Delta.y);
+				}
+				pInto->m_vQuads.push_back(Copy);
+				Copies.push_back(static_cast<int>(pInto->m_vQuads.size()) - 1);
+			}
+			// the copies become the selection when they landed in the layer
+			// that is being edited; a copy into another layer leaves this one
+			// selected, because the selection belongs to a single layer
+			if(pInto == pLayer && Editor.SelectedGroupIndex() == Group && Editor.SelectedLayerIndex() == Layer)
+			{
+				Editor.ClearQuadSelection();
+				for(std::size_t i = 0; i < Copies.size(); i++)
+					Editor.AddQuadSelection(static_cast<int>(Copies.at(i).as_int()));
+			}
+			Editor.MarkDirty();
+			base::json Result = Changed(Editor, "quads.duplicate");
+			Result["group"] = IntoGroup;
+			Result["layer"] = IntoLayer;
+			Result["quads"] = std::move(Copies);
+			Result["count"] = static_cast<int>(pInto->m_vQuads.size());
+			return Context.Ok(std::move(Result));
+		}
+
+		bool QuadsDelete(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			std::vector<int> Indices;
+			if(!QuadIndicesFromParams(Context, static_cast<int>(pLayer->m_vQuads.size()), Indices, Error))
+				return Context.Fail(Error);
+
+			Editor.PushUndoOpWhole(Group, Layer);
+			// highest first, so removing one does not move the next
+			std::sort(Indices.begin(), Indices.end(), std::greater<int>());
+			for(const int Index : Indices)
+				pLayer->m_vQuads.erase(pLayer->m_vQuads.begin() + Index);
+			/*
+				The selection is a list of indices into the layer, so every one
+				above a removed quad moves down with it. ClampSelection() would
+				prune the ones that fell off the end; the shift is what keeps the
+				rest selected.
+			*/
+			std::vector<int> Remaining;
+			for(const int Selected : Editor.SelectedQuads())
+			{
+				int Shifted = Selected;
+				for(const int Index : Indices)
+					if(Selected > Index)
+						Shifted--;
+				if(Shifted >= 0 && Shifted < static_cast<int>(pLayer->m_vQuads.size()) &&
+					std::find(Remaining.begin(), Remaining.end(), Shifted) == Remaining.end())
+					Remaining.push_back(Shifted);
+			}
+			Editor.ClearQuadSelection();
+			for(const int Index : Remaining)
+				Editor.AddQuadSelection(Index);
+			Editor.MarkDirty();
+
+			base::json Result = Changed(Editor, "quads.delete");
+			Result["deleted"] = static_cast<int>(Indices.size());
+			Result["deleted_indices"] = base::json::array();
+			for(const int Index : Indices)
+				Result["deleted_indices"].push_back(Index);
+			Result["count"] = static_cast<int>(pLayer->m_vQuads.size());
+			return Context.Ok(std::move(Result));
+		}
+
+		/*
+			Finding a quad. `at` is a point in map pixels and the test is the
+			one the canvas does - against the shape as the envelope clock shows
+			it - so "which quad is at this pixel" is answerable without reading
+			the whole layer back.
+		*/
+		bool QuadsPick(const CContext &Context)
+		{
+			CEditor &Editor = Context.m_Editor;
+			int Group = 0, Layer = 0;
+			std::string Error;
+			CLayer *pLayer = TargetQuadLayer(Context, Group, Layer, Error);
+			if(pLayer == nullptr)
+				return Context.Fail(Error);
+			const base::json &At = Context.Json("at");
+			if(!IsPoint(At))
+				return Context.Fail("quads.pick needs an \"at\" [x, y]");
+			const float Time = static_cast<float>(Context.Json("time").as_double(Editor.EnvelopeTime()));
+			const int Index = QuadIndexAt(Editor.Map(), *pLayer, Time, PointFromJson(At));
+
+			base::json Result = base::json::object();
+			Result["group"] = Group;
+			Result["layer"] = Layer;
+			Result["quad"] = Index;
+			Result["found"] = Index >= 0;
+			Result["time"] = static_cast<double>(Time);
+			if(Index >= 0 && Context.Bool("select", true))
+			{
+				Editor.SetSelectedLayer(Group, Layer);
+				Editor.SelectQuad(Index);
+				Result["selection"] = SelectionToJson(Editor);
+			}
+			return Context.Ok(std::move(Result));
+		}
+	} // namespace
+
 	// ------------------------------------------------------------------ rules
 	namespace
 	{
@@ -2422,6 +3368,30 @@ namespace game::admin::ops
 			{"envelopes.add_point", "envelope, time, curve, values", "a new point", EnvelopesAddPoint},
 			{"envelopes.set_point", "envelope, point, time, curve, values, in_tangent, out_tangent", "one point", EnvelopesSetPoint},
 			{"envelopes.delete_point", "envelope, point", "remove a point", EnvelopesDeletePoint},
+
+			{"quads.list", "group, layer", "every quad of a quad layer, with its points, colours and envelopes", QuadsList},
+			{"quads.get", "group, layer, quad", "one quad, with the corners as the canvas draws them", QuadsGet},
+			{"quads.add", "group, layer, at, center, size, points, color, colors, pos_env, color_env, tex_size, texcoords, snap",
+				"a new quad: a rectangle at, with a size, from a colour or four, or a whole quad from points", QuadsAdd},
+			{"quads.move", "group, layer, quad, quads, all, move, at, snap",
+				"move quads by a delta, or put a corner at a point", QuadsMove},
+			{"quads.set_point", "group, layer, quad, quads, all, point, at, snap",
+				"one point of a quad: a corner, or the pivot when point is 4", QuadsSetPoint},
+			{"quads.set_points", "group, layer, quad, quads, all, points, snap",
+				"the four corners of a quad, and the pivot, in one call", QuadsSetPoints},
+			{"quads.set_color", "group, layer, quad, quads, all, color, colors, corner",
+				"the corner colours of a quad: one colour, one per corner, or one corner", QuadsSetColor},
+			{"quads.set_texture", "group, layer, image, quad, quads, all, texcoords, tex_size",
+				"the image a quad layer shows and the texture coordinates of its quads", QuadsSetTexture},
+			{"quads.set_envelope", "group, layer, quad, quads, all, pos_env, color_env, pos_env_offset, color_env_offset",
+				"point quads at a position or colour envelope, or at none", QuadsSetEnvelope},
+			{"quads.snap", "group, layer, quad, quads, all, step",
+				"round quads to a grid, 32 pixels by default", QuadsSnap},
+			{"quads.duplicate", "group, layer, quad, quads, all, move, to_group, to_layer",
+				"copy quads, in their own layer or another one", QuadsDuplicate},
+			{"quads.delete", "group, layer, quad, quads, all", "remove quads from a quad layer", QuadsDelete},
+			{"quads.pick", "group, layer, at, time, select",
+				"the quad under a point of the map, the way the canvas picks one", QuadsPick},
 
 			{"rules.get", "", "the project's autorules document", RulesGet},
 			{"rules.set", "(an autorules document)", "replace the autorules document", RulesSet},

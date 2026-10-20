@@ -86,6 +86,110 @@ namespace game
 		}
 	}
 
+	// ------------------------------------------------------------ quad helpers
+	/*
+		The arithmetic a quad is built with. It lives here rather than in the
+		editor so the JSON interface can create and reshape a quad with no
+		graphics layer behind it, and so the canvas and a script cannot disagree
+		about what "the corners of a quad" are.
+	*/
+	int QuadFixedFromUnits(double Units)
+	{
+		// 22.10 fixed point, rounded rather than truncated so that 32.0 lands
+		// on 32768 and not one unit short of it
+		const double Scaled = Units * FixedPointScale;
+		return static_cast<int>(Scaled < 0.0 ? Scaled - 0.5 : Scaled + 0.5);
+	}
+
+	double QuadUnitsFromFixed(int Value)
+	{
+		return static_cast<double>(Value) / static_cast<double>(FixedPointScale);
+	}
+
+	namespace
+	{
+		void SnapQuadTo(CQuad &Quad, int Step)
+		{
+			/*
+				The step is in pixels and the coordinates are 22.10 fixed point,
+				so it is scaled here once: snapping 204800 to 32 would round the
+				fixed point number to a multiple of 32 rather than the pixel it
+				stands for, which is 0.03 of a pixel.
+			*/
+			const int FixedStep = Step * FixedPointScale;
+			for(CPoint &Point : Quad.m_aPoints)
+			{
+				Point.x = base::SnapToStep(Point.x, FixedStep);
+				Point.y = base::SnapToStep(Point.y, FixedStep);
+			}
+			for(CPoint &Texcoord : Quad.m_aTexcoords)
+			{
+				Texcoord.x = base::SnapToStep(Texcoord.x, FixedStep);
+				Texcoord.y = base::SnapToStep(Texcoord.y, FixedStep);
+			}
+		}
+	} // namespace
+
+	void SnapQuad(CMap &Map, const CQuad &Quad, int Step)
+	{
+		if(Step <= 0)
+			return;
+		/*
+			The caller hands over a reference into the layer that owns it, so
+			the layer is found by its address and the snapped quad is written
+			back where it was read from.
+		*/
+		for(CGroup &Group : Map.m_vGroups)
+			for(CLayer &Layer : Group.m_vLayers)
+				if(Layer.IsQuads())
+					for(CQuad &Candidate : Layer.m_vQuads)
+						if(&Candidate == &Quad)
+						{
+							SnapQuadTo(Candidate, Step);
+							return;
+						}
+	}
+
+	void QuadGuessCorners(base::vec2 TopLeft, base::vec2 Size, base::vec2 *paCorners)
+	{
+		/*
+			The four corners in the order a quad stores them: 0 and 1 are the
+			top edge and 2 and 3 the bottom one, so a rectangle is
+			(x, y) (x + w, y) (x, y + h) (x + w, y + h).
+		*/
+		paCorners[0] = TopLeft;
+		paCorners[1] = base::vec2(TopLeft.x + Size.x, TopLeft.y);
+		paCorners[2] = base::vec2(TopLeft.x, TopLeft.y + Size.y);
+		paCorners[3] = base::vec2(TopLeft.x + Size.x, TopLeft.y + Size.y);
+	}
+
+	int QuadIndexAt(const CMap &Map, const CLayer &Layer, float Time, base::vec2 Point)
+	{
+		if(!Layer.IsQuads())
+			return -1;
+		base::vec2 aAnimated[4];
+		for(int Index = static_cast<int>(Layer.m_vQuads.size()) - 1; Index >= 0; Index--)
+		{
+			QuadPointsAt(Map, Layer.m_vQuads[static_cast<std::size_t>(Index)], Time, aAnimated);
+			// PointInQuad walks an outline, so the corners are handed over in
+			// the order that traces one rather than in the order they are stored
+			base::vec2 aOutline[4];
+			for(int i = 0; i < 4; i++)
+				aOutline[i] = aAnimated[CQuad::s_aPerimeter[i]];
+			if(base::PointInQuad(aOutline, Point))
+				return Index;
+		}
+		return -1;
+	}
+
+	base::vec2 QuadCentroid(const CQuad &Quad)
+	{
+		base::vec2 Sum;
+		for(int i = 0; i < 4; i++)
+			Sum = Sum + base::vec2(base::FixedToFloat(Quad.m_aPoints[i].x), base::FixedToFloat(Quad.m_aPoints[i].y));
+		return Sum / 4.0f;
+	}
+
 	namespace
 	{
 		// -------------------------------------------------------------- images

@@ -233,7 +233,10 @@ counts, envelope ranges). It shares no code with the editor, and it passes on th
 bundled reference maps as well as on everything the editor writes.
 
 `--selftest` is the regression test of the format layer: for every bundled map it
-loads the map, exports it to all five targets, reloads the result, compares the
+loads the map, exports it to all five targets, checks the container rules a client
+enforces before it reads anything (every data block offset strictly greater than the
+one before it, which is what an empty block destroys if it is written with no bytes),
+reloads the result, compares the
 structure, the tiles and the preserved items, checks that a repeated save is stable,
 and does the same through a `.unitwp` package round trip — plus a project round trip
 that pins the metadata, the editor session and the autorules, a check that the SVG
@@ -244,7 +247,7 @@ the buttons that must stay clickable - answers for every point of a window.
 ```
 $ ./build/uniteed --selftest
 ...
-72 checks, 0 failures
+76 checks, 0 failures
 
 $ python3 tools/verify_map.py build/tmp/dm1_08.map data/maps/06/coverage.map
 ok   build/tmp/dm1_08.map: datafile v5 35 items, 24 data blocks, 6 tile layers, 5 envelopes / 11 points
@@ -982,7 +985,7 @@ Working:
 * a **fill (bucket) tool** for a tile layer: one click floods the region of one tile
   index, bounded by a tile budget so a misclick cannot lock the frame up, and a **move
   tool** that pans the view with the left button (`V`), which is what a tablet wants
-* `--selftest`, the round trip regression test, 67 checks
+* `--selftest`, the round trip regression test, 76 checks
 
 Not here yet (called out so nothing is a surprise):
 
@@ -991,9 +994,10 @@ Not here yet (called out so nothing is a surprise):
 * dragging the **bezier tangents** of a keyframe: the curve type is settable and the
   tangents are written Teeworlds style into every target, but they cannot be shaped
   with the mouse yet
-* creating and deleting quads from the canvas: a quad's five points can be dragged and
-  its four corner colours set, but a new quad cannot be added and one cannot be removed
-  yet
+* creating and deleting quads **from the canvas**: a quad's five points can be dragged
+  and its four corner colours set, but there is no tool that draws a new quad with the
+  mouse. The `quads.*` methods add, reshape, colour, copy and remove one, so a script or
+  an agent can do what the canvas cannot yet
 * a **tune parameter editor**: a tune layer's payload can be read and written cell by
   cell through `physics.set`, but the named tune parameters have no form yet
 * an **automapper config editor** for the DDRace UUID item: an imported automapper

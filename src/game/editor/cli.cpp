@@ -7,6 +7,7 @@
 #include <map>
 
 #include "base/define.h"
+#include "base/endian.h"
 #include "base/json.h"
 #include "base/i18n.h"
 #include "base/logger.h"
@@ -18,6 +19,7 @@
 #include "engine/keycodes.h"
 #include "engine/svg.h"
 #include "game/assets.h"
+#include "game/editor/admin.h"
 #include "game/editor/editor.h"
 #include "game/editor/render.h"
 #include "game/map/envelope.h"
@@ -281,6 +283,50 @@ namespace game
 			}
 			for(const CExtraItem &Extra : Map.m_vExtras)
 				std::cout << base::Format("  preserved item type={:d} id={:d} size={:d}\n", Extra.m_Type, Extra.m_ID, Extra.m_Data.size());
+		}
+
+		/*
+			The container rules a Teeworlds client enforces before it loads
+			anything. The one this exists for is the data table: a client walks
+			it and refuses a map whose offset is not greater than the previous
+			one ("datafile: invalid file information: data offset not greater
+			than previous"), which is what happens when two empty data blocks
+			are written with no bytes between them. Every block therefore has
+			to occupy at least one byte, however empty its payload is.
+		*/
+		bool DataOffsetsStrictlyIncrease(const byte_vector &Bytes, std::string &Error)
+		{
+			// the container header and item type table of src/game/map/datafile.cpp
+			constexpr std::size_t HeaderSize = 36;
+			constexpr std::size_t ItemTypeSize = 12;
+			if(Bytes.size() < HeaderSize)
+			{
+				Error = "the container is shorter than its own header";
+				return false;
+			}
+			const int Version = base::ReadInt32(Bytes.data() + 4);
+			const int NumItemTypes = base::ReadInt32(Bytes.data() + 16);
+			const int NumItems = base::ReadInt32(Bytes.data() + 20);
+			const int NumRawData = base::ReadInt32(Bytes.data() + 24);
+			const std::size_t Offsets = HeaderSize + static_cast<std::size_t>(NumItemTypes) * ItemTypeSize +
+				static_cast<std::size_t>(NumItems) * 4;
+			if(NumRawData < 0 || Offsets + static_cast<std::size_t>(NumRawData) * 4 > Bytes.size())
+			{
+				Error = "the data table is truncated";
+				return false;
+			}
+			for(int i = 1; i < NumRawData; i++)
+			{
+				const int Previous = base::ReadInt32(Bytes.data() + Offsets + static_cast<std::size_t>(i - 1) * 4);
+				const int Current = base::ReadInt32(Bytes.data() + Offsets + static_cast<std::size_t>(i) * 4);
+				if(Current <= Previous)
+				{
+					Error = base::Format("data block {:d} is at {:d}, the one before it at {:d} (version {:d})",
+						i, Current, Previous, Version);
+					return false;
+				}
+			}
+			return true;
 		}
 
 		// structural comparison of two models, used by the selftest
@@ -595,6 +641,14 @@ namespace game
 				if(!Source.SaveToBytes(Bytes, Target, &Error))
 				{
 					std::cout << "  FAIL " << Profile.m_pId << " save: " << Error << "\n";
+					Failures++;
+					continue;
+				}
+
+				// a client would stop at this before it reads a single item
+				if(!DataOffsetsStrictlyIncrease(Bytes, Error))
+				{
+					std::cout << "  FAIL " << Profile.m_pId << " container: " << Error << "\n";
 					Failures++;
 					continue;
 				}
@@ -1900,6 +1954,163 @@ namespace game
 			else
 			{
 				std::cout << "  FAIL quad   a right click does not aim the picker at the corner under it\n";
+				Failures++;
+			}
+		}
+
+		/*
+			The quad methods of the agent interface: a quad layer an agent adds
+			is empty, so creating, reshaping, colouring, moving, copying and
+			removing a quad have to be methods rather than something only the
+			mouse can do.
+
+			The checks are the ones a script depends on: a new quad is a
+			rectangle at the place it was asked for with a pivot in its middle,
+			the pick finds it where the canvas would, a point write lands where
+			it was asked even when a position envelope has moved the quad, the
+			copies are the quads with the highest indices, and a delete takes
+			the right one out and leaves the rest.
+		*/
+		{
+			Checks++;
+			bool bOk = true;
+			CEditor Editor;
+			Editor.InitHeadless();
+			Editor.Project().InitNew("quad-methods", "ddnet07");
+			Editor.Map().InitNew("quad-methods");
+			Editor.SetSelectedLayer(0, 0);
+
+			admin::CSession Session;
+			Session.Adopt(&Editor);
+			// a request document, built by hand: the braces of JSON are also the
+			// braces of a format string, so a format string is the wrong tool
+			const auto Run = [&Session](const char *pMethod, const char *pParams) {
+				const std::string Document = std::string("{\"method\":\"") + pMethod + "\",\"params\":" + pParams + "}";
+				return Session.Handle(base::json::parse(Document));
+			};
+			const auto Result = [](const base::json &Response) { return Response["result"]; };
+			const auto Succeeded = [](const base::json &Response) { return Response["ok"].as_bool(false); };
+			const auto Close = [](double A, double B) { return std::abs(A - B) < 0.01; };
+			const auto Point = [Close](const base::json &Json, int Index, double X, double Y) {
+				return Json.is_array() && Json.size() > static_cast<std::size_t>(Index) &&
+					Close(Json.at(static_cast<std::size_t>(Index)).at(0).as_double(), X) &&
+					Close(Json.at(static_cast<std::size_t>(Index)).at(1).as_double(), Y);
+			};
+
+			std::string Failure;
+			const auto Check = [&bOk, &Failure](bool Value, const char *pWhat) {
+				if(!Value && Failure.empty())
+					Failure = pWhat;
+				bOk = bOk && Value;
+			};
+			// a quad layer in the second group, which is where the tiles are
+			base::json Response = Run("layers.add", "{\"group\":1,\"kind\":\"quads\",\"name\":\"Q\"}");
+			Check(Succeeded(Response) && Result(Response)["layer"].as_int(-1) == 1, "layers.add");
+
+			// a rectangle at a corner, red, with the pivot in its middle
+			Response = Run("quads.add", "{\"group\":1,\"layer\":1,\"at\":[0,0],\"size\":[128,64],\"color\":[255,0,0,255]}");
+			Check(Succeeded(Response) && Result(Response)["quad"].as_int(-1) == 0 &&
+				Result(Response)["count"].as_int(-1) == 1, "step 1");
+			const base::json First = Result(Response)["entry"];
+			Check(Point(First["points"], 0, 0.0, 0.0) && Point(First["points"], 1, 128.0, 0.0) &&
+				Point(First["points"], 2, 0.0, 64.0) && Point(First["points"], 3, 128.0, 64.0) &&
+				Point(First["points"], 4, 64.0, 32.0), "step 2");
+			Check(First["colors"].at(0).at(0).as_int() == 255 && First["colors"].at(0).at(1).as_int() == 0, "step 3");
+
+			// the pick is the canvas' own test, on the animated shape
+			Response = Run("quads.pick", "{\"group\":1,\"layer\":1,\"at\":[10,10]}");
+			Check(Succeeded(Response) && Result(Response)["found"].as_bool(false) && Result(Response)["quad"].as_int(-1) == 0, "step 4");
+			Response = Run("quads.pick", "{\"group\":1,\"layer\":1,\"at\":[500,10]}");
+			Check(Succeeded(Response) && !Result(Response)["found"].as_bool(true), "step 5");
+
+			// a second quad from four colours, placed by its middle
+			Response = Run("quads.add", "{\"group\":1,\"layer\":1,\"center\":[300,300],\"size\":[40,40],"
+				"\"colors\":[[255,0,0,255],[0,255,0,255],[0,0,255,255],[255,255,255,255]]}");
+			Check(Succeeded(Response) && Result(Response)["quad"].as_int(-1) == 1, "step 6");
+			const base::json Second = Result(Response)["entry"];
+			Check(Point(Second["points"], 0, 280.0, 280.0) && Point(Second["points"], 3, 320.0, 320.0), "step 7");
+			Check(Second["colors"].at(1).at(1).as_int() == 255 && Second["colors"].at(2).at(2).as_int() == 255, "step 8");
+
+			// moving carries the pivot, so the shape keeps its place around it
+			Response = Run("quads.move", "{\"group\":1,\"layer\":1,\"quad\":0,\"move\":[32,16]}");
+			Check(Succeeded(Response), "step 9");
+			Response = Run("quads.get", "{\"group\":1,\"layer\":1,\"quad\":0}");
+			Check(Point(Result(Response)["points"], 0, 32.0, 16.0) && Point(Result(Response)["points"], 4, 96.0, 48.0), "step 10");
+
+			// one corner, then all four colours, then one of them
+			Response = Run("quads.set_point", "{\"group\":1,\"layer\":1,\"quad\":0,\"point\":3,\"at\":[200,200]}");
+			Check(Succeeded(Response), "step 11");
+			Response = Run("quads.set_color", "{\"group\":1,\"layer\":1,\"quad\":0,\"color\":[0,0,255,255]}");
+			Check(Succeeded(Response), "step 12");
+			Response = Run("quads.set_color", "{\"group\":1,\"layer\":1,\"quad\":0,\"corner\":2,\"color\":[9,8,7,255]}");
+			Check(Succeeded(Response), "step 13");
+			Response = Run("quads.get", "{\"group\":1,\"layer\":1,\"quad\":0}");
+			Check(Point(Result(Response)["points"], 3, 200.0, 200.0) &&
+				Result(Response)["colors"].at(0).at(2).as_int() == 255 &&
+				Result(Response)["colors"].at(2).at(0).as_int() == 9, "step 14");
+
+			/*
+				A position envelope moves and turns what is drawn, so a point
+				written as the canvas shows it has to be stored without that
+				transform: the check is that reading the corner back gives the
+				point that was asked for, not the point minus the offset.
+			*/
+			Response = Run("envelopes.create", "{\"channels\":4,\"name\":\"position\"}");
+			const int Envelope = Result(Response)["envelope"].as_int(-1);
+			Check(Succeeded(Response) && Envelope >= 0, "step 15");
+			const std::string EnvelopeParams = "{\"envelope\":" + std::to_string(Envelope) + ",\"point\":0,\"values\":[102400,204800,0,0]}";
+			Response = Run("envelopes.set_point", EnvelopeParams.c_str());
+			Check(Succeeded(Response), "step 16");
+			const std::string AttachParams = "{\"group\":1,\"layer\":1,\"quad\":0,\"pos_env\":" + std::to_string(Envelope) + "}";
+			Response = Run("quads.set_envelope", AttachParams.c_str());
+			Check(Succeeded(Response), "step 17");
+			Response = Run("quads.set_point", "{\"group\":1,\"layer\":1,\"quad\":0,\"point\":0,\"at\":[300,500]}");
+			Check(Succeeded(Response), "step 18");
+			Response = Run("quads.get", "{\"group\":1,\"layer\":1,\"quad\":0}");
+			Check(Point(Result(Response)["corners"], 0, 300.0, 500.0), "step 19");
+			// and the stored point is the same one with the offset taken off
+			Check(Point(Result(Response)["points"], 0, 200.0, 300.0), "step 20");
+
+			// snapping rounds to the tile grid
+			Response = Run("quads.snap", "{\"group\":1,\"layer\":1,\"quad\":0,\"step\":32}");
+			Check(Succeeded(Response), "step 21");
+			Response = Run("quads.get", "{\"group\":1,\"layer\":1,\"quad\":0}");
+			Check(Point(Result(Response)["points"], 0, 192.0, 288.0), "step 22");
+
+			// the copy is the quad with the highest index, and it is offset
+			Response = Run("quads.duplicate", "{\"group\":1,\"layer\":1,\"quad\":0,\"move\":[0,160]}");
+			Check(Succeeded(Response) && Result(Response)["quads"].at(0).as_int(-1) == 2 &&
+				Result(Response)["count"].as_int(-1) == 3, "step 23");
+			Response = Run("quads.get", "{\"group\":1,\"layer\":1,\"quad\":2}");
+			Check(Point(Result(Response)["points"], 0, 192.0, 448.0), "step 24");
+
+			// the right one goes, and the quads after it move down with it
+			Response = Run("quads.delete", "{\"group\":1,\"layer\":1,\"quad\":1}");
+			Check(Succeeded(Response) && Result(Response)["count"].as_int(-1) == 2, "step 25");
+			Response = Run("quads.list", "{\"group\":1,\"layer\":1}");
+			Check(Succeeded(Response) && Result(Response)["count"].as_int(-1) == 2, "step 26");
+			Check(Close(Result(Response)["quads"].at(1)["points"].at(0).at(1).as_double(), 448.0), "step 27");
+
+			// a delete is one undo step, and the undo brings the quad back
+			Response = Run("undo", "{}");
+			Check(Succeeded(Response), "step 28");
+			Response = Run("quads.list", "{\"group\":1,\"layer\":1}");
+			Check(Result(Response)["count"].as_int(-1) == 3, "step 29");
+
+			// and the layer an agent writes into is the one it selected
+			Response = Run("quads.add", "{\"group\":1,\"layer\":1,\"at\":[400,400],\"size\":[32,32]}");
+			Check(Succeeded(Response) && Editor.SelectedGroupIndex() == 1 && Editor.SelectedLayerIndex() == 1 &&
+				Editor.SelectedQuads().size() == 1 && Editor.SelectedQuads().front() == 3, "step 30");
+
+			// a method that needs a quad layer says so instead of editing one
+			Response = Run("quads.add", "{\"group\":1,\"layer\":0}");
+			Check(!Succeeded(Response), "step 31");
+
+			if(bOk)
+				std::cout << "  ok   quads  a quad can be made, moved, coloured, copied and removed by method\n";
+			else
+			{
+				std::cout << "  FAIL quads  the quad methods do not build the quad they describe (" << Failure << ")\n";
 				Failures++;
 			}
 		}
