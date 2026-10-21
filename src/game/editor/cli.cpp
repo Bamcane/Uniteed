@@ -1634,7 +1634,7 @@ namespace game
 			{
 				Editor.SetTarget(map_target::tee06);
 				CheckEditor(!storage::ResourcePaths().empty() &&
-					storage::path_text(storage::ResourcePaths().front()).find("versions/06") != std::string::npos, "paths");
+					storage::path_text(storage::ResourcePaths().front()).find("06") != std::string::npos, "paths");
 			}
 
 			// the drag order of a dock is state, so reordering it must stick
